@@ -259,8 +259,101 @@ function detailHash(x,y){return((x*198491317+y*668265263)^(x*77))>>>0}
 function hash2(x,y){return((x*374761393+y*1274126177)^12345)>>>0}
 function hash3(x,y){return((x*951274213+y*295391771)^67890)>>>0}
 
+// === Boulder placement (generated once at init) ===
+let boulderList=[];
+function generateBoulders(){
+  boulderList=[];
+  const rng=new SeededRNG(777);
+  // Place large boulders (8-12)
+  for(let attempt=0;attempt<200&&boulderList.length<10;attempt++){
+    const bx=Math.floor(rng.next()*WW),by=Math.floor(rng.next()*WH);
+    const bi=tBiomes[by*WW+bx],b=BL[bi];
+    if(b==='deep_water'||b==='shallow_water'||b==='river'||b==='snow')continue;
+    // Bias toward mountain edges and grass
+    const good=(b==='hills'||b==='mountain'||b==='grassland'||b==='sand');
+    if(!good&&rng.next()>0.3)continue;
+    // Min spacing 60px = ~2.5 tiles
+    const px=bx*TS,py=by*TS;
+    let tooClose=false;
+    for(const ob of boulderList){if(Math.abs(ob.px-px)<60&&Math.abs(ob.py-py)<60){tooClose=true;break}}
+    if(tooClose)continue;
+    const h=tileHash(bx*31,by*47);
+    const w=30+((h>>4)%21),ht=20+((h>>8)%16);
+    boulderList.push({px,py,w,ht,h,large:true,sY:py+TS});
+  }
+  // Place medium rocks (15-20)
+  for(let attempt=0;attempt<300&&boulderList.filter(b=>!b.large).length<18;attempt++){
+    const bx=Math.floor(rng.next()*WW),by=Math.floor(rng.next()*WH);
+    const bi=tBiomes[by*WW+bx],b=BL[bi];
+    if(b==='deep_water'||b==='shallow_water'||b==='river')continue;
+    const px=bx*TS,py=by*TS;
+    let tooClose=false;
+    for(const ob of boulderList){
+      const minD=ob.large?50:35;
+      if(Math.abs(ob.px-px)<minD&&Math.abs(ob.py-py)<minD){tooClose=true;break}
+    }
+    if(tooClose)continue;
+    const h=tileHash(bx*17,by*29);
+    const w=15+((h>>4)%11),ht=10+((h>>8)%8);
+    boulderList.push({px,py,w,ht,h,large:false,sY:py+TS});
+  }
+}
+
+function drawLargeBoulder(c,b){
+  const cx=b.px+TS/2,cy=b.py+TS/2,w=b.w,h=b.ht,hv=b.h;
+  const greyShift=((hv>>12)%20)-10;
+  // Shadow
+  c.fillStyle='rgba(0,0,0,0.3)';
+  c.beginPath();c.ellipse(cx+4,cy+h/2+4,w/2+2,h/3,0,0,Math.PI*2);c.fill();
+  // Main body
+  c.fillStyle=`rgb(${122+greyShift},${120+greyShift},${130+greyShift})`;
+  c.beginPath();c.ellipse(cx,cy,w/2,h/2,0,0,Math.PI*2);c.fill();
+  // Top highlight
+  c.fillStyle=`rgb(${154+greyShift},${152+greyShift},${162+greyShift})`;
+  c.beginPath();c.ellipse(cx-w*0.15,cy-h*0.15,w*0.35,h*0.3,0,0,Math.PI*2);c.fill();
+  // Specular highlight
+  c.fillStyle='#c8c8d0';
+  c.beginPath();c.arc(cx-w*0.2,cy-h*0.25,3,0,Math.PI*2);c.fill();
+  // Crack lines (1-2)
+  if(b.large){
+    c.strokeStyle=`rgb(${90+greyShift},${88+greyShift},${98+greyShift})`;
+    c.lineWidth=1;
+    c.beginPath();
+    c.moveTo(cx-w*0.2,cy-h*0.1);c.lineTo(cx+w*0.15,cy+h*0.15);c.stroke();
+    if((hv>>14)%2===0){
+      c.beginPath();c.moveTo(cx+w*0.1,cy-h*0.2);c.lineTo(cx-w*0.05,cy+h*0.1);c.stroke();
+    }
+  }
+}
+
+function drawMediumRock(c,b){
+  const cx=b.px+TS/2,cy=b.py+TS/2,w=b.w,h=b.ht,hv=b.h;
+  const gs=((hv>>12)%16)-8;
+  // Shadow
+  c.fillStyle='rgba(0,0,0,0.25)';
+  c.beginPath();c.ellipse(cx+3,cy+h/2+3,w/2+1,h/3,0,0,Math.PI*2);c.fill();
+  // Body
+  c.fillStyle=`rgb(${122+gs},${120+gs},${130+gs})`;
+  c.beginPath();c.ellipse(cx,cy,w/2,h/2,0,0,Math.PI*2);c.fill();
+  // Highlight
+  c.fillStyle=`rgb(${148+gs},${146+gs},${156+gs})`;
+  c.beginPath();c.ellipse(cx-w*0.12,cy-h*0.12,w*0.28,h*0.25,0,0,Math.PI*2);c.fill();
+  // Cluster buddy (50% chance)
+  if((hv>>6)%2===0){
+    const bx2=cx+w*0.5+4,by2=cy+2;
+    c.fillStyle=`rgb(${118+gs},${116+gs},${126+gs})`;
+    c.beginPath();c.ellipse(bx2,by2,w*0.25,h*0.3,0,0,Math.PI*2);c.fill();
+  }
+}
+
 function getDetails(sx,sy,ex,ey){
   const D=[];
+  // Inject boulders that are in visible range
+  for(const b of boulderList){
+    if(b.px+b.w>=sx*TS&&b.px<=ex*TS&&b.py+b.ht>=sy*TS&&b.py<=ey*TS){
+      D.push({t:b.large?'lgboulder':'mdboulder',x:b.px,y:b.py,sY:b.sY,bdata:b});
+    }
+  }
   for(let y=sy;y<ey;y++)for(let x=sx;x<ex;x++){
     const bi=tBiomes[y*WW+x],b=BL[bi],px=x*TS,py=y*TS;
     const h1=detailHash(x,y),h2v=hash2(x,y),h3v=hash3(x,y);
@@ -430,6 +523,8 @@ function drawDetail(c,d,fr){
   else if(t==='cactus')drawCactus(c,d.x,d.y,d.h);
   else if(t==='mushroom')drawMushroom(c,d.x,d.y,d.h);
   else if(t==='lilypad')drawLilyPad(c,d.x,d.y,d.h);
+  else if(t==='lgboulder')drawLargeBoulder(c,d.bdata);
+  else if(t==='mdboulder')drawMediumRock(c,d.bdata);
 }
 
 // === State ===
@@ -1517,7 +1612,7 @@ function initCursors(){
 
 // === Init ===
 window.addEventListener('resize',resize);
-resize();genTerrain();renderTBuf();initCursors();
+resize();genTerrain();renderTBuf();generateBoulders();initCursors();
 vpX=canvasEl.width/(2*zoom)-(WW*TS)/2;vpY=canvasEl.height/(2*zoom)-(WH*TS)/2;
 requestAnimationFrame(render);connectWS();
 setInterval(fireClientEvent,3600);
