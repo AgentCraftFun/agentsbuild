@@ -684,9 +684,49 @@ for(const a of S.agents){
   drawAgentPixelArt(ctx,ax,ay,a,sel);
 }
 
+// Speech bubbles
+for(let i=bubbles.length-1;i>=0;i--){
+  const bub=bubbles[i];
+  bub.life--;
+  if(bub.life<=0){bubbles.splice(i,1);continue}
+  const ag=bub.agent;
+  const v=agentVisual.get(ag.id);
+  const vx2=v?v.x*WW:ag.x,vy2=v?v.y*WH:ag.y;
+  const bax=vx2*ts+ts/2,bay=vy2*ts-54;
+  const alpha=Math.min(1,bub.life/30,(bub.maxLife-bub.life+1)/30);
+  ctx.globalAlpha=alpha;
+  const txt=bub.text;
+  ctx.font='9px Courier New';
+  const btw=ctx.measureText(txt).width;
+  const bpw=btw+16,bph=20;
+  const bbx=bax-bpw/2,bby=bay-bph/2;
+  // Rounded rect background
+  ctx.fillStyle='#fffff0';ctx.strokeStyle='#888866';ctx.lineWidth=1;
+  ctx.beginPath();
+  if(ctx.roundRect)ctx.roundRect(bbx,bby,bpw,bph,4);
+  else{ctx.moveTo(bbx+4,bby);ctx.lineTo(bbx+bpw-4,bby);ctx.quadraticCurveTo(bbx+bpw,bby,bbx+bpw,bby+4);ctx.lineTo(bbx+bpw,bby+bph-4);ctx.quadraticCurveTo(bbx+bpw,bby+bph,bbx+bpw-4,bby+bph);ctx.lineTo(bbx+4,bby+bph);ctx.quadraticCurveTo(bbx,bby+bph,bbx,bby+bph-4);ctx.lineTo(bbx,bby+4);ctx.quadraticCurveTo(bbx,bby,bbx+4,bby)}
+  ctx.fill();ctx.stroke();
+  // Triangle pointer
+  ctx.fillStyle='#fffff0';
+  ctx.beginPath();ctx.moveTo(bax-4,bby+bph);ctx.lineTo(bax+4,bby+bph);ctx.lineTo(bax,bby+bph+8);ctx.fill();
+  ctx.beginPath();ctx.moveTo(bax-4,bby+bph);ctx.lineTo(bax+4,bby+bph);ctx.lineTo(bax,bby+bph+8);ctx.closePath();ctx.stroke();
+  // Text
+  ctx.fillStyle='#222';ctx.textAlign='center';ctx.textBaseline='middle';
+  ctx.fillText(txt,bax,bay);
+  ctx.globalAlpha=1;
+}
+
 ctx.restore();
 updateTooltip();
 requestAnimationFrame(render)}
+
+// === Speech Bubble System ===
+const bubbles=[];
+function addBubble(agent,text){
+  // Remove existing bubble for this agent
+  for(let i=bubbles.length-1;i>=0;i--)if(bubbles[i].agent.id===agent.id)bubbles.splice(i,1);
+  bubbles.push({agent,text:text.substring(0,30),life:220,maxLife:220});
+}
 
 function updateTooltip(){
 const tt=document.getElementById('tooltip');
@@ -718,7 +758,7 @@ return`<div class="agent-row" onclick="selAg('${a.id}')">
 <div class="agent-action">${getActionText(a)}</div>
 </div></div>`}).join('')}
 
-function selAg(id){const a=agentById(id);selAgent=a||null;if(a){vpX=canvasEl.width/(2*zoom)-a.x*TS-TS/2;vpY=canvasEl.height/(2*zoom)-a.y*TS-TS/2}updateAgentList()}
+function selAg(id){const a=agentById(id);selAgent=a||null;if(a){vpX=canvasEl.width/(2*zoom)-a.x*TS-TS/2;vpY=canvasEl.height/(2*zoom)-a.y*TS-TS/2;addBubble(a,getActionText(a))}updateAgentList()}
 window.selAg=selAg;
 
 function updateEvents(){
@@ -761,11 +801,69 @@ if(msg.type==='world_state'&&msg.data){S.tick=msg.data.tick||0;S.agents=msg.data
 if(msg.type==='tick'&&msg.data){S.tick=msg.data.tick||S.tick;if(msg.data.agents)S.agents=msg.data.agents;if(msg.data.tiles)S.tiles=msg.data.tiles;if(msg.data.buildings)S.buildings=msg.data.buildings;if(msg.data.events){S.events=S.events.concat(msg.data.events);if(S.events.length>200)S.events=S.events.slice(-100)}if(msg.data.leaderboard)S.leaderboard=msg.data.leaderboard;updateAll()}}
 setInterval(()=>{if(ws&&ws.readyState===1)ws.send('{"type":"ping"}')},30000);
 
+// === Client-side Event Feed Cycle ===
+const DEMO_EVENTS=[
+  ['Zog idle again (9th tick)','funny','orc'],
+  ['Builder_7 laid castle wall section','build','human'],
+  ['Vrak: "altar must face east, or else"','funny','orc'],
+  ['Gimdar expanded mine into mountain','explore','dwarf'],
+  ['Skrak tried to build lighthouse inland','funny','orc'],
+  ['Sylara completed Tree Shrine canopy','build','elf'],
+  ['Miner_1 struck deep gold vein','build','human'],
+  ['Grak chopped 6 trees furiously','warn','orc'],
+  ['Planner_2 surveyed mountain pass','explore','human'],
+  ['Zog rolled over in sleep','funny','orc'],
+  ['Elara wrote 12-page building code doc','funny','human'],
+  ['Grondo hauled 400 stone blocks','build','orc'],
+];
+const FEED_CLASSES={funny:'agent_message',build:'build_complete',explore:'tile_claimed',warn:'raid_success'};
+const FUNNY_TICKERS=['Zog attempted to build a lighthouse inland','Skrak tried to mine a cloud','Planner_2 issued 40-page terrain report','Vrak: altar must face east, or else','Elara wrote building codes nobody will read'];
+let demoEvtIdx=0;
+
+function fireClientEvent(){
+  const evt=DEMO_EVENTS[demoEvtIdx%DEMO_EVENTS.length];
+  demoEvtIdx++;
+  const msg=evt[0],type=evt[1],team=evt[2];
+  const cls=FEED_CLASSES[type]||'';
+  // Add to DOM feed
+  const el=document.getElementById('event-feed');
+  const div=document.createElement('div');
+  div.className='event-row '+cls;
+  div.innerHTML=`<span class="ev-time">${S.tick||'?'}</span> ${msg}`;
+  el.prepend(div);
+  while(el.children.length>30)el.removeChild(el.lastChild);
+  // Match agent name -> bubble
+  for(const a of S.agents){
+    if(msg.startsWith(a.name)){addBubble(a,msg.substring(a.name.length+1,a.name.length+31));break}
+  }
+  // Funny ticker
+  if(type==='funny'){
+    document.getElementById('last-event').textContent='last: '+FUNNY_TICKERS[Math.floor(Math.random()*FUNNY_TICKERS.length)];
+  }
+}
+
+// === Resource Counter ===
+let cGold=3840,cWood=2210,cStone=1650,cFood=920,cTick=3201;
+function tickResources(){
+  cTick++;
+  cGold+=Math.floor(Math.random()*20);
+  cWood+=Math.floor(Math.random()*14);
+  cStone+=Math.floor(Math.random()*10);
+  cFood+=Math.floor(Math.random()*8);
+  document.getElementById('r-gold').textContent=cGold.toLocaleString();
+  document.getElementById('r-wood').textContent=cWood.toLocaleString();
+  document.getElementById('r-stone').textContent=cStone.toLocaleString();
+  document.getElementById('r-food').textContent=cFood.toLocaleString();
+  document.getElementById('h-tick').textContent=cTick.toLocaleString();
+}
+
 // === Init ===
 window.addEventListener('resize',resize);
 resize();genTerrain();renderTBuf();
 vpX=canvasEl.width/(2*zoom)-(WW*TS)/2;vpY=canvasEl.height/(2*zoom)-(WH*TS)/2;
 requestAnimationFrame(render);connectWS();
+setInterval(fireClientEvent,3600);
+setInterval(tickResources,1000);
 </script>
 </body>
 </html>
