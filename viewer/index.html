@@ -751,117 +751,125 @@ const TEAM_LIGHT={human:'#88aaff',orc:'#ff8866',dwarf:'#ffcc88',elf:'#88ffaa'};
 const TEAM_SKIN={human:'#d4a870',orc:'#7a9a30',dwarf:'#c47a40',elf:'#d0c8a0'};
 const TEAM_HAT={human:'#1a3070',orc:'#3a0a00',dwarf:'#5a2800',elf:'#1a4a10'};
 
-function drawAgentPixelArt(c,ax,ay,agent,sel){
+function drawAgentPixelArt(c,ax,ay,agent,sel,fr,anim){
   const t=agent.faction||'human';
   const col=TEAM_COL[t]||TEAM_COL.human;
   const light=TEAM_LIGHT[t]||TEAM_LIGHT.human;
   const skin=TEAM_SKIN[t]||TEAM_SKIN.human;
   const hat=TEAM_HAT[t]||TEAM_HAT.human;
   const pers=agent.personality||'';
+  fr=fr||0;anim=anim||{};
+  const walking=anim.walking||false;
+  const building=anim.building||false;
+  const faceLeft=anim.faceLeft||false;
+  const dir=faceLeft?-1:1;
+  const phase=Math.floor(fr/8)%2;
+  const walkBob=walking?(phase===0?-1:0):0;
+  const breathe=(!walking&&!building)?Math.sin(fr*0.05)*0.5:0;
+  // Head turn for idle
+  const idleFrames=anim.idleFrames||0;
+  let eyeShift=0;
+  if(idleFrames>60){const lookCycle=(fr%200);if(lookCycle>120&&lookCycle<150)eyeShift=1;else if(lookCycle>150&&lookCycle<180)eyeShift=-1;}
 
   // 1. SHADOW
   c.fillStyle='rgba(0,0,0,0.3)';
   c.beginPath();c.ellipse(ax,ay+2,12,5,0,0,Math.PI*2);c.fill();
 
-  // 2. BODY — chunky rounded block sitting on shadow
+  // LEGS with walk animation
+  const legCol=(t==='dwarf')?'#442208':(t==='orc')?'#441100':'#224488';
+  c.fillStyle=legCol;
+  const lLeg=walking?(phase===0?-2:0):0;
+  const rLeg=walking?(phase===0?0:-2):0;
+  c.fillRect(ax-5*dir-2,ay-2+lLeg,4,4);
+  c.fillRect(ax+2*dir-1,ay-2+rLeg,4,4);
+
+  // 2. BODY with walk bob + breathing
+  const by=ay-14+walkBob;
+  const bh=14+breathe;
   c.fillStyle=col;
-  c.fillRect(ax-8,ay-14,16,14);
-  // Rounded bottom corners
-  c.beginPath();c.arc(ax-6,ay,2,0,Math.PI*2);c.fill();
-  c.beginPath();c.arc(ax+6,ay,2,0,Math.PI*2);c.fill();
-  // Chest/belly highlight
+  c.fillRect(ax-8,by,16,bh);
   c.fillStyle=light;
-  c.fillRect(ax-4,ay-11,8,6);
+  c.fillRect(ax-4,by+3,8,6);
 
-  // 3. HEAD — big head = cute (14x12, nearly as wide as body)
+  // 3. HEAD
+  const hy=by-13;
   c.fillStyle=skin;
-  c.fillRect(ax-7,ay-27,14,12);
-  // Round out the head top
-  c.beginPath();c.arc(ax,ay-27,7,Math.PI,0);c.fill();
+  c.fillRect(ax-7,hy,14,12);
+  c.beginPath();c.arc(ax,hy,7,Math.PI,0);c.fill();
 
-  // 4. EYES — big expressive eyes
-  // White sclera
+  // 4. EYES with direction + look-around
+  const es=eyeShift*dir;
   c.fillStyle='#fff';
-  c.fillRect(ax-5,ay-24,3,3);c.fillRect(ax+2,ay-24,3,3);
-  // Black pupils
+  c.fillRect(ax-5+es,hy+3,3,3);c.fillRect(ax+2+es,hy+3,3,3);
   c.fillStyle='#000';
-  c.fillRect(ax-4,ay-23,2,2);c.fillRect(ax+3,ay-23,2,2);
+  if(faceLeft){
+    c.fillRect(ax-5+es,hy+4,2,2);c.fillRect(ax+2+es,hy+4,2,2);
+  }else{
+    c.fillRect(ax-4+es,hy+4,2,2);c.fillRect(ax+3+es,hy+4,2,2);
+  }
 
-  // 5. HAT — cap overhanging head
+  // 5. HAT
   c.fillStyle=hat;
-  // Hat crown
-  c.fillRect(ax-8,ay-33,16,6);
-  // Round top
-  c.beginPath();c.arc(ax,ay-33,8,Math.PI,0);c.fill();
-  // Brim (wider than head)
+  c.fillRect(ax-8,hy-6,16,6);
+  c.beginPath();c.arc(ax,hy-6,8,Math.PI,0);c.fill();
   c.fillStyle=col;
-  c.fillRect(ax-9,ay-28,18,3);
+  c.fillRect(ax-9,hy-1,18,3);
 
   // 6. TEAM EXTRAS
-  if(t==='dwarf'){
-    // Thick beard
-    c.fillStyle='#9a7a3a';
-    c.fillRect(ax-5,ay-16,10,6);
-    c.beginPath();c.arc(ax,ay-10,5,0,Math.PI);c.fill();
-  }
-  if(t==='elf'){
-    // Pointed ears on sides
-    c.fillStyle=skin;
-    c.beginPath();c.moveTo(ax-7,ay-24);c.lineTo(ax-12,ay-28);c.lineTo(ax-7,ay-20);c.fill();
-    c.beginPath();c.moveTo(ax+7,ay-24);c.lineTo(ax+12,ay-28);c.lineTo(ax+7,ay-20);c.fill();
-  }
-  if(t==='orc'){
-    // Small tusks poking up from jaw
-    c.fillStyle='#e8e8d0';
-    c.fillRect(ax-5,ay-18,2,3);c.fillRect(ax+3,ay-18,2,3);
-  }
+  if(t==='dwarf'){c.fillStyle='#9a7a3a';c.fillRect(ax-5,by-2,10,6);c.beginPath();c.arc(ax,by+4,5,0,Math.PI);c.fill()}
+  if(t==='elf'){c.fillStyle=skin;
+    c.beginPath();c.moveTo(ax-7,hy+3);c.lineTo(ax-12,hy-1);c.lineTo(ax-7,hy+7);c.fill();
+    c.beginPath();c.moveTo(ax+7,hy+3);c.lineTo(ax+12,hy-1);c.lineTo(ax+7,hy+7);c.fill()}
+  if(t==='orc'){c.fillStyle='#e8e8d0';c.fillRect(ax-5,hy+9,2,3);c.fillRect(ax+3,hy+9,2,3)}
 
-  // 7. HELD ITEM
+  // 7. HELD ITEM with animation
+  const toolSide=faceLeft?-1:1;
+  const toolSwing=walking?(phase===0?1:-1):0;
+  const hammerPhase=building?Math.floor(fr/10)%2:-1;
+  const toolOy=hammerPhase===0?-4:hammerPhase===1?2:0;
   if(pers==='lazy'){
+    // Animated zzz
     c.fillStyle='#aaaaff';c.font='bold 13px Courier New';c.textAlign='center';
-    c.fillText('zzz',ax+2,ay-38);
+    for(let zi=0;zi<3;zi++){
+      const zx=ax+2+zi*4;
+      const zy=hy-10-zi*6+Math.sin(fr*0.06+zi*1.5)*3;
+      c.globalAlpha=0.8-zi*0.2;
+      c.fillText('z',zx,zy);
+    }
+    c.globalAlpha=1;
   }else{
-    const ix=ax+10,iy=ay-10;
+    const ix=ax+10*toolSide+toolSwing,iy=by-2+toolOy;
     if(t==='human'){
-      // Hammer
       c.fillStyle='#5a3010';c.fillRect(ix,iy-8,2,10);
       c.fillStyle='#888890';c.fillRect(ix-2,iy-10,6,4);
     }else if(t==='orc'){
-      // Axe
       c.fillStyle='#5a3010';c.fillRect(ix,iy-8,2,10);
-      c.fillStyle='#cc3311';c.fillRect(ix+1,iy-10,5,5);
-      c.beginPath();c.moveTo(ix+6,iy-10);c.lineTo(ix+9,iy-8);c.lineTo(ix+6,iy-5);c.fill();
+      c.fillStyle='#cc3311';c.fillRect(ix+1*toolSide,iy-10,5,5);
     }else if(t==='dwarf'){
-      // Pickaxe
       c.fillStyle='#5a3010';c.fillRect(ix,iy-8,2,10);
-      c.fillStyle='#888890';c.fillRect(ix-1,iy-10,6,3);
-      c.fillRect(ix+3,iy-10,2,5);
+      c.fillStyle='#888890';c.fillRect(ix-1,iy-10,6,3);c.fillRect(ix+3,iy-10,2,5);
     }else if(t==='elf'){
-      // Staff with green gem
       c.fillStyle='#5a3010';c.fillRect(ix,iy-10,2,12);
-      c.fillStyle='#44ee66';
-      c.beginPath();c.arc(ix+1,iy-12,3,0,Math.PI*2);c.fill();
-      c.fillStyle='#88ffaa';
-      c.beginPath();c.arc(ix,iy-13,1.5,0,Math.PI*2);c.fill();
+      c.fillStyle='#44ee66';c.beginPath();c.arc(ix+1,iy-12,3,0,Math.PI*2);c.fill();
+    }
+    // Building spark on hammer down
+    if(hammerPhase===1&&fr%10<5){
+      c.fillStyle='#ffee44';c.fillRect(ix-1,iy+2,3,3);
+      c.fillStyle='#ffcc22';c.fillRect(ix+2,iy,2,2);
     }
   }
 
-  // Selection highlight
-  if(sel){
-    c.strokeStyle='#ffcc44';c.lineWidth=2;
-    c.strokeRect(ax-10,ay-36,20,40);
-    c.lineWidth=1;
-  }
+  // Selection
+  if(sel){c.strokeStyle='#ffcc44';c.lineWidth=2;c.strokeRect(ax-10,hy-10,20,ay-hy+14);c.lineWidth=1}
 
-  // 8. NAME TAG — above head with 6px gap
+  // 8. NAME TAG
   const emoji=MI[agent.mood]||'';
   const nameStr=agent.name;
   c.font='bold 10px Courier New';
   const tw=c.measureText(nameStr).width;
   const lblW=tw+22;
-  const lblX=ax-lblW/2,lblY=ay-46;
+  const lblX=ax-lblW/2,lblY=hy-22;
   c.fillStyle='rgba(0,0,0,0.8)';
-  // Rounded pill background
   c.beginPath();
   if(c.roundRect)c.roundRect(lblX,lblY,lblW,16,4);
   else c.fillRect(lblX,lblY,lblW,16);
@@ -1055,19 +1063,35 @@ for(const a of S.agents){
     ctx.globalAlpha=1;
   }
 
-  // 5. IDLE ANIMATIONS
-  let idleBob=0;
-  if((a._idleFrames||0)>60){
-    idleBob=Math.sin(frame*0.06)*1;// subtle bob
-  }
-  // Lazy agents: floating z particles
-  if(a.personality==='lazy'&&frame%45===0){
-    spawnParticle(vx*ts+ts/2+(Math.random()-0.5)*6,vy*ts-10,'leaf');// reuse leaf type for drift
+  // Detect animation state
+  const isWalking=v&&(Math.abs(v.x-v.tx)>0.001||Math.abs(v.y-v.ty)>0.001);
+  const faceLeft=v&&(v.tx<v.x);
+
+  // Check if near under-construction building
+  let isBuilding=false;
+  for(const b of S.buildings){
+    if(!b.complete&&b.progress!=null&&b.progress<1){
+      const bdx=Math.abs(vx-b.x),bdy=Math.abs(vy-b.y);
+      if(bdx<3&&bdy<3){isBuilding=true;break}
+    }
   }
 
-  const ax=vx*ts+ts/2,ay=vy*ts+ts-4+idleBob;
+  // Walking dust puffs
+  if(isWalking&&frame%20===0){
+    spawnParticle(vx*ts+ts/2,vy*ts+ts,'debris');
+  }
+  // Building impact particles
+  if(isBuilding&&frame%10===4){
+    spawnParticle(vx*ts+ts/2+((Math.random()-0.5)*8),vy*ts,'debris');
+  }
+  // Lazy z particles
+  if(a.personality==='lazy'&&frame%45===0){
+    spawnParticle(vx*ts+ts/2+(Math.random()-0.5)*6,vy*ts-10,'leaf');
+  }
+
+  const ax=vx*ts+ts/2,ay=vy*ts+ts-4;
   const sel=selAgent&&selAgent.id===a.id;
-  drawAgentPixelArt(ctx,ax,ay,a,sel);
+  drawAgentPixelArt(ctx,ax,ay,a,sel,frame,{walking:isWalking,building:isBuilding,faceLeft,idleFrames:a._idleFrames||0});
 }
 
 // === Ambient Particles ===
