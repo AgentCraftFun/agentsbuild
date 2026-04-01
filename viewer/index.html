@@ -111,6 +111,12 @@ canvas{display:block;image-rendering:pixelated;image-rendering:crisp-edges}
   </div>
 </div>
 <script>
+// === Stability: clear old intervals on hot reload ===
+if(window._gameIntervals)window._gameIntervals.forEach(clearInterval);
+window._gameIntervals=[];
+function safeInterval(fn,ms){const id=setInterval(fn,ms);window._gameIntervals.push(id);return id}
+// === Performance tracking ===
+let _frameTimes=[];let _lastFrameTime=performance.now();let _slowMode=false;
 // === Noise (exact copy of server) ===
 class SeededRNG{constructor(s){this.seed=s}next(){this.seed^=this.seed<<13;this.seed^=this.seed>>17;this.seed^=this.seed<<5;return(this.seed>>>0)/4294967296}}
 let _perm=null,_cs=null;
@@ -1943,6 +1949,7 @@ function updateAgentMovement(){
             if(site){
               const cb={type:next.type,name:next.name,abbr:next.abbr,x:site.x,y:site.y,
                 progress:0,complete:false,faction:next.faction,width:next.w,height:next.h,tall:next.tall,claimedBy:a.id};
+              if(G.clientBuildings.length>=30){action='chop';continue}// building cap
               G.clientBuildings.push(cb);
               G.wood-=next.cost.wood;G.stone-=next.cost.stone;G.gold-=next.cost.gold;
               st.state='building';st.target=cb;st.timer=0;
@@ -2170,7 +2177,22 @@ function updateMinimap(){
 // === Render ===
 let frame=0;
 function render(){
+try{
+// Frame timing
+const _now=performance.now(),_dt=_now-_lastFrameTime;_lastFrameTime=_now;
+_frameTimes.push(_dt);if(_frameTimes.length>60)_frameTimes.shift();
+_slowMode=_dt>32;// below 30fps
 frame++;G.tick=frame;
+// Heartbeat every 60 seconds
+if(frame%(60*60)===0)console.log(`Game heartbeat: ${frame} frames, ${S.agents.length} agents, ${G.clientBuildings.length} buildings, ${particles.length} particles, ${footprints.length} footprints`);
+// Periodic cleanup sweep every 60 seconds
+if(frame%(60*60)===30){
+  for(let i=particles.length-1;i>=0;i--)if(!particles[i]||particles[i].life>=particles[i].maxLife)particles.splice(i,1);
+  for(let i=bubbles.length-1;i>=0;i--)if(!bubbles[i]||bubbles[i].life<=0)bubbles.splice(i,1);
+  for(let i=stumps.length-1;i>=0;i--)if(!stumps[i]||stumps[i].timer<=0)stumps.splice(i,1);
+  for(let i=impactTexts.length-1;i>=0;i--)if(!impactTexts[i]||impactTexts[i].life>=impactTexts[i].maxLife)impactTexts.splice(i,1);
+  for(let i=footprints.length-1;i>=0;i--)if(!footprints[i]||footprints[i].life<=0)footprints.splice(i,1);
+}
 // Smooth pan animation
 if(panTarget&&panFrames>0){
   vpX+=(panTarget.vpX-vpX)*0.12;vpY+=(panTarget.vpY-vpY)*0.12;
@@ -2451,7 +2473,9 @@ for(let fi=footprints.length-1;fi>=0;fi--){
   ctx.fillStyle=`rgba(90,80,60,${fp.life/120*0.15})`;
   ctx.fillRect(fp.x-1,fp.y,2,1);
 }
-if(footprints.length>100)footprints.splice(0,30);
+if(footprints.length>60)footprints.splice(0,20);
+if(impactTexts.length>10)impactTexts.splice(0,5);
+if(stumps.length>15)stumps.splice(0,5);
 
 // Impact text particles
 for(let ti=impactTexts.length-1;ti>=0;ti--){
@@ -2590,13 +2614,15 @@ if(weatherState.type==='rain'){
   }
 }
 
-// AMBIENT CREATURES (butterflies stay screen-space)
+// AMBIENT CREATURES (skip in slow mode)
+if(!_slowMode){
 updateAmbientCreatures(cw2,ch2);
 for(const bf of ambientButterflies){
   ctx.fillStyle=bf.col;
   ctx.fillRect(bf.x-1,bf.y-1,3,3);
   ctx.fillRect(bf.x-3,bf.y,2,2);ctx.fillRect(bf.x+2,bf.y,2,2);
 }
+}// end slow mode skip
 
 // 6. PULSE LIVE INDICATOR
 const liveEl=document.getElementById('h-status');
@@ -2608,19 +2634,21 @@ if(S.connected&&liveEl){
 }
 
 updateTooltip();
+}catch(e){console.error('Frame error:',e)}
 requestAnimationFrame(render)}
 
 // === Speech Bubble System ===
 const bubbles=[];
 function addBubble(agent,text){
   for(let i=bubbles.length-1;i>=0;i--)if(bubbles[i].agent.id===agent.id)bubbles.splice(i,1);
+  while(bubbles.length>=5)bubbles.shift();// cap at 5
   bubbles.push({agent,text:text.substring(0,30),life:220,maxLife:220});
 }
 
 // === Ambient Particle System ===
 const particles=[];
 function spawnParticle(x,y,type){
-  if(particles.length>=50)return;// hard cap
+  if(particles.length>=30){particles.shift()}// hard cap 30, remove oldest
   const p={x,y,type,life:0,maxLife:60,alpha:1,size:2,color:'#fff',vx:0,vy:0,radius:0};
   if(type==='gold'){
     p.color='#ffd700';p.size=2;p.vy=-0.3;p.maxLife=60;
@@ -2692,7 +2720,7 @@ function updateParticles(){
       p.vy+=0.08;// gravity
       p.alpha=1-t;
     }
-    if(particles.length>50)particles.splice(0,20);// hard cap
+    // cap enforced in spawnParticle
   }
 }
 
@@ -2825,7 +2853,7 @@ function handleMsg(msg){
 if(msg.type==='pong')return;
 if(msg.type==='world_state'&&msg.data){S.tick=msg.data.tick||0;S.agents=msg.data.agents||[];S.tiles=msg.data.tiles||[];S.buildings=msg.data.buildings||[];S.events=msg.data.events||[];S.leaderboard=msg.data.leaderboard||[];updateAll()}
 if(msg.type==='tick'&&msg.data){S.tick=msg.data.tick||S.tick;if(msg.data.agents)S.agents=msg.data.agents;if(msg.data.tiles)S.tiles=msg.data.tiles;if(msg.data.buildings)S.buildings=msg.data.buildings;if(msg.data.events){S.events=S.events.concat(msg.data.events);if(S.events.length>200)S.events=S.events.slice(-100)}if(msg.data.leaderboard)S.leaderboard=msg.data.leaderboard;updateAll()}}
-setInterval(()=>{if(ws&&ws.readyState===1)ws.send('{"type":"ping"}')},30000);
+safeInterval(()=>{if(ws&&ws.readyState===1)ws.send('{"type":"ping"}')},30000);
 
 // === Resource system now driven by agent AI state machine ===
 // (old random counters and demo events removed)
@@ -3070,7 +3098,7 @@ vpX=canvasEl.width/(2*zoom)-(WW*TS)/2;vpY=canvasEl.height/(2*zoom)-(WH*TS)/2;
 setTimeout(()=>{document.getElementById('intro-overlay').classList.add('fade')},2500);
 setTimeout(()=>{const io=document.getElementById('intro-overlay');if(io)io.remove()},4500);
 requestAnimationFrame(render);connectWS();
-setInterval(tickFood,10000);
+safeInterval(tickFood,10000);
 </script>
 </body>
 </html>
