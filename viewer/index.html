@@ -1558,7 +1558,6 @@ function pickBuildSite(bdef){
 }
 
 function updateAgentMovement(){
-  const lazyMult=0.5;
   const hasLumberMill=G.clientBuildings.some(b=>b.type==='lumber_mill'&&b.complete);
   const hasQuarry=G.clientBuildings.some(b=>b.type==='quarry'&&b.complete);
 
@@ -1571,80 +1570,92 @@ function updateAgentMovement(){
 
     const isLazy=a.personality==='lazy';
     const speed=isLazy?0.008:0.015;
-
-    // Lerp movement
     v.x+=(v.tx-v.x)*speed;
     v.y+=(v.ty-v.y)*speed;
-
     const atTarget=Math.abs(v.x-v.tx)<0.005&&Math.abs(v.y-v.ty)<0.005;
 
-    // State machine
     if(st.state==='idle'){
       st.taskCooldown--;
       if(st.taskCooldown>0)continue;
-      st.taskCooldown=isLazy?450:300;
+      // Lazy agents take breaks
+      if(isLazy){st.taskCooldown=120;if(Math.random()<0.4)continue}
+      else{st.taskCooldown=30}// Fast re-engage (was 300!)
 
-      // Decide what to do
-      const next=getNextBuilding();
-      const needed=next?next.cost:{wood:0,stone:0,gold:0};
+      // Personality-driven decision
+      const roll=Math.random();
+      const pers=a.personality||'optimist';
+      let action='gather';// default
+      if(pers==='aggressive'){action=roll<0.6?'chop':roll<0.9?'mine':'build'}
+      else if(pers==='grinder'){action='gather_needed'}
+      else if(pers==='analyst'){action=roll<0.8?'build':'gather_needed'}
+      else if(pers==='optimist'){action=roll<0.33?'chop':roll<0.66?'mine':'build'}
+      else if(pers==='chaotic'){action=['chop','mine','build','gold'][Math.floor(roll*4)]}
+      else if(pers==='lazy'){action=roll<0.5?'chop':'mine'}
+      else if(pers==='confused'){action=['chop','mine','build','idle'][Math.floor(roll*4)]}
+      else{action='gather_needed'}// overachiever etc
 
-      // If can afford next building and no one is building it, build
-      if(next&&canAfford(needed)&&!G.clientBuildings.find(b=>!b.complete&&b.type===next.type)){
-        const site=pickBuildSite(next);
-        if(site){
-          const cb={type:next.type,name:next.name,abbr:next.abbr,x:site.x,y:site.y,
-            progress:0,complete:false,faction:next.faction,width:next.w,height:next.h,tall:next.tall};
-          G.clientBuildings.push(cb);
-          G.wood-=needed.wood;G.stone-=needed.stone;G.gold-=needed.gold;
-          st.state='building';st.target=cb;st.timer=0;
-          v.tx=site.x/WW;v.ty=site.y/WH;
-          gameEvent(`${a.name} started building ${next.name}!`,'build_started');
-          continue;
+      // Resolve 'gather_needed' to specific resource
+      if(action==='gather'||action==='gather_needed'){
+        const next=getNextBuilding();
+        if(next){
+          const def={wood:Math.max(0,next.cost.wood-G.wood),stone:Math.max(0,next.cost.stone-G.stone),gold:Math.max(0,next.cost.gold-G.gold)};
+          if(def.gold>def.wood&&def.gold>def.stone)action='gold';
+          else if(def.stone>def.wood)action='mine';
+          else action='chop';
+        }else action='chop';
+      }
+
+      // Try to BUILD: find unclaimed affordable building
+      if(action==='build'){
+        const next=getNextBuilding();
+        if(next&&canAfford(next.cost)){
+          // Check no one else is already building this type
+          const existing=G.clientBuildings.find(b=>!b.complete&&b.type===next.type);
+          if(existing&&!existing.claimedBy){
+            // Join existing unclaimed site
+            existing.claimedBy=a.id;
+            st.state='building';st.target=existing;st.timer=0;
+            v.tx=existing.x/WW;v.ty=existing.y/WH;
+            continue;
+          }
+          if(!existing){
+            const site=pickBuildSite(next);
+            if(site){
+              const cb={type:next.type,name:next.name,abbr:next.abbr,x:site.x,y:site.y,
+                progress:0,complete:false,faction:next.faction,width:next.w,height:next.h,tall:next.tall,claimedBy:a.id};
+              G.clientBuildings.push(cb);
+              G.wood-=next.cost.wood;G.stone-=next.cost.stone;G.gold-=next.cost.gold;
+              st.state='building';st.target=cb;st.timer=0;
+              v.tx=site.x/WW;v.ty=site.y/WH;
+              gameEvent(`${a.name} started building ${next.name}!`,'build_started');
+              continue;
+            }
+          }
         }
+        // Can't build — fallback to gathering
+        action='chop';
       }
 
-      // Otherwise gather most-needed resource
-      let gatherType='wood';
-      if(next){
-        const deficits={
-          wood:Math.max(0,needed.wood-G.wood),
-          stone:Math.max(0,needed.stone-G.stone),
-          gold:Math.max(0,needed.gold-G.gold)
-        };
-        if(deficits.stone>deficits.wood&&deficits.stone>deficits.gold)gatherType='stone';
-        else if(deficits.gold>deficits.wood&&deficits.gold>deficits.stone)gatherType='gold';
-      }
-
-      // Personality overrides
-      if(a.personality==='aggressive'||a.personality==='chaotic')gatherType=Math.random()<0.5?'wood':'stone';
-      if(a.personality==='grinder'){}// keep default
-      if(a.personality==='analyst'||a.personality==='optimist'){
-        // Prefer building if possible
-        const inProg=G.clientBuildings.find(b=>!b.complete);
-        if(inProg){st.state='building';st.target=inProg;v.tx=inProg.x/WW;v.ty=inProg.y/WH;continue}
-      }
-
-      // Find resource target
-      if(gatherType==='wood'){
+      // GATHER resources
+      if(action==='chop'){
         const tree=findNearestDetail(v.x,v.y,['deciduous','oak','pine','birch']);
         if(tree){st.state='walking_to_tree';st.target=tree;v.tx=tree.x/WW/TS+0.01;v.ty=tree.y/WH/TS+0.01}
-        else{v.tx=0.1+Math.random()*0.8;v.ty=0.1+Math.random()*0.8}
-      }else if(gatherType==='stone'){
+        else{v.tx=0.1+Math.random()*0.8;v.ty=0.1+Math.random()*0.8;st.taskCooldown=60}
+      }else if(action==='mine'){
         const rock=findNearestDetail(v.x,v.y,['rock','lgboulder','mdboulder']);
         if(rock){st.state='walking_to_rock';st.target=rock;v.tx=rock.x/WW/TS+0.01;v.ty=rock.y/WH/TS+0.01}
-        else{// Walk to mountain area
-          v.tx=0.4+Math.random()*0.2;v.ty=0.1+Math.random()*0.2}
-      }else if(gatherType==='gold'){
+        else{v.tx=0.4+Math.random()*0.2;v.ty=0.1+Math.random()*0.2;st.taskCooldown=60}
+      }else if(action==='gold'){
         const dep=goldDeposits.find(g=>g.alive);
         if(dep){st.state='walking_to_gold';st.target=dep;v.tx=dep.x/WW/TS+0.01;v.ty=dep.y/WH/TS+0.01}
-        else{v.tx=0.4+Math.random()*0.2;v.ty=0.1+Math.random()*0.2}
+        else{action='mine';st.taskCooldown=10}// retry as stone
       }
     }
     else if(st.state==='walking_to_tree'||st.state==='walking_to_rock'||st.state==='walking_to_gold'){
       if(atTarget){
-        if(st.state==='walking_to_tree'){st.state='chopping';st.timer=hasLumberMill?90:180}
-        else if(st.state==='walking_to_rock'){st.state='mining';st.timer=hasQuarry?120:240}
-        else{st.state='mining_gold';st.timer=360}
+        if(st.state==='walking_to_tree'){st.state='chopping';st.timer=hasLumberMill?50:100}
+        else if(st.state==='walking_to_rock'){st.state='mining';st.timer=hasQuarry?70:140}
+        else{st.state='mining_gold';st.timer=200}
       }
     }
     else if(st.state==='chopping'){
@@ -1652,9 +1663,8 @@ function updateAgentMovement(){
       if(st.timer<=0){
         G.wood+=5;
         gameEvent(`${a.name} chopped a tree (+5 wood)`,'build_complete');
-        // Mark tree as harvested
         if(st.target)harvestables.set(`${st.target.x},${st.target.y}`,true);
-        st.state='idle';st.taskCooldown=60;
+        st.state='idle';st.taskCooldown=15;
       }
     }
     else if(st.state==='mining'){
@@ -1663,7 +1673,7 @@ function updateAgentMovement(){
         G.stone+=3;
         gameEvent(`${a.name} mined stone (+3 stone)`,'build_complete');
         if(st.target)harvestables.set(`${st.target.x},${st.target.y}`,true);
-        st.state='idle';st.taskCooldown=60;
+        st.state='idle';st.taskCooldown=15;
       }
     }
     else if(st.state==='mining_gold'){
@@ -1672,17 +1682,17 @@ function updateAgentMovement(){
         G.gold+=1;
         gameEvent(`${a.name} found gold (+1 gold)`,'build_complete');
         if(st.target)st.target.alive=false;
-        st.state='idle';st.taskCooldown=60;
+        st.state='idle';st.taskCooldown=15;
       }
     }
     else if(st.state==='building'){
-      if(!st.target||st.target.complete){st.state='idle';continue}
+      if(!st.target||st.target.complete){st.state='idle';st.taskCooldown=15;continue}
       if(!atTarget){v.tx=st.target.x/WW;v.ty=st.target.y/WH;continue}
-      st.target.progress=Math.min(1,st.target.progress+0.002);
+      st.target.progress=Math.min(1,st.target.progress+0.008);// 5x faster!
       if(st.target.progress>=1){
-        st.target.complete=true;
+        st.target.complete=true;st.target.claimedBy=null;
         gameEvent(`${a.name} completed ${st.target.name}!`,'build_complete');
-        st.state='idle';st.taskCooldown=120;
+        st.state='idle';st.taskCooldown=30;
       }
     }
   }
@@ -1905,33 +1915,24 @@ for(const item of renderItems){
     const b=item.b;
     const bw=(b.width||1)*ts,bh=(b.height||1)*ts,bx=b.x*ts,by=b.y*ts;
     drawBuilding(ctx,b,bx+2,by+2,bw-4,bh-4,frame);
-    // Label (only when mostly built)
+    // Progress bar above building during construction
     const p=b.progress!=null?b.progress:1;
-    if(p>0.92){
-      const label=BLabels[b.type]||'??';
+    if(p<1){
+      ctx.fillStyle='#333';ctx.fillRect(bx,by-6,bw,3);
+      ctx.fillStyle='#44cc66';ctx.fillRect(bx,by-6,bw*p,3);
+    }
+    // Small type name below building only (no abbreviation on top)
+    if(p>0.5){
       const nm=BNames[b.type]||b.type;
-      const fc2=b.faction||'human',cols2=BFC[fc2]||BFC.human;
-      ctx.font=`bold ${Math.max(10,ts*0.5)}px Courier New`;
-      const tw2=ctx.measureText(label).width;
-      const lx=bx+bw/2,ly=by+bh/2;
-      ctx.fillStyle='rgba(0,0,0,0.8)';
+      ctx.font='8px Courier New';
+      const ntw=ctx.measureText(nm).width;
+      ctx.fillStyle='rgba(0,0,0,0.6)';
       ctx.beginPath();
-      if(ctx.roundRect)ctx.roundRect(lx-tw2/2-5,ly-8,tw2+10,16,4);
-      else ctx.rect(lx-tw2/2-5,ly-8,tw2+10,16);
-      ctx.fill();ctx.strokeStyle=cols2.accent;ctx.lineWidth=1;ctx.stroke();
-      ctx.fillStyle='#fff';ctx.textAlign='center';ctx.textBaseline='middle';
-      ctx.fillText(label,lx,ly);
-      // Name below (only if zoom > 0.7 to reduce clutter)
-      if(zoom>0.7){
-        ctx.font=`${Math.max(8,ts*0.4)}px Courier New`;
-        const ntw=ctx.measureText(nm).width;
-        ctx.fillStyle='rgba(0,0,0,0.7)';
-        ctx.beginPath();
-        if(ctx.roundRect)ctx.roundRect(bx+bw/2-ntw/2-4,by+bh+2,ntw+8,13,3);
-        else ctx.rect(bx+bw/2-ntw/2-4,by+bh+2,ntw+8,13);
-        ctx.fill();ctx.fillStyle='#ddd';ctx.textAlign='center';ctx.textBaseline='top';
-        ctx.fillText(nm,bx+bw/2,by+bh+4);
-      }
+      if(ctx.roundRect)ctx.roundRect(bx+bw/2-ntw/2-3,by+bh+2,ntw+6,11,3);
+      else ctx.rect(bx+bw/2-ntw/2-3,by+bh+2,ntw+6,11);
+      ctx.fill();
+      ctx.fillStyle='#ccc';ctx.textAlign='center';ctx.textBaseline='top';
+      ctx.fillText(nm,bx+bw/2,by+bh+3);
     }
   }else if(item.type==='agent'){
     const ad=agentRenderData[item.idx];
