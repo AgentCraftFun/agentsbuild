@@ -61,6 +61,7 @@ canvas{display:block;image-rendering:pixelated;image-rendering:crisp-edges}
 </style>
 </head>
 <body>
+<div id="notif-bar" style="position:fixed;top:-40px;left:50%;transform:translateX(-50%);background:rgba(10,10,30,0.9);border:1px solid #f0c040;border-radius:0 0 8px 8px;padding:8px 24px;color:#f0c040;font:bold 12px 'Courier New',monospace;z-index:600;transition:top 0.3s ease;text-align:center;white-space:nowrap"></div>
 <div id="intro-overlay"><div id="intro-text">Your agents have arrived in an untamed land...<br><br><span style="font-size:11px;color:#888">They must gather, build, and survive.</span></div></div>
 <div id="era-announce"></div>
 <div id="app">
@@ -68,9 +69,9 @@ canvas{display:block;image-rendering:pixelated;image-rendering:crisp-edges}
     <h1>Agents at Work</h1>
     <div id="header-stats">
       <span id="h-era-wrap" style="display:flex;align-items:center;gap:4px"><span id="h-era-icon">🪵</span> <span class="val" id="h-era">Wood Age</span></span>
-      <span>Agents: <span class="val" id="h-agents">0</span></span>
+      <span>Pop: <span class="val" id="h-agents">0</span></span>
       <span id="h-time-wrap" style="display:flex;align-items:center;gap:3px"><span id="h-time-icon">☀️</span><span class="val" id="h-time-name">Morning</span></span>
-      <span>Tick: <span class="val" id="h-tick">0</span></span>
+      <span>⏱<span class="val" id="h-playtime">0:00</span></span>
       <span><span id="live-dot"></span><span id="h-status">OFFLINE</span></span>
     </div>
   </div>
@@ -88,8 +89,12 @@ canvas{display:block;image-rendering:pixelated;image-rendering:crisp-edges}
       <div id="agent-list"></div>
     </div>
     <div id="build-section" style="border-top:1px solid var(--border);border-bottom:1px solid var(--border)">
-      <div class="section-title">Next Build</div>
-      <div id="build-preview" style="padding:6px 12px;font-size:11px"></div>
+      <div class="section-title">Available Builds</div>
+      <div id="build-preview" style="padding:4px 12px;font-size:10px;max-height:100px;overflow-y:auto"></div>
+    </div>
+    <div id="village-section" style="border-bottom:1px solid var(--border);display:none">
+      <div class="section-title">Villages</div>
+      <div id="village-list" style="padding:4px 12px;font-size:10px"></div>
     </div>
     <div id="event-section">
       <div class="section-title">Event Feed</div>
@@ -1577,7 +1582,20 @@ function getNextBuilding(){
 
 function canAfford(cost){return G.wood>=cost.wood&&G.stone>=cost.stone&&G.gold>=cost.gold}
 
+// === Notification System ===
+let notifTimer=0;
+function showNotification(msg){
+  const nb=document.getElementById('notif-bar');
+  nb.textContent=msg;nb.style.top='0px';
+  clearTimeout(notifTimer);
+  notifTimer=setTimeout(()=>{nb.style.top='-40px'},3000);
+}
+
 function gameEvent(msg,cls){
+  // Trigger notification for important events
+  if(msg.includes('🏰')||msg.includes('⭐')||msg.includes('🏘️')||msg.includes('Village')||msg.includes('formed')||msg.includes('UNLOCKED')||msg.includes('completed')&&(msg.includes('Town Hall')||msg.includes('Castle'))){
+    showNotification(msg);
+  }
   const el=document.getElementById('event-feed');
   const div=document.createElement('div');
   const isMilestone=msg.includes('completed')||msg.includes('new era')||msg.includes('Era');
@@ -2085,15 +2103,34 @@ function updateGameUI(){
   const built=new Set(G.clientBuildings.filter(b=>b.complete).map(b=>b.type));
   const eraProg=eraBuildings.length?eraBuildings.filter(b=>built.has(b.type)).length/eraBuildings.length:0;
   document.getElementById('era-fill').style.width=`${Math.round(eraProg*100)}%`;
-  // Next build preview
+  // Available builds (show all affordable in current era)
   const bp=document.getElementById('build-preview');
-  if(next){
-    const builder=S.agents.find(a=>{const st=agentState.get(a.id);return st&&st.state==='building'});
-    const wC=nc.wood?`<span style="color:${G.wood>=nc.wood?'#aaffaa':'#ff6644'}">${G.wood}/${nc.wood}</span>`:'';
-    const sC=nc.stone?` <span style="color:${G.stone>=nc.stone?'#aaffaa':'#ff6644'}">${G.stone}/${nc.stone}</span>`:'';
-    const gC=nc.gold?` <span style="color:${G.gold>=nc.gold?'#aaffaa':'#ff6644'}">${G.gold}/${nc.gold}</span>`:'';
-    bp.innerHTML=`<b style="color:#ddd">${next.name}</b><br>🪵${wC} 🪨${sC} 🪙${gC}<br><span style="color:var(--dim);font-size:9px">${builder?'🔨 '+builder.name+' building':'Waiting for resources...'}</span>`;
-  }else{bp.innerHTML='<span style="color:#aaffaa">All buildings complete!</span>'}
+  const builtTypes=new Set(G.clientBuildings.map(b=>b.type));
+  const available=TECH_TREE.filter(b=>b.era<=G.era&&!builtTypes.has(b.type));
+  if(available.length>0){
+    bp.innerHTML=available.slice(0,4).map(b=>{
+      const c=b.cost,aff=canAfford(c);
+      const builder=S.agents.find(a2=>{const st2=agentState.get(a2.id);return st2&&st2.state==='building'&&st2.target&&st2.target.type===b.type});
+      const inProg=G.clientBuildings.find(cb=>cb.type===b.type&&!cb.complete);
+      const badge=aff?'<span style="color:#aaffaa;font-size:8px"> ✓Ready</span>':'';
+      const progTxt=inProg?` <span style="color:#ff8844">${Math.round(inProg.progress*100)}%</span>`:'';
+      const builderTxt=builder?`<span style="color:var(--dim)"> 🔨${builder.name}</span>`:'';
+      return`<div style="margin-bottom:3px"><b style="color:#ddd">${b.name}</b>${badge}${progTxt}${builderTxt}<br><span style="font-size:9px">🪵<span style="color:${G.wood>=c.wood?'#aaffaa':'#ff6644'}">${c.wood}</span> 🪨<span style="color:${G.stone>=c.stone?'#aaffaa':'#ff6644'}">${c.stone}</span> 🪙<span style="color:${G.gold>=c.gold?'#aaffaa':'#ff6644'}">${c.gold}</span></span></div>`;
+    }).join('');
+  }else{bp.innerHTML='<span style="color:#aaffaa">All era buildings complete!</span>'}
+  // Village list
+  const vs=document.getElementById('village-section');
+  const vl2=document.getElementById('village-list');
+  if(villages.length>0){
+    vs.style.display='';
+    vl2.innerHTML=villages.map(v2=>{
+      const pop=S.agents.filter(a2=>{const v3=agentVisual.get(a2.id);return v3&&Math.abs(v3.x*WW-v2.cx)+Math.abs(v3.y*WH-v2.cy)<15}).length;
+      return`<div style="margin-bottom:3px"><b style="color:${FC[v2.faction]||'#ccc'}">${v2.name}</b> <span style="color:var(--dim)">${v2.buildings.length} bldgs, ${pop} pop</span></div>`;
+    }).join('');
+  }else{vs.style.display='none'}
+  // Playtime
+  const secs=Math.floor(frame/60);
+  document.getElementById('h-playtime').textContent=`${Math.floor(secs/60)}:${String(secs%60).padStart(2,'0')}`;
   // Minimap
   updateMinimap();
 }
@@ -2694,6 +2731,9 @@ function getActionText(a){
   return a.mood||'idle';
 }
 
+function getMoodEmoji(soc){
+  if(soc.energy<20)return'😴';if(soc.hunger<30)return'😫';if(soc.morale>80)return'😊';if(soc.morale<30)return'😞';return'😐';
+}
 function updateAgentList(){
 const el=document.getElementById('agent-list');
 el.innerHTML=[...S.agents].sort((a,b)=>(a.name||'').localeCompare(b.name||'')).map(a=>{
@@ -2703,24 +2743,22 @@ const icon=STATE_ICONS[st.state]||'💤';
 const label=STATE_LABELS[st.state]||'Idle';
 let extra='';
 if(st.state==='building'&&st.target)extra=` ${st.target.name} (${Math.round((st.target.progress||0)*100)}%)`;
-else if(st.state==='chopping')extra=` (${Math.max(0,Math.round(st.timer/60))}s)`;
-else if(st.state==='mining')extra=` (${Math.max(0,Math.round(st.timer/60))}s)`;
-else if(st.state==='mining_gold')extra=` (${Math.max(0,Math.round(st.timer/60))}s)`;
-// Progress for timed actions
+else if(['chopping','mining','mining_gold'].includes(st.state))extra=` (${Math.max(0,Math.round(st.timer/60))}s)`;
 let progPct=0,progCol='#4488ff';
-if(st.state==='chopping'){progPct=1-st.timer/180;progCol='#44cc44'}
-else if(st.state==='mining'){progPct=1-st.timer/240;progCol='#8888aa'}
-else if(st.state==='mining_gold'){progPct=1-st.timer/360;progCol='#ffcc44'}
+if(st.state==='chopping'){progPct=1-st.timer/100;progCol='#44cc44'}
+else if(st.state==='mining'){progPct=1-st.timer/140;progCol='#8888aa'}
+else if(st.state==='mining_gold'){progPct=1-st.timer/200;progCol='#ffcc44'}
 else if(st.state==='building'&&st.target){progPct=st.target.progress||0;progCol='#ff8844'}
-const progBar=progPct>0?`<div class="agent-progress"><div class="agent-progress-fill" style="width:${Math.round(progPct*100)}%;background:${progCol}"></div></div>`:'';
+const progBar=progPct>0?`<div class="agent-progress"><div class="agent-progress-fill" style="width:${Math.round(Math.min(100,progPct*100))}%;background:${progCol}"></div></div>`:'';
 const soc=getAgentSocial(a.id);
-const clanTag=soc.clan?`<span style="font-size:8px;color:${FC[fc]};opacity:0.7"> [${soc.clan}]</span>`:'';
-const needsBar=`<span style="font-size:8px;color:var(--dim);margin-left:4px">${soc.hunger<50?'🍖':''}${soc.energy<30?'💤':''}${soc.morale<40?'😞':''}</span>`;
+const clanBadge=soc.clan?`<span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:${FC[fc]};font-size:6px;text-align:center;line-height:8px;color:#fff;margin-right:2px">${soc.clan[0]}</span>`:'';
+const mood=getMoodEmoji(soc);
+const inv=`<span style="font-size:8px;color:var(--dim)">🪵${Math.round(G.wood/S.agents.length)} 🪨${Math.round(G.stone/S.agents.length)}</span>`;
 return`<div class="agent-row" onclick="selAg('${a.id}')">
 <div class="agent-icon" style="background:${FC[fc]};color:#fff">${FI[fc]||'?'}</div>
 <div class="agent-info">
-<div class="agent-name" style="color:${FC[fc]}">${a.name}${clanTag}${needsBar}</div>
-<div class="agent-action">${icon} ${label}${extra}</div>
+<div class="agent-name" style="color:${FC[fc]}">${clanBadge}${a.name} ${mood}</div>
+<div class="agent-action">${icon} ${label}${extra} ${inv}</div>
 ${progBar}
 </div></div>`}).join('')}
 
@@ -2994,6 +3032,7 @@ function checkEraAnnounce(){
     el.textContent=`\u2B50 ${G.eraNames[G.era].toUpperCase()} UNLOCKED \u2B50`;
     el.style.opacity='1';
     document.getElementById('app').style.borderColor='#f0c040';
+    showNotification(`⭐ ${G.eraNames[G.era]} Unlocked! ⭐`);
     setTimeout(()=>{el.style.opacity='0';document.getElementById('app').style.borderColor=''},3000);
   }
   lastEra=G.era;
