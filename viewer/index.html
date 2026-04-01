@@ -16,7 +16,7 @@ html,body{height:100%;overflow:hidden;background:var(--bg);color:var(--text);fon
 #header-stats .val{color:#aaffaa;font-weight:bold}
 #live-dot{display:inline-block;width:8px;height:8px;border-radius:50%;margin-right:4px;background:#ff4444}
 #live-dot.on{background:#ff4444;box-shadow:0 0 6px #ff4444}
-#canvas-wrap{position:relative;overflow:hidden;background:#000;cursor:crosshair}
+#canvas-wrap{position:relative;overflow:hidden;background:#000}
 canvas{display:block;image-rendering:pixelated;image-rendering:crisp-edges}
 #sidebar{display:flex;flex-direction:column;border-left:1px solid var(--border);background:var(--panel);overflow:hidden}
 #agent-section{flex:0 0 auto;max-height:55%;overflow-y:auto;border-bottom:1px solid var(--border)}
@@ -1192,6 +1192,8 @@ let h=`<b>(${wx},${wy})</b> ${biome}`;
 if(own){const ag=agentById(own);if(ag)h+=`<br>Owner: <span style="color:${FC[ag.faction]}">${ag.name}</span>`}
 if(bld){h+=`<br>${bld.name||bld.type}`;if(!bld.complete)h+=` (${Math.round((bld.progress||0)*100)}%)`}
 for(const a of S.agents)if(a.x===wx&&a.y===wy)h+=`<br><span style="color:${FC[a.faction]}">${a.name}</span> [${a.mood||'idle'}]`;
+const hasInteractable=!!(bld||S.agents.find(a=>a.x===wx&&a.y===wy));
+if(cursorNormal)wrap.style.cursor=hasInteractable?`url(${cursorInteract}) 0 0, pointer`:`url(${cursorNormal}) 0 0, pointer`;
 tt.innerHTML=h;tt.style.display='block';tt.style.left=Math.min(mx+12,canvasEl.width-230)+'px';tt.style.top=Math.min(my+12,canvasEl.height-80)+'px'}
 
 // === UI Updates ===
@@ -1315,9 +1317,61 @@ function tickResources(){
   if(dg>10)flashEl(eg);if(dw>7)flashEl(ew);if(ds>5)flashEl(es);if(df>4)flashEl(ef);
 }
 
+// === Custom Pixel-Art Cursor ===
+function createCursor(interact){
+  const cc=document.createElement('canvas');cc.width=32;cc.height=32;
+  const cx=cc.getContext('2d');cx.imageSmoothingEnabled=false;
+  // Arrow pixel data (each row is [x,y,w,h])
+  // Dark outline (#3a2a10)
+  cx.fillStyle='#3a2a10';
+  const outline=[
+    [0,0,2,1],[0,1,1,2],[0,3,1,2],[0,5,1,2],[0,7,1,2],[0,9,1,2],[0,11,1,2],[0,13,1,2],
+    [0,15,1,2],[0,17,1,2],[0,19,1,1],[1,19,1,1],[2,18,1,1],[3,17,1,1],[4,16,1,1],
+    [5,15,1,1],[6,14,1,2],[7,13,1,1],[7,15,1,1],[8,12,1,1],[8,16,1,1],[9,11,1,1],
+    [9,17,1,1],[10,10,1,1],[10,18,1,1],[11,11,1,1],[11,19,1,1],[12,12,1,1],[12,20,1,1],
+    [13,13,1,1],[13,19,1,1],[14,14,1,4],[13,17,1,1],[12,16,1,1],[11,15,1,1],
+    [1,0,1,1],[2,1,1,1],[3,2,1,1],[4,3,1,1],[5,4,1,1],[6,5,1,1],[7,6,1,1],
+    [8,7,1,1],[9,8,1,1],[10,9,1,1],[11,10,1,1],[12,11,1,1],[13,12,1,1],[14,13,1,1],
+  ];
+  for(const r of outline)cx.fillRect(r[0],r[1],r[2],r[3]);
+  // Fill (#a08030)
+  cx.fillStyle='#a08030';
+  for(let y=1;y<19;y++){
+    const w=Math.min(Math.floor(y*0.7)+1,7);
+    cx.fillRect(1,y,w,1);
+  }
+  // Brighter fill core
+  cx.fillStyle='#c8a84a';
+  for(let y=2;y<16;y++){
+    const w=Math.min(Math.floor(y*0.55),5);
+    if(w>0)cx.fillRect(1,y,w,1);
+  }
+  // Left edge highlight
+  cx.fillStyle='#e8d070';
+  for(let y=1;y<14;y++)cx.fillRect(1,y,1,1);
+
+  // Interact indicator: golden circle beneath arrow
+  if(interact){
+    cx.fillStyle='#c8a84a';cx.globalAlpha=0.7;
+    cx.beginPath();cx.arc(6,24,4,0,Math.PI*2);cx.fill();
+    cx.strokeStyle='#3a2a10';cx.lineWidth=1;cx.globalAlpha=1;
+    cx.beginPath();cx.arc(6,24,4,0,Math.PI*2);cx.stroke();
+    cx.fillStyle='#e8d070';
+    cx.beginPath();cx.arc(5,23,1.5,0,Math.PI*2);cx.fill();
+  }
+  return cc.toDataURL();
+}
+
+let cursorNormal='',cursorInteract='';
+function initCursors(){
+  cursorNormal=createCursor(false);
+  cursorInteract=createCursor(true);
+  wrap.style.cursor=`url(${cursorNormal}) 0 0, pointer`;
+}
+
 // === Init ===
 window.addEventListener('resize',resize);
-resize();genTerrain();renderTBuf();
+resize();genTerrain();renderTBuf();initCursors();
 vpX=canvasEl.width/(2*zoom)-(WW*TS)/2;vpY=canvasEl.height/(2*zoom)-(WH*TS)/2;
 requestAnimationFrame(render);connectWS();
 setInterval(fireClientEvent,3600);
