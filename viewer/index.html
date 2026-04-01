@@ -92,15 +92,78 @@ function noise2D(x,y,seed){seed=seed||42;initPerm(seed);const X=Math.floor(x)&25
 function fbm(x,y,oct,lac,gain,seed){oct=oct||6;lac=lac||2;gain=gain||0.5;seed=seed||42;let v=0,a=1,f=1,m=0;for(let i=0;i<oct;i++){v+=a*noise2D(x*f,y*f,seed);m+=a;a*=gain;f*=lac}return v/m}
 
 // === Terrain ===
-const WW=200,WH=150,WSEED=42,TS=6;
+const WW=200,WH=150,WSEED=42,TS=24;
 const BT=[{m:0.25,b:'deep_water'},{m:0.32,b:'shallow_water'},{m:0.38,b:'sand'},{m:0.55,b:'grassland'},{m:0.62,b:'forest'},{m:0.70,b:'dense_forest'},{m:0.78,b:'hills'},{m:0.85,b:'mountain'},{m:0.92,b:'snow'},{m:1.01,b:'gold_vein'}];
-const BC={deep_water:['#1a2a5e','#182858'],shallow_water:['#2244aa','#204099'],river:['#2255bb','#2050aa'],sand:['#c8b878','#bfb070'],grassland:['#3a7a2a','#357025'],forest:['#2a5a1a','#255215'],dense_forest:['#1a3a10','#16340d'],hills:['#7a7a5a','#727254'],mountain:['#5a5a6a','#545464'],snow:['#d8d8e8','#d0d0e0'],gold_vein:['#ccaa22','#c4a01e']};
+const BC={
+  deep_water:['#1a3366','#162e5c'],shallow_water:['#2255bb','#1e4da8'],
+  river:['#2266cc','#1e5cb8'],sand:['#d4c484','#c8b878'],
+  grassland:['#4a9a3a','#428e32'],forest:['#3a7a2a','#327022'],
+  dense_forest:['#2a5a1a','#225012'],hills:['#8a8a6a','#7e7e60'],
+  mountain:['#6a6a7a','#5e5e70'],snow:['#e0e0f0','#d4d4e4'],
+  gold_vein:['#d4aa22','#c8a01e']
+};
 const BL=['deep_water','shallow_water','sand','grassland','forest','dense_forest','hills','mountain','snow','gold_vein','river'];
 let tBiomes=null,tCanvas=null;
+// Deterministic hash for decoration placement
+function tileHash(x,y){return((x*374761393+y*668265263)^(x*1274126177))>>>0}
+
 function genTerrain(){tBiomes=new Uint8Array(WW*WH);for(let y=0;y<WH;y++)for(let x=0;x<WW;x++){const n=fbm(x*0.02,y*0.02,6,2,0.5,WSEED);let bi=9;for(const t of BT)if(n<t.m){bi=BL.indexOf(t.b);break}tBiomes[y*WW+x]=bi}
 for(let y=0;y<WH;y++){const rx=Math.floor(WW*0.45+Math.sin(y*0.08)*6);for(let dx=-1;dx<=1;dx++){const xx=rx+dx;if(xx>=0&&xx<WW)tBiomes[y*WW+xx]=10}}
 for(let x=0;x<WW;x++){const ry=Math.floor(WH*0.55+Math.sin(x*0.06)*5);for(let dy=-1;dy<=1;dy++){const yy=ry+dy;if(yy>=0&&yy<WH)tBiomes[yy*WW+x]=10}}}
-function renderTBuf(){tCanvas=document.createElement('canvas');tCanvas.width=WW*TS;tCanvas.height=WH*TS;const c=tCanvas.getContext('2d');for(let y=0;y<WH;y++)for(let x=0;x<WW;x++){const b=BL[tBiomes[y*WW+x]],co=BC[b];c.fillStyle=(x+y)%2===0?co[0]:co[1];c.fillRect(x*TS,y*TS,TS,TS)}}
+
+function renderTBuf(){
+  tCanvas=document.createElement('canvas');tCanvas.width=WW*TS;tCanvas.height=WH*TS;
+  const c=tCanvas.getContext('2d');
+  const ts=TS;
+  for(let y=0;y<WH;y++)for(let x=0;x<WW;x++){
+    const bi=tBiomes[y*WW+x],b=BL[bi],co=BC[b];
+    const px=x*ts,py=y*ts,dark=(x+y)%2===1;
+    c.fillStyle=dark?co[1]:co[0];
+    c.fillRect(px,py,ts,ts);
+    const h=tileHash(x,y);
+    // Decorations based on biome
+    if(b==='grassland'){
+      // Grass tufts
+      if(h%5===0){c.fillStyle=dark?'#3a8830':'#4aa840';
+        const gx=px+3+(h%13),gy=py+8+(h>>4)%12;
+        c.fillRect(gx,gy,2,4);c.fillRect(gx-1,gy+1,1,2);c.fillRect(gx+2,gy+1,1,2)}
+    }else if(b==='forest'){
+      // Tree sprites
+      if(h%3===0){const tx=px+4+(h%12),ty=py+2+(h>>3)%8;
+        c.fillStyle='#1a4a10';c.fillRect(tx,ty,6,8);c.fillRect(tx-2,ty+2,10,5);
+        c.fillStyle='#2a6a1a';c.fillRect(tx+1,ty+1,4,5);
+        c.fillStyle='#4a3020';c.fillRect(tx+2,ty+7,2,4)}
+    }else if(b==='dense_forest'){
+      // Dense trees
+      const tx=px+2+(h%8),ty=py+1+(h>>3)%5;
+      c.fillStyle='#143a0a';c.fillRect(tx,ty,8,10);c.fillRect(tx-2,ty+3,12,6);
+      c.fillStyle='#1c5212';c.fillRect(tx+1,ty+1,6,7);
+      c.fillStyle='#3a2818';c.fillRect(tx+3,ty+9,2,5);
+      if(h%4===0){const tx2=px+14+(h>>5)%6,ty2=py+4+(h>>7)%6;
+        c.fillStyle='#163c0c';c.fillRect(tx2,ty2,5,7);c.fillStyle='#3a2818';c.fillRect(tx2+2,ty2+6,1,3)}
+    }else if(b==='sand'){
+      if(h%7===0){c.fillStyle='#b8a868';c.fillRect(px+4+(h%14),py+6+(h>>4)%12,4,2)}
+    }else if(b==='hills'){
+      // Rocks
+      if(h%4===0){const rx=px+3+(h%14),ry=py+6+(h>>4)%10;
+        c.fillStyle='#6a6a5a';c.fillRect(rx,ry,6,4);c.fillStyle='#7e7e6e';c.fillRect(rx+1,ry,4,2)}
+    }else if(b==='mountain'){
+      // Rocky peaks
+      if(h%3===0){const rx=px+2+(h%14),ry=py+2+(h>>3)%10;
+        c.fillStyle='#505060';c.fillRect(rx,ry,8,6);c.fillStyle='#6a6a7a';c.fillRect(rx+1,ry,6,3);
+        c.fillStyle='#888898';c.fillRect(rx+2,ry,4,2)}
+    }else if(b==='snow'){
+      if(h%5===0){c.fillStyle='#fff';c.globalAlpha=0.4;c.fillRect(px+4+(h%14),py+4+(h>>3)%14,3,3);c.globalAlpha=1}
+    }else if(b==='gold_vein'){
+      // Gold sparkles
+      c.fillStyle='#ffe844';c.fillRect(px+3+(h%10),py+3+(h>>3)%10,3,3);
+      c.fillRect(px+12+(h>>5)%8,py+10+(h>>7)%8,2,2);
+    }else if(b==='shallow_water'||b==='deep_water'||b==='river'){
+      // Water shimmer
+      if(h%6===0){c.fillStyle='rgba(255,255,255,0.1)';c.fillRect(px+2+(h%16),py+8+(h>>4)%10,6,2)}
+    }
+  }
+}
 
 // === State ===
 const S={tick:0,agents:[],tiles:[],buildings:[],events:[],leaderboard:[],connected:false};
@@ -124,6 +187,84 @@ const ownerMap=new Map(),bldMap=new Map();
 function updateMaps(){ownerMap.clear();bldMap.clear();for(const t of S.tiles)if(t.owner)ownerMap.set(t.tileId||`${t.x},${t.y}`,t.owner);for(const b of S.buildings)for(let dy=0;dy<(b.height||1);dy++)for(let dx=0;dx<(b.width||1);dx++)bldMap.set(`${b.x+dx},${b.y+dy}`,b)}
 function agentById(id){return S.agents.find(a=>a.id===id)}
 
+// === Building colors per faction ===
+const BFC={
+  human:{wall:'#4466aa',wallDk:'#334488',roof:'#5588cc',roofDk:'#4477bb',brick:'#3a5a99',trim:'#6699dd'},
+  orc:{wall:'#884422',wallDk:'#6e3318',roof:'#aa4422',roofDk:'#8e3318',brick:'#773a1a',trim:'#cc6644'},
+  dwarf:{wall:'#887755',wallDk:'#6e6348',roof:'#776644',roofDk:'#665538',brick:'#7a6a4a',trim:'#aa9966'},
+  elf:{wall:'#886644',wallDk:'#6e5538',roof:'#44aa66',roofDk:'#338e55',brick:'#776050',trim:'#66cc88'}
+};
+
+function drawBuildingPixelArt(c,b,bx,by,bw,bh){
+  const fc=b.faction||'human',cols=BFC[fc]||BFC.human;
+  const complete=b.complete;
+  if(!complete){c.globalAlpha=0.5}
+  // Roof (top 30%)
+  const roofH=Math.max(4,bh*0.3);
+  c.fillStyle=cols.roof;c.fillRect(bx,by,bw,roofH);
+  c.fillStyle=cols.roofDk;c.fillRect(bx,by+roofH-2,bw,2);
+  // Roof highlights
+  for(let rx=bx+2;rx<bx+bw-2;rx+=6){c.fillStyle=cols.trim;c.fillRect(rx,by+1,3,1)}
+  // Walls
+  const wallY=by+roofH,wallH=bh-roofH;
+  c.fillStyle=cols.wall;c.fillRect(bx,wallY,bw,wallH);
+  // Brick pattern
+  c.fillStyle=cols.brick;
+  for(let row=0;row<wallH;row+=4){
+    const offset=(row/4)%2===0?0:4;
+    for(let col=offset;col<bw;col+=8){
+      c.fillRect(bx+col,wallY+row,7,3);
+    }
+    c.fillStyle=cols.wallDk;
+    c.fillRect(bx,wallY+row+3,bw,1);
+    c.fillStyle=cols.brick;
+  }
+  // Door/window
+  if(bw>=20&&bh>=20){
+    c.fillStyle='#1a1a2a';
+    const dw=Math.min(8,bw/4),dh=Math.min(10,wallH*0.6);
+    c.fillRect(bx+bw/2-dw/2,wallY+wallH-dh,dw,dh);
+    // Window
+    if(bw>=36){
+      c.fillRect(bx+4,wallY+4,5,5);c.fillRect(bx+bw-9,wallY+4,5,5);
+      c.fillStyle='#aaccff';c.fillRect(bx+5,wallY+5,3,3);c.fillRect(bx+bw-8,wallY+5,3,3);
+    }
+  }
+  // Border
+  c.strokeStyle='#000';c.lineWidth=1;c.strokeRect(bx+0.5,by+0.5,bw-1,bh-1);
+  if(!complete)c.globalAlpha=1;
+}
+
+function drawAgentPixelArt(c,ax,ay,fc,name,mood,sel){
+  const ts=TS;
+  const cx=ax+ts/2,cy=ay+ts/2;
+  // Shadow
+  c.fillStyle='rgba(0,0,0,0.3)';
+  c.fillRect(ax+4,ay+ts-3,ts-8,3);
+  // Legs
+  c.fillStyle='#2a2a3a';
+  c.fillRect(ax+7,ay+ts-6,3,4);c.fillRect(ax+ts-10,ay+ts-6,3,4);
+  // Body
+  c.fillStyle=fc;
+  c.fillRect(ax+5,ay+8,ts-10,ts-14);
+  // Body shading
+  c.fillStyle='rgba(0,0,0,0.15)';c.fillRect(ax+ts-9,ay+8,4,ts-14);
+  // Head (skin tone)
+  c.fillStyle='#e8c890';
+  c.fillRect(ax+6,ay+2,ts-12,8);
+  // Hair/helmet (faction color)
+  c.fillStyle=fc;
+  c.fillRect(ax+5,ay+1,ts-10,4);
+  // Eyes
+  c.fillStyle='#000';
+  c.fillRect(ax+8,ay+5,2,2);c.fillRect(ax+ts-10,ay+5,2,2);
+  // Arms
+  c.fillStyle=fc;
+  c.fillRect(ax+3,ay+9,3,6);c.fillRect(ax+ts-6,ay+9,3,6);
+  // Selection highlight
+  if(sel){c.strokeStyle='#ffcc44';c.lineWidth=2;c.strokeRect(ax+1,ay,ts-2,ts);c.lineWidth=1}
+}
+
 // === Render ===
 function render(){
 const cw=canvasEl.width,ch=canvasEl.height;
@@ -132,48 +273,59 @@ const ts=TS;
 const sx=Math.max(0,Math.floor(-vpX/ts-1)),sy=Math.max(0,Math.floor(-vpY/ts-1));
 const ex=Math.min(WW,Math.ceil((-vpX+cw/zoom)/ts+1)),ey=Math.min(WH,Math.ceil((-vpY+ch/zoom)/ts+1));
 
+// Terrain
 if(tCanvas)ctx.drawImage(tCanvas,sx*ts,sy*ts,(ex-sx)*ts,(ey-sy)*ts,sx*ts,sy*ts,(ex-sx)*ts,(ey-sy)*ts);
 
-// Territory
-for(const t of S.tiles){if(t.x<sx||t.x>=ex||t.y<sy||t.y>=ey)continue;if(t.owner){const ag=agentById(t.owner);if(ag){ctx.fillStyle=FC[ag.faction]||'#888';ctx.globalAlpha=0.2;ctx.fillRect(t.x*ts,t.y*ts,ts,ts);ctx.globalAlpha=0.4;ctx.strokeStyle=FC[ag.faction]||'#888';ctx.lineWidth=0.5;ctx.strokeRect(t.x*ts+0.5,t.y*ts+0.5,ts-1,ts-1);ctx.globalAlpha=1}}}
+// Territory overlays
+for(const t of S.tiles){if(t.x<sx||t.x>=ex||t.y<sy||t.y>=ey)continue;if(t.owner){const ag=agentById(t.owner);if(ag){ctx.fillStyle=FC[ag.faction]||'#888';ctx.globalAlpha=0.15;ctx.fillRect(t.x*ts,t.y*ts,ts,ts);ctx.globalAlpha=1;
+  // Ownership border dots
+  ctx.fillStyle=FC[ag.faction]||'#888';ctx.globalAlpha=0.5;
+  ctx.fillRect(t.x*ts,t.y*ts,ts,1);ctx.fillRect(t.x*ts,t.y*ts,1,ts);
+  ctx.globalAlpha=1}}}
 
 // Buildings
 for(const b of S.buildings){
   if(b.x+(b.width||1)<sx||b.x>=ex||b.y+(b.height||1)<sy||b.y>=ey)continue;
-  const bw=(b.width||1)*ts,bh=(b.height||1)*ts,bx=b.x*ts,by=b.y*ts,fc=FC[b.faction]||'#888';
-  // Dark background
-  ctx.fillStyle='#000';ctx.globalAlpha=0.5;ctx.fillRect(bx,by,bw,bh);ctx.globalAlpha=1;
-  // Colored body
-  ctx.fillStyle=fc;ctx.globalAlpha=b.complete?0.8:0.4;ctx.fillRect(bx+1,by+1,bw-2,bh-2);ctx.globalAlpha=1;
-  ctx.strokeStyle=b.complete?'#fff':fc;ctx.lineWidth=b.complete?1:0.5;ctx.strokeRect(bx+0.5,by+0.5,bw-1,bh-1);
-  // Label
+  const bw=(b.width||1)*ts,bh=(b.height||1)*ts,bx=b.x*ts,by=b.y*ts;
+  drawBuildingPixelArt(ctx,b,bx+2,by+2,bw-4,bh-4);
+  // Label background
   const label=BLabels[b.type]||'??';
-  if(zoom>=0.5){ctx.fillStyle='#fff';ctx.font=`bold ${Math.max(7,ts*0.8)}px Courier New`;ctx.textAlign='center';ctx.textBaseline='middle';ctx.fillText(label,bx+bw/2,by+bh/2)}
-  // Name below
-  if(zoom>=1.2&&bw>=ts*1.5){const nm=BNames[b.type]||b.type;ctx.fillStyle='#fff';ctx.font=`${Math.max(5,ts*0.5)}px Courier New`;ctx.textAlign='center';ctx.textBaseline='top';ctx.fillText(nm,bx+bw/2,by+bh+1)}
+  const nm=BNames[b.type]||b.type;
+  ctx.font=`bold ${Math.max(10,ts*0.5)}px Courier New`;
+  const tw=ctx.measureText(label).width;
+  const lx=bx+bw/2,ly=by+bh/2;
+  ctx.fillStyle='rgba(0,0,0,0.7)';
+  ctx.fillRect(lx-tw/2-4,ly-7,tw+8,14);
+  ctx.fillStyle='#fff';ctx.textAlign='center';ctx.textBaseline='middle';
+  ctx.fillText(label,lx,ly);
+  // Name below building
+  ctx.font=`${Math.max(8,ts*0.4)}px Courier New`;
+  ctx.fillStyle='#fff';ctx.textAlign='center';ctx.textBaseline='top';
+  ctx.fillText(nm,bx+bw/2,by+bh+2);
   // Progress bar
-  if(!b.complete&&b.progress!=null){ctx.fillStyle='#000';ctx.globalAlpha=0.6;ctx.fillRect(bx+1,by+bh-3,bw-2,2);ctx.globalAlpha=1;ctx.fillStyle='#ffcc44';ctx.fillRect(bx+1,by+bh-3,(bw-2)*b.progress,2)}
+  if(!b.complete&&b.progress!=null){
+    const barW=bw-4,barH=4,barX=bx+2,barY=by+bh-6;
+    ctx.fillStyle='#000';ctx.globalAlpha=0.7;ctx.fillRect(barX,barY,barW,barH);ctx.globalAlpha=1;
+    ctx.fillStyle='#ffcc44';ctx.fillRect(barX+1,barY+1,(barW-2)*b.progress,barH-2);
+  }
 }
 
-// Agents - pixel art style characters
+// Agents
 for(const a of S.agents){
   if(a.x<sx-1||a.x>=ex+1||a.y<sy-1||a.y>=ey+1)continue;
   const ax=a.x*ts,ay=a.y*ts,fc=FC[a.faction]||'#888';
   const sel=selAgent&&selAgent.id===a.id;
-  // Shadow
-  ctx.fillStyle='rgba(0,0,0,0.3)';ctx.fillRect(ax+1,ay+ts-2,ts-2,2);
-  // Body (square pixel character)
-  ctx.fillStyle=fc;ctx.fillRect(ax+1,ay+1,ts-2,ts-2);
-  // Head highlight
-  ctx.fillStyle='rgba(255,255,255,0.3)';ctx.fillRect(ax+2,ay+1,ts-4,Math.max(1,ts/3));
-  // Selection glow
-  if(sel){ctx.strokeStyle='#fff';ctx.lineWidth=1.5;ctx.strokeRect(ax-1,ay-1,ts+2,ts+2)}
-  // Name + mood emoji
-  if(zoom>=0.7){
-    const emoji=MI[a.mood]||'';
-    ctx.fillStyle='#fff';ctx.font=`bold ${Math.max(6,ts*0.6)}px Courier New`;ctx.textAlign='center';ctx.textBaseline='bottom';
-    ctx.fillText(a.name+(emoji?' '+emoji:''),ax+ts/2,ay-2);
-  }
+  drawAgentPixelArt(ctx,ax,ay,fc,a.name,a.mood,sel);
+  // Name label with mood emoji
+  const emoji=MI[a.mood]||'';
+  const nameStr=a.name+' '+emoji;
+  ctx.font=`bold ${Math.max(9,ts*0.45)}px Courier New`;
+  const ntw=ctx.measureText(nameStr).width;
+  // Background for name
+  ctx.fillStyle='rgba(0,0,0,0.6)';
+  ctx.fillRect(ax+ts/2-ntw/2-3,ay-13,ntw+6,12);
+  ctx.fillStyle='#fff';ctx.textAlign='center';ctx.textBaseline='bottom';
+  ctx.fillText(nameStr,ax+ts/2,ay-2);
 }
 
 ctx.restore();
