@@ -36,9 +36,15 @@ canvas{display:block;image-rendering:pixelated;image-rendering:crisp-edges}
 .event-row.raid_success{border-left:2px solid var(--red)}
 .event-row.agent_message{border-left:2px solid #8888aa}
 #bottom-bar{grid-column:1/3;background:var(--panel);border-top:1px solid var(--border);display:flex;align-items:center;padding:0 16px;gap:24px;font-size:12px}
-.res-item{display:flex;align-items:center;gap:4px}
-.res-dot{width:10px;height:10px;border-radius:2px;display:inline-block}
+.res-item{display:flex;align-items:center;gap:3px}
+.res-icon{font-size:12px}
 .res-val{font-weight:bold;color:var(--text)}
+.res-need{font-size:10px;color:var(--dim);margin-left:1px}
+.res-need.enough{color:#aaffaa}
+.res-need.short{color:#ff6644}
+.agent-progress{height:3px;background:#1a1a3e;border-radius:2px;margin-top:2px;overflow:hidden}
+.agent-progress-fill{height:100%;border-radius:2px;transition:width 0.3s}
+.event-milestone{background:rgba(170,255,170,0.06);border-left:2px solid #aaffaa!important}
 #last-event{flex:1;text-align:right;color:var(--dim);font-size:11px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 #tooltip{position:absolute;background:rgba(13,13,18,0.95);border:1px solid var(--border);padding:6px 10px;font-size:11px;pointer-events:none;display:none;z-index:100;max-width:220px;line-height:1.4;border-radius:3px}
 #conn-overlay{position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);background:var(--panel);border:1px solid var(--border);padding:20px 30px;text-align:center;border-radius:6px;z-index:200}
@@ -54,7 +60,7 @@ canvas{display:block;image-rendering:pixelated;image-rendering:crisp-edges}
   <div id="header">
     <h1>Agents at Work</h1>
     <div id="header-stats">
-      <span>Era: <span class="val" id="h-era">Wood Age</span></span>
+      <span id="h-era-wrap" style="display:flex;align-items:center;gap:4px"><span id="h-era-icon">🪵</span> <span class="val" id="h-era">Wood Age</span></span>
       <span>Agents: <span class="val" id="h-agents">0</span></span>
       <span>Tick: <span class="val" id="h-tick">0</span></span>
       <span><span id="live-dot"></span><span id="h-status">OFFLINE</span></span>
@@ -66,9 +72,16 @@ canvas{display:block;image-rendering:pixelated;image-rendering:crisp-edges}
     <div id="conn-overlay"><h2>Connecting...</h2><p>Waiting for game server...</p></div>
   </div>
   <div id="sidebar">
+    <div id="minimap-section" style="padding:6px;border-bottom:1px solid var(--border);background:var(--bg)">
+      <canvas id="minimap" width="140" height="100" style="width:100%;image-rendering:pixelated;cursor:pointer;border:1px solid var(--border);border-radius:3px"></canvas>
+    </div>
     <div id="agent-section">
       <div class="section-title">Active Agents</div>
       <div id="agent-list"></div>
+    </div>
+    <div id="build-section" style="border-top:1px solid var(--border);border-bottom:1px solid var(--border)">
+      <div class="section-title">Next Build</div>
+      <div id="build-preview" style="padding:6px 12px;font-size:11px"></div>
     </div>
     <div id="event-section">
       <div class="section-title">Event Feed</div>
@@ -76,12 +89,12 @@ canvas{display:block;image-rendering:pixelated;image-rendering:crisp-edges}
     </div>
   </div>
   <div id="bottom-bar">
-    <div class="res-item"><span class="res-dot" style="background:#44cc44"></span> Wood <span class="res-val" id="r-wood">0</span></div>
-    <div class="res-item"><span class="res-dot" style="background:#8888aa"></span> Stone <span class="res-val" id="r-stone">0</span></div>
-    <div class="res-item"><span class="res-dot" style="background:#ffcc44"></span> Gold <span class="res-val" id="r-gold">0</span></div>
-    <div class="res-item"><span class="res-dot" style="background:#cc8844"></span> Food <span class="res-val" id="r-food">0</span></div>
-    <div id="next-build" style="color:#888;font-size:10px;margin-left:8px"></div>
-    <div id="last-event" style="flex:1;text-align:right"></div>
+    <div class="res-item"><span class="res-icon">🪵</span> <span class="res-val" id="r-wood">0</span><span class="res-need" id="rn-wood"></span></div>
+    <div class="res-item"><span class="res-icon">🪨</span> <span class="res-val" id="r-stone">0</span><span class="res-need" id="rn-stone"></span></div>
+    <div class="res-item"><span class="res-icon">🪙</span> <span class="res-val" id="r-gold">0</span><span class="res-need" id="rn-gold"></span></div>
+    <div class="res-item"><span class="res-icon">🍎</span> <span class="res-val" id="r-food">0</span></div>
+    <div id="era-progress" style="display:flex;align-items:center;gap:4px;margin-left:8px"><div id="era-bar" style="width:60px;height:6px;background:#1a1a3e;border-radius:3px;overflow:hidden"><div id="era-fill" style="height:100%;background:#aaffaa;width:0%"></div></div></div>
+    <div id="last-event" style="flex:1;text-align:right;color:var(--dim);font-size:11px;overflow:hidden;white-space:nowrap;text-overflow:ellipsis"></div>
   </div>
 </div>
 <script>
@@ -1482,12 +1495,20 @@ function canAfford(cost){return G.wood>=cost.wood&&G.stone>=cost.stone&&G.gold>=
 function gameEvent(msg,cls){
   const el=document.getElementById('event-feed');
   const div=document.createElement('div');
-  div.className='event-row '+(cls||'');
-  div.innerHTML=`<span class="ev-time">${G.tick}</span> ${msg}`;
+  const isMilestone=msg.includes('completed')||msg.includes('new era')||msg.includes('Era');
+  div.className='event-row '+(cls||'')+(isMilestone?' event-milestone':'');
+  // Add icons based on content
+  let icon='';
+  if(msg.includes('chop'))icon='🪓 ';
+  else if(msg.includes('mine')||msg.includes('stone'))icon='⛏ ';
+  else if(msg.includes('gold'))icon='🪙 ';
+  else if(msg.includes('build')||msg.includes('Build')||msg.includes('completed'))icon='🔨 ';
+  else if(msg.includes('rain')||msg.includes('Rain'))icon='🌧 ';
+  else if(msg.includes('Discover')||msg.includes('Found'))icon='⭐ ';
+  div.innerHTML=`<span class="ev-time">${Math.floor(G.tick/60)}</span> ${icon}${msg}`;
   el.prepend(div);
   while(el.children.length>30)el.removeChild(el.lastChild);
-  document.getElementById('last-event').textContent=msg;
-  // Match agent for bubble
+  document.getElementById('last-event').textContent=icon+msg;
   for(const a of S.agents){if(msg.startsWith(a.name)){addBubble(a,msg.substring(0,30));break}}
 }
 
@@ -1660,19 +1681,74 @@ function updateAgentMovement(){
   }
 }
 
+const ERA_ICONS=['🪵','🪨','⚔️','🏙️'];
 function updateGameUI(){
-  const eg=document.getElementById('r-gold'),ew=document.getElementById('r-wood');
-  const es=document.getElementById('r-stone'),ef=document.getElementById('r-food');
-  ew.textContent=G.wood;es.textContent=G.stone;eg.textContent=G.gold;ef.textContent=G.food;
-  document.getElementById('h-era').textContent=G.eraNames[G.era];
-  // Show next building cost
+  if(frame%10!==0)return;// throttle DOM updates
   const next=getNextBuilding();
-  const nb=document.getElementById('next-build');
+  const nc=next?next.cost:{wood:0,stone:0,gold:0};
+  // Resource bar with current/needed
+  document.getElementById('r-wood').textContent=G.wood;
+  document.getElementById('r-stone').textContent=G.stone;
+  document.getElementById('r-gold').textContent=G.gold;
+  document.getElementById('r-food').textContent=G.food;
+  for(const[res,id] of [['wood','rn-wood'],['stone','rn-stone'],['gold','rn-gold']]){
+    const el=document.getElementById(id);
+    if(next&&nc[res]>0){
+      el.textContent=`/${nc[res]}`;
+      el.className='res-need '+(G[res]>=nc[res]?'enough':'short');
+    }else{el.textContent=''}
+  }
+  // Era indicator
+  document.getElementById('h-era').textContent=G.eraNames[G.era];
+  document.getElementById('h-era-icon').textContent=ERA_ICONS[G.era];
+  // Era progress bar
+  const eraBuildings=TECH_TREE.filter(b=>b.era===G.era);
+  const built=new Set(G.clientBuildings.filter(b=>b.complete).map(b=>b.type));
+  const eraProg=eraBuildings.length?eraBuildings.filter(b=>built.has(b.type)).length/eraBuildings.length:0;
+  document.getElementById('era-fill').style.width=`${Math.round(eraProg*100)}%`;
+  // Next build preview
+  const bp=document.getElementById('build-preview');
   if(next){
-    const c=next.cost;
-    nb.textContent=`Next: ${next.name} (${c.wood}W ${c.stone}S ${c.gold}G)`;
-    nb.style.color=canAfford(c)?'#aaffaa':'#888';
-  }else{nb.textContent='All built!'}
+    const builder=S.agents.find(a=>{const st=agentState.get(a.id);return st&&st.state==='building'});
+    const wC=nc.wood?`<span style="color:${G.wood>=nc.wood?'#aaffaa':'#ff6644'}">${G.wood}/${nc.wood}</span>`:'';
+    const sC=nc.stone?` <span style="color:${G.stone>=nc.stone?'#aaffaa':'#ff6644'}">${G.stone}/${nc.stone}</span>`:'';
+    const gC=nc.gold?` <span style="color:${G.gold>=nc.gold?'#aaffaa':'#ff6644'}">${G.gold}/${nc.gold}</span>`:'';
+    bp.innerHTML=`<b style="color:#ddd">${next.name}</b><br>🪵${wC} 🪨${sC} 🪙${gC}<br><span style="color:var(--dim);font-size:9px">${builder?'🔨 '+builder.name+' building':'Waiting for resources...'}</span>`;
+  }else{bp.innerHTML='<span style="color:#aaffaa">All buildings complete!</span>'}
+  // Minimap
+  updateMinimap();
+}
+const STATE_ICONS={idle:'💤',walking_to_tree:'🪓',walking_to_rock:'⛏',walking_to_gold:'🪙',chopping:'🪓',mining:'⛏',mining_gold:'🪙',building:'🔨'};
+const STATE_LABELS={idle:'Idle',walking_to_tree:'Walking to tree',walking_to_rock:'Walking to rock',walking_to_gold:'Walking to gold',chopping:'Chopping tree',mining:'Mining stone',mining_gold:'Mining gold',building:'Building'};
+function updateMinimap(){
+  const mc=document.getElementById('minimap');
+  const mx2=mc.getContext('2d');mx2.imageSmoothingEnabled=false;
+  mx2.fillStyle='#0a0a14';mx2.fillRect(0,0,140,100);
+  // Terrain (simplified)
+  const sx2=140/WW,sy2=100/WH;
+  for(let y=0;y<WH;y+=3)for(let x=0;x<WW;x+=3){
+    const bi=tBiomes[y*WW+x],b=BL[bi],co=BC[b];
+    mx2.fillStyle=co[0];mx2.fillRect(x*sx2,y*sy2,sx2*3+1,sy2*3+1);
+  }
+  // Buildings
+  for(const b of G.clientBuildings){
+    mx2.fillStyle=BFC[b.faction]?BFC[b.faction].flag:'#888';
+    mx2.fillRect(b.x*sx2-1,b.y*sy2-1,3,3);
+  }
+  // Gold deposits
+  mx2.fillStyle='#ffd700';
+  for(const g of goldDeposits){if(g.alive)mx2.fillRect(g.x/TS*sx2,g.y/TS*sy2,2,2)}
+  // Agents
+  for(const a of S.agents){
+    const v=agentVisual.get(a.id);
+    if(!v)continue;
+    mx2.fillStyle=TEAM_COL[a.faction]||'#888';
+    mx2.fillRect(v.x*WW*sx2-1,v.y*WH*sy2-1,3,3);
+  }
+  // Viewport rect
+  const vl=(-vpX/TS)*sx2,vt=(-vpY/TS)*sy2;
+  const vw=(canvasEl.width/zoom/TS)*sx2,vh=(canvasEl.height/zoom/TS)*sy2;
+  mx2.strokeStyle='#fff';mx2.lineWidth=1;mx2.strokeRect(vl,vt,vw,vh);
 }
 
 // === Render ===
@@ -2099,15 +2175,37 @@ function getActionText(a){
 function updateAgentList(){
 const el=document.getElementById('agent-list');
 el.innerHTML=[...S.agents].sort((a,b)=>(a.name||'').localeCompare(b.name||'')).map(a=>{
-const fc=a.faction||'human',emoji=MI[a.mood]||'\u23F8';
+const fc=a.faction||'human';
+const st=agentState.get(a.id)||{state:'idle',timer:0};
+const icon=STATE_ICONS[st.state]||'💤';
+const label=STATE_LABELS[st.state]||'Idle';
+let extra='';
+if(st.state==='building'&&st.target)extra=` ${st.target.name} (${Math.round((st.target.progress||0)*100)}%)`;
+else if(st.state==='chopping')extra=` (${Math.max(0,Math.round(st.timer/60))}s)`;
+else if(st.state==='mining')extra=` (${Math.max(0,Math.round(st.timer/60))}s)`;
+else if(st.state==='mining_gold')extra=` (${Math.max(0,Math.round(st.timer/60))}s)`;
+// Progress for timed actions
+let progPct=0,progCol='#4488ff';
+if(st.state==='chopping'){progPct=1-st.timer/180;progCol='#44cc44'}
+else if(st.state==='mining'){progPct=1-st.timer/240;progCol='#8888aa'}
+else if(st.state==='mining_gold'){progPct=1-st.timer/360;progCol='#ffcc44'}
+else if(st.state==='building'&&st.target){progPct=st.target.progress||0;progCol='#ff8844'}
+const progBar=progPct>0?`<div class="agent-progress"><div class="agent-progress-fill" style="width:${Math.round(progPct*100)}%;background:${progCol}"></div></div>`:'';
 return`<div class="agent-row" onclick="selAg('${a.id}')">
 <div class="agent-icon" style="background:${FC[fc]};color:#fff">${FI[fc]||'?'}</div>
 <div class="agent-info">
-<div class="agent-name" style="color:${FC[fc]}">${a.name} <span style="font-size:14px">${emoji}</span></div>
-<div class="agent-action">${getActionText(a)}</div>
+<div class="agent-name" style="color:${FC[fc]}">${a.name}</div>
+<div class="agent-action">${icon} ${label}${extra}</div>
+${progBar}
 </div></div>`}).join('')}
 
 function selAg(id){const a=agentById(id);selAgent=a||null;if(a){vpX=canvasEl.width/(2*zoom)-a.x*TS-TS/2;vpY=canvasEl.height/(2*zoom)-a.y*TS-TS/2;addBubble(a,getActionText(a))}updateAgentList()}
+// Minimap click to jump
+document.getElementById('minimap').addEventListener('click',e=>{
+  const mc2=document.getElementById('minimap'),rect=mc2.getBoundingClientRect();
+  const mx3=(e.clientX-rect.left)/rect.width,my3=(e.clientY-rect.top)/rect.height;
+  vpX=canvasEl.width/(2*zoom)-mx3*WW*TS;vpY=canvasEl.height/(2*zoom)-my3*WH*TS;
+});
 window.selAg=selAg;
 
 function updateEvents(){
