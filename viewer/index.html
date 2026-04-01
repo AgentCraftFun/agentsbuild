@@ -965,7 +965,21 @@ for(const a of S.agents){
   drawAgentPixelArt(ctx,ax,ay,a,sel);
 }
 
-// Speech bubbles
+// === Ambient Particles ===
+updateParticles();
+for(const p of particles){
+  if(p.x<sx*ts||p.x>ex*ts||p.y<sy*ts||p.y>ey*ts)continue;
+  ctx.globalAlpha=p.alpha;
+  ctx.fillStyle=p.color;
+  if(p.radius){
+    ctx.beginPath();ctx.arc(p.x,p.y,p.radius,0,Math.PI*2);ctx.fill();
+  }else{
+    ctx.fillRect(p.x,p.y,p.size||2,p.size||2);
+  }
+  ctx.globalAlpha=1;
+}
+
+// Speech bubbles (on top of everything)
 for(let i=bubbles.length-1;i>=0;i--){
   const bub=bubbles[i];
   bub.life--;
@@ -973,28 +987,37 @@ for(let i=bubbles.length-1;i>=0;i--){
   const ag=bub.agent;
   const v=agentVisual.get(ag.id);
   const vx2=v?v.x*WW:ag.x,vy2=v?v.y*WH:ag.y;
-  const bax=vx2*ts+ts/2,bay=vy2*ts-54;
+  const bounce=Math.sin(frame*0.1)*1;
+  const bax=vx2*ts+ts/2,bay=vy2*ts-60+bounce;
   const alpha=Math.min(1,bub.life/30,(bub.maxLife-bub.life+1)/30);
   ctx.globalAlpha=alpha;
   const txt=bub.text;
-  ctx.font='9px Courier New';
+  ctx.font='10px Courier New';
   const btw=ctx.measureText(txt).width;
-  const bpw=btw+16,bph=20;
+  const bpw=Math.max(60,btw+12),bph=24;
   const bbx=bax-bpw/2,bby=bay-bph/2;
-  // Rounded rect background
-  ctx.fillStyle='#fffff0';ctx.strokeStyle='#888866';ctx.lineWidth=1;
+  // Drop shadow
+  ctx.fillStyle='rgba(0,0,0,0.15)';
   ctx.beginPath();
-  if(ctx.roundRect)ctx.roundRect(bbx,bby,bpw,bph,4);
-  else{ctx.moveTo(bbx+4,bby);ctx.lineTo(bbx+bpw-4,bby);ctx.quadraticCurveTo(bbx+bpw,bby,bbx+bpw,bby+4);ctx.lineTo(bbx+bpw,bby+bph-4);ctx.quadraticCurveTo(bbx+bpw,bby+bph,bbx+bpw-4,bby+bph);ctx.lineTo(bbx+4,bby+bph);ctx.quadraticCurveTo(bbx,bby+bph,bbx,bby+bph-4);ctx.lineTo(bbx,bby+4);ctx.quadraticCurveTo(bbx,bby,bbx+4,bby)}
+  if(ctx.roundRect)ctx.roundRect(bbx+2,bby+2,bpw,bph,6);
+  else ctx.rect(bbx+2,bby+2,bpw,bph);
+  ctx.fill();
+  // White background
+  ctx.fillStyle='#fffff0';ctx.strokeStyle='#888866';ctx.lineWidth=1.5;
+  ctx.beginPath();
+  if(ctx.roundRect)ctx.roundRect(bbx,bby,bpw,bph,6);
+  else ctx.rect(bbx,bby,bpw,bph);
   ctx.fill();ctx.stroke();
-  // Triangle pointer
+  // Smooth pointer triangle (8px wide)
   ctx.fillStyle='#fffff0';
   ctx.beginPath();ctx.moveTo(bax-4,bby+bph);ctx.lineTo(bax+4,bby+bph);ctx.lineTo(bax,bby+bph+8);ctx.fill();
-  ctx.beginPath();ctx.moveTo(bax-4,bby+bph);ctx.lineTo(bax+4,bby+bph);ctx.lineTo(bax,bby+bph+8);ctx.closePath();ctx.stroke();
+  ctx.strokeStyle='#888866';ctx.lineWidth=1.5;
+  ctx.beginPath();ctx.moveTo(bax-4,bby+bph);ctx.lineTo(bax,bby+bph+8);ctx.lineTo(bax+4,bby+bph);ctx.stroke();
   // Text
   ctx.fillStyle='#222';ctx.textAlign='center';ctx.textBaseline='middle';
   ctx.fillText(txt,bax,bay);
   ctx.globalAlpha=1;
+  ctx.lineWidth=1;
 }
 
 ctx.restore();
@@ -1004,9 +1027,86 @@ requestAnimationFrame(render)}
 // === Speech Bubble System ===
 const bubbles=[];
 function addBubble(agent,text){
-  // Remove existing bubble for this agent
   for(let i=bubbles.length-1;i>=0;i--)if(bubbles[i].agent.id===agent.id)bubbles.splice(i,1);
   bubbles.push({agent,text:text.substring(0,30),life:220,maxLife:220});
+}
+
+// === Ambient Particle System ===
+const particles=[];
+function spawnParticle(x,y,type){
+  const p={x,y,type,life:0,maxLife:60,alpha:1,size:2,color:'#fff',vx:0,vy:0,radius:0};
+  if(type==='gold'){
+    p.color='#ffd700';p.size=2;p.vy=-0.3;p.maxLife=60;
+    p.vx=(Math.random()-0.5)*0.3;
+  }else if(type==='smoke'){
+    p.color='rgba(150,150,160,1)';p.radius=2;p.vy=-0.2;p.vx=0.1;p.maxLife=90;
+  }else if(type==='leaf'){
+    const greens=['#3a8a28','#4aaa38','#2a7a18','#5abc3a'];
+    p.color=greens[Math.floor(Math.random()*greens.length)];
+    p.size=2;p.vy=-0.1;p.vx=0.15;p.maxLife=120;
+  }else if(type==='debris'){
+    p.color='#8a6a30';p.size=1;p.vy=-1.5;p.vx=(Math.random()-0.5)*0.8;p.maxLife=40;
+  }
+  particles.push(p);
+}
+
+function updateParticles(){
+  // Spawn ambient particles
+  // Gold sparkles near gold mine buildings
+  if(frame%30===0){
+    for(const b of S.buildings){
+      if(b.type==='mine_shaft'&&b.complete){
+        spawnParticle(b.x*TS+Math.random()*TS*2,b.y*TS+Math.random()*TS,'gold');
+      }
+    }
+  }
+  // Smoke from completed buildings with chimneys
+  if(frame%20===0){
+    for(const b of S.buildings){
+      if(b.complete&&tileHash(b.x||0,b.y||0)%3===0&&!b.tall){
+        const bw2=(b.width||1)*TS;
+        spawnParticle(b.x*TS+bw2*0.7+3,b.y*TS-4,'smoke');
+      }
+    }
+  }
+  // Leaf particles near forests and elf buildings
+  if(frame%40===0){
+    for(const b of S.buildings){
+      if(b.complete&&(b.type==='tree_palace'||b.type==='grove'||b.type==='sentinel_tree')){
+        spawnParticle(b.x*TS+Math.random()*TS*2,b.y*TS+Math.random()*TS,'leaf');
+      }
+    }
+    // Also near forest edges in visible area
+    if(Math.random()<0.3){
+      const rx=Math.floor(Math.random()*WW),ry=Math.floor(Math.random()*WH);
+      if(tBiomes&&(tBiomes[ry*WW+rx]===4||tBiomes[ry*WW+rx]===5)){// forest or dense_forest
+        spawnParticle(rx*TS+Math.random()*TS,ry*TS+Math.random()*TS,'leaf');
+      }
+    }
+  }
+
+  // Update all particles
+  for(let i=particles.length-1;i>=0;i--){
+    const p=particles[i];
+    p.life++;
+    if(p.life>=p.maxLife){particles.splice(i,1);continue}
+    const t=p.life/p.maxLife;
+    p.x+=p.vx;p.y+=p.vy;
+    // Type-specific behavior
+    if(p.type==='gold'){
+      p.alpha=1-t;
+    }else if(p.type==='smoke'){
+      p.radius=2+t*3;
+      p.alpha=0.4*(1-t);
+    }else if(p.type==='leaf'){
+      p.x+=Math.sin(p.life*0.08)*0.3;// sine drift
+      p.alpha=0.6*(1-t);
+    }else if(p.type==='debris'){
+      p.vy+=0.08;// gravity
+      p.alpha=1-t;
+    }
+    if(particles.length>300)particles.splice(0,50);// cap
+  }
 }
 
 function updateTooltip(){
