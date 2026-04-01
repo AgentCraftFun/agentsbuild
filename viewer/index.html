@@ -115,70 +115,141 @@ function renderTBuf(){
   tCanvas=document.createElement('canvas');tCanvas.width=WW*TS;tCanvas.height=WH*TS;
   const c=tCanvas.getContext('2d');
   const ts=TS;
-  // Pass 1: Base colors + ground texture
+
+  // Pass 1: Base colors
   for(let y=0;y<WH;y++)for(let x=0;x<WW;x++){
     const bi=tBiomes[y*WW+x],b=BL[bi],co=BC[b];
     const px=x*ts,py=y*ts,dark=(x+y)%2===1;
     c.fillStyle=dark?co[1]:co[0];
     c.fillRect(px,py,ts,ts);
-    // 1. GROUND TEXTURE: 2-3 tiny speckle rects for dithered look
-    const h=tileHash(x,y);
-    const baseCol=dark?co[1]:co[0];
-    // Parse base color to lighten/darken
-    const speckCount=2+((h>>8)%2);
-    for(let i=0;i<speckCount;i++){
-      const sx2=px+2+((h>>(i*5))%18);
-      const sy2=py+2+((h>>(i*5+2))%18);
-      const bright=((h>>(i*3))%2===0);
-      c.fillStyle=bright?'rgba(255,255,255,0.06)':'rgba(0,0,0,0.06)';
-      c.fillRect(sx2,sy2,2+(h>>(i*4))%2,2+(h>>(i*6))%2);
+  }
+
+  // Pass 2: Biome-specific micro-detail (all cached to offscreen canvas)
+  for(let y=0;y<WH;y++)for(let x=0;x<WW;x++){
+    const bi=tBiomes[y*WW+x],b=BL[bi];
+    const px=x*ts,py=y*ts;
+    const h=tileHash(x,y),h2v=hash2(x,y);
+
+    if(b==='grassland'){
+      // Dark speckles
+      for(let i=0;i<5;i++){
+        c.fillStyle='rgba(0,40,0,0.12)';
+        c.fillRect(px+1+((h>>(i*4))%20),py+1+((h>>(i*4+2))%20),1+((h>>(i*3))%2),1);
+      }
+      // Light speckles
+      for(let i=0;i<3;i++){
+        c.fillStyle='rgba(80,180,40,0.15)';
+        c.fillRect(px+2+((h2v>>(i*4))%18),py+2+((h2v>>(i*4+2))%18),1+((h2v>>(i*3))%2),1);
+      }
+      // Dirt patch (5%)
+      if(h%20===0){c.fillStyle='#8a7a58';c.fillRect(px+4+(h>>8)%12,py+6+(h>>10)%10,3,2)}
+    }
+    else if(b==='forest'||b==='dense_forest'){
+      // Dense leaf litter
+      for(let i=0;i<9;i++){
+        const leafCol=i%3===0?'#5a4a28':i%3===1?'#1a4a08':'#224a10';
+        c.fillStyle=leafCol;
+        c.fillRect(px+((h>>(i*3))%22),py+((h>>(i*3+1))%22),2,1);
+      }
+    }
+    else if(b==='sand'){
+      // Grain dots
+      for(let i=0;i<5;i++){
+        c.fillStyle=i%2===0?'#d4b870':'#b09040';
+        c.fillRect(px+1+((h>>(i*4))%20),py+1+((h>>(i*4+2))%20),1,1);
+      }
+      // Cracks (8%)
+      if(h%12===0){
+        c.strokeStyle='#9a8640';c.lineWidth=1;
+        c.beginPath();
+        const cx0=px+4+(h>>6)%10,cy0=py+6+(h>>8)%8;
+        c.moveTo(cx0,cy0);c.lineTo(cx0+4+((h>>10)%4),cy0+3+((h>>12)%3));c.stroke();
+      }
+    }
+    else if(b==='hills'||b==='mountain'){
+      // Angular grey speckles
+      const greys=['#5a5a64','#6a6a74','#7a7a84','#4a4a54'];
+      for(let i=0;i<7;i++){
+        c.fillStyle=greys[i%4];
+        c.fillRect(px+((h>>(i*3))%20),py+((h>>(i*3+2))%20),2,1+((h>>(i*5))%2));
+      }
+      // Pebble clusters (10%)
+      if(h%10===0){
+        c.fillStyle='#6a6a72';
+        c.beginPath();c.arc(px+6+(h>>4)%10,py+8+(h>>6)%8,2,0,Math.PI*2);c.fill();
+        c.beginPath();c.arc(px+10+(h>>8)%8,py+12+(h>>10)%6,1.5,0,Math.PI*2);c.fill();
+      }
+    }
+    else if(b==='snow'){
+      // Sparkle pixels (1%)
+      for(let i=0;i<3;i++){
+        if(((h>>(i*7))%100)<1){
+          c.fillStyle='#ffffff';
+          c.fillRect(px+((h>>(i*4))%22),py+((h>>(i*4+2))%22),1,1);
+        }
+      }
+      // Blue shadow dots (8%)
+      if(h%12===0){c.fillStyle='#d0d8f0';c.fillRect(px+4+(h>>4)%12,py+6+(h>>6)%10,2,2)}
+    }
+    else if(b==='shallow_water'||b==='deep_water'||b==='river'){
+      // Subtle depth variation
+      c.fillStyle='rgba(0,0,40,0.04)';
+      for(let i=0;i<2;i++){
+        c.fillRect(px+((h>>(i*5))%18),py+((h>>(i*5+2))%18),3+((h>>(i*3))%3),2);
+      }
+    }
+    // Gold vein gets extra sparkle dots
+    if(b==='gold_vein'){
+      for(let i=0;i<4;i++){
+        c.fillStyle=i%2===0?'#ffe844':'#ffd020';
+        c.fillRect(px+2+((h>>(i*4))%16),py+2+((h>>(i*4+2))%16),2,2);
+      }
     }
   }
-  // Pass 2: Biome edge blending
+
+  // Pass 3: Biome edge blending (5 scattered pixels per edge)
   for(let y=1;y<WH-1;y++)for(let x=1;x<WW-1;x++){
     const bi=tBiomes[y*WW+x];
     const px=x*ts,py=y*ts;
-    const neighbors=[[0,-1],[0,1],[-1,0],[1,0]];
-    for(const[dx,dy] of neighbors){
+    for(const[dx,dy] of [[0,-1],[0,1],[-1,0],[1,0]]){
       const nbi=tBiomes[(y+dy)*WW+(x+dx)];
       if(nbi!==bi){
         const nb=BL[nbi],nco=BC[nb];
         const h2=tileHash(x*7+dx,y*13+dy);
         c.fillStyle=nco[0];
-        // 3-4 random dots along the edge
-        const count=3+((h2>>4)%2);
+        const count=4+((h2>>4)%2);
         for(let i=0;i<count;i++){
-          const ex2=dx===0?(px+3+((h2>>(i*4))%16)):(dx>0?px+ts-2-((h2>>(i*3))%4):px+((h2>>(i*3))%4));
-          const ey2=dy===0?(py+3+((h2>>(i*4+2))%16)):(dy>0?py+ts-2-((h2>>(i*3+1))%4):py+((h2>>(i*3+1))%4));
-          c.fillRect(ex2,ey2,2,2);
+          const ex2=dx===0?(px+2+((h2>>(i*4))%18)):(dx>0?px+ts-3-((h2>>(i*3))%4):px+((h2>>(i*3))%4));
+          const ey2=dy===0?(py+2+((h2>>(i*4+2))%18)):(dy>0?py+ts-3-((h2>>(i*3+1))%4):py+((h2>>(i*3+1))%4));
+          c.fillRect(ex2,ey2,1+((h2>>(i*2))%2),1+((h2>>(i*6))%2));
+        }
+      }
+    }
+    // Beach wave-wash line (beach next to water)
+    const b=BL[bi];
+    if(b==='sand'){
+      for(const[dx,dy] of [[0,-1],[0,1],[-1,0],[1,0]]){
+        const nbi2=tBiomes[(y+dy)*WW+(x+dx)];
+        if(nbi2===0||nbi2===1||nbi2===10){
+          c.fillStyle='#88bbdd';
+          if(dy<0)for(let wx=0;wx<ts;wx+=3)c.fillRect(px+wx,py,2,1);
+          else if(dy>0)for(let wx=0;wx<ts;wx+=3)c.fillRect(px+wx,py+ts-1,2,1);
+          else if(dx<0)for(let wy=0;wy<ts;wy+=3)c.fillRect(px,py+wy,1,2);
+          else for(let wy=0;wy<ts;wy+=3)c.fillRect(px+ts-1,py+wy,1,2);
+          break;
         }
       }
     }
   }
-  // Pass 3: Grass tufts on grass/forest cells
-  for(let y=0;y<WH;y++)for(let x=0;x<WW;x++){
-    const bi=tBiomes[y*WW+x],b=BL[bi];
-    if(b!=='grassland'&&b!=='forest'&&b!=='dense_forest')continue;
-    const h=detailHash(x,y);
-    if(h%100>=15)continue;// ~15% chance
-    const px=x*ts,py=y*ts;
-    const baseGreen=b==='grassland'?'#4aa838':b==='forest'?'#2a7a1a':'#1e6a12';
-    c.fillStyle=baseGreen;
-    // 3 tiny vertical lines clustered
-    const gx=px+4+(h%14),gy=py+8+(h>>4)%10;
-    const h1=4+((h>>6)%5),h2=5+((h>>8)%4),h3=3+((h>>10)%5);
-    c.fillRect(gx,gy-h1,1,h1);
-    c.fillRect(gx+2,gy-h2,2,h2);
-    c.fillRect(gx+4,gy-h3,1,h3);
-  }
-  // Pass 4: Ground shadows near where trees/details will be
+
+  // Pass 4: Ground shadows near tree positions
   for(let y=0;y<WH;y++)for(let x=0;x<WW;x++){
     const bi=tBiomes[y*WW+x],b=BL[bi];
     const h=detailHash(x,y),r=h%100;
-    if(((b==='forest'||b==='dense_forest')&&r<18)||(b==='grassland'&&r<4)){
+    if(((b==='forest'||b==='dense_forest')&&r<12)||(b==='grassland'&&r<8)){
       const px=x*ts,py=y*ts;
-      c.fillStyle='rgba(0,0,0,0.15)';
-      c.beginPath();c.ellipse(px+ts/2+4,py+ts-2,10,4,0,0,Math.PI*2);c.fill();
+      c.fillStyle='rgba(0,0,0,0.12)';
+      c.beginPath();c.ellipse(px+ts/2+3,py+ts-1,12,5,0,0,Math.PI*2);c.fill();
     }
   }
 }
