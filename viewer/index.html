@@ -69,6 +69,7 @@ canvas{display:block;image-rendering:pixelated;image-rendering:crisp-edges}
     <div id="header-stats">
       <span id="h-era-wrap" style="display:flex;align-items:center;gap:4px"><span id="h-era-icon">🪵</span> <span class="val" id="h-era">Wood Age</span></span>
       <span>Agents: <span class="val" id="h-agents">0</span></span>
+      <span id="h-time-wrap" style="display:flex;align-items:center;gap:3px"><span id="h-time-icon">☀️</span><span class="val" id="h-time-name">Morning</span></span>
       <span>Tick: <span class="val" id="h-tick">0</span></span>
       <span><span id="live-dot"></span><span id="h-status">OFFLINE</span></span>
     </div>
@@ -2162,20 +2163,51 @@ const vigGrad=ctx.createRadialGradient(cw2/2,ch2/2,Math.min(cw2,ch2)*0.35,cw2/2,
 vigGrad.addColorStop(0,'rgba(0,0,0,0)');vigGrad.addColorStop(1,'rgba(0,0,0,0.3)');
 ctx.fillStyle=vigGrad;ctx.fillRect(0,0,cw2,ch2);
 
-// 2. DAY/NIGHT CYCLE (5 minute loop)
-const dayPhase=(frame%(60*60*5))/(60*60*5);// 0-1 over 5 min
-if(dayPhase>0.6&&dayPhase<0.8){// Sunset
-  const t2=(dayPhase-0.6)/0.2;
-  ctx.fillStyle=`rgba(255,180,100,${0.05*t2})`;ctx.fillRect(0,0,cw2,ch2);
-}else if(dayPhase>=0.8&&dayPhase<0.9){// Night
-  const t2=Math.min(1,(dayPhase-0.8)/0.05);
-  ctx.fillStyle=`rgba(10,10,40,${0.15*t2})`;ctx.fillRect(0,0,cw2,ch2);
-}else if(dayPhase>=0.9&&dayPhase<1.0){// Dawn
-  const t2=1-(dayPhase-0.9)/0.1;
-  ctx.fillStyle=`rgba(255,150,150,${0.04*t2})`;ctx.fillRect(0,0,cw2,ch2);
-}else{// Day
-  ctx.fillStyle='rgba(255,240,200,0.02)';ctx.fillRect(0,0,cw2,ch2);
+// 2. SMOOTH DAY/NIGHT CYCLE (18000 frames = 5 min at 60fps)
+const cycleLen=18000;
+const cyclePhase=(frame%cycleLen)/cycleLen;
+// Color stops: {pos, r, g, b, a}
+const dnStops=[
+  {p:0.00,r:255,g:160,b:120,a:0.06},
+  {p:0.15,r:255,g:250,b:230,a:0.02},
+  {p:0.30,r:0,g:0,b:0,a:0.0},
+  {p:0.50,r:255,g:245,b:200,a:0.03},
+  {p:0.65,r:255,g:200,b:100,a:0.06},
+  {p:0.75,r:255,g:120,b:60,a:0.10},
+  {p:0.82,r:80,g:50,b:120,a:0.12},
+  {p:0.90,r:10,g:10,b:40,a:0.22},
+  {p:0.95,r:5,g:5,b:30,a:0.28},
+  {p:1.00,r:40,g:20,b:60,a:0.18},
+];
+// Cosine interpolation between stops
+let s0=dnStops[dnStops.length-1],s1=dnStops[0];
+for(let i=0;i<dnStops.length-1;i++){if(cyclePhase>=dnStops[i].p&&cyclePhase<dnStops[i+1].p){s0=dnStops[i];s1=dnStops[i+1];break}}
+const stRange=s1.p-s0.p||0.01;
+const stT=(cyclePhase-s0.p)/stRange;
+const cosT=(1-Math.cos(stT*Math.PI))/2;// smooth cosine lerp
+const cr=Math.round(s0.r+(s1.r-s0.r)*cosT);
+const cg=Math.round(s0.g+(s1.g-s0.g)*cosT);
+const cb=Math.round(s0.b+(s1.b-s0.b)*cosT);
+const ca=(s0.a+(s1.a-s0.a)*cosT).toFixed(3);
+if(ca>0.005){ctx.fillStyle=`rgba(${cr},${cg},${cb},${ca})`;ctx.fillRect(0,0,cw2,ch2)}
+// Stars (visible during night 0.85-1.0 and 0.0-0.05)
+const nightness=cyclePhase>0.85?Math.min(1,(cyclePhase-0.85)/0.05):cyclePhase<0.05?(1-cyclePhase/0.05)*0.5:0;
+if(nightness>0.01){
+  for(let si=0;si<_stars.length;si++){
+    const st2=_stars[si];
+    const twinkle=0.3+0.7*Math.abs(Math.sin(frame*st2.rate+st2.off));
+    ctx.fillStyle=`rgba(255,255,255,${(nightness*twinkle*0.8).toFixed(2)})`;
+    ctx.fillRect(st2.x%cw2,st2.y%ch2,st2.sz,st2.sz);
+  }
 }
+// Update time-of-day UI
+const phases=[{p:0,n:'Dawn',i:'🌅'},{p:0.15,n:'Morning',i:'☀️'},{p:0.30,n:'Midday',i:'☀️'},{p:0.50,n:'Afternoon',i:'🌤'},{p:0.65,n:'Sunset',i:'🌅'},{p:0.82,n:'Dusk',i:'🌆'},{p:0.88,n:'Night',i:'🌙'},{p:0.95,n:'Late Night',i:'🌙'}];
+let phaseName='Morning',phaseIcon='☀️';
+for(let i=phases.length-1;i>=0;i--){if(cyclePhase>=phases[i].p){phaseName=phases[i].n;phaseIcon=phases[i].i;break}}
+if(frame%30===0){document.getElementById('h-time-name').textContent=phaseName;document.getElementById('h-time-icon').textContent=phaseIcon}
+// Shadow direction offset (exported for use by other systems)
+window._shadowOffX=Math.sin(cyclePhase*Math.PI*2)*6;
+window._isNight=nightness>0.3;
 
 // WEATHER — Rain
 if(weatherState.type==='rain'){
@@ -2648,6 +2680,10 @@ function smoothResources(){
     document.getElementById('r-food').textContent=resDisplay.food;
   }
 }
+
+// === Star cache ===
+const _stars=[];
+for(let i=0;i<35;i++)_stars.push({x:Math.random()*2000,y:Math.random()*1200,sz:1+(Math.random()>0.7?1:0),rate:0.02+Math.random()*0.04,off:Math.random()*100});
 
 // === Init ===
 window.addEventListener('resize',()=>{resize()});// terrain cache is static, no need to rebuild on resize
