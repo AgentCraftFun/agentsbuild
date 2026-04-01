@@ -2229,8 +2229,16 @@ smoothResources();
 S.buildings=G.clientBuildings.map(b=>({type:b.type,name:b.name,x:b.x,y:b.y,progress:b.progress,
   complete:b.complete,faction:b.faction,width:b.width,height:b.height,pw:b.pw,ph:b.ph,tall:b.tall,
   owner:b.owner,ownerName:b.ownerName,isHome:b.isHome,personalized:b.personalized,personalFaction:b.personalFaction}));
+// Clamp camera to world bounds
+const worldPxW=WW*TS,worldPxH=WH*TS;
+const viewW=canvasEl.width/zoom,viewH=canvasEl.height/zoom;
+vpX=Math.min(0,Math.max(-(worldPxW-viewW),vpX));
+vpY=Math.min(0,Math.max(-(worldPxH-viewH),vpY));
+
 const cw=canvasEl.width,ch=canvasEl.height;
-ctx.clearRect(0,0,cw,ch);ctx.save();ctx.scale(zoom,zoom);ctx.translate(vpX,vpY);
+// Fill with ocean color before anything (eliminates black void)
+ctx.fillStyle='#061050';ctx.fillRect(0,0,cw,ch);
+ctx.save();ctx.scale(zoom,zoom);ctx.translate(vpX,vpY);
 const ts=TS;
 const sx=Math.max(0,Math.floor(-vpX/ts-1)),sy=Math.max(0,Math.floor(-vpY/ts-1));
 const ex=Math.min(WW,Math.ceil((-vpX+cw/zoom)/ts+1)),ey=Math.min(WH,Math.ceil((-vpY+ch/zoom)/ts+1));
@@ -3113,7 +3121,12 @@ for(let i=0;i<35;i++)_stars.push({x:Math.random()*2000,y:Math.random()*1200,sz:1
 // === Init ===
 window.addEventListener('resize',()=>{resize()});// terrain cache is static, no need to rebuild on resize
 resize();genTerrain();renderTBuf();generateBoulders();initHarvestables();initCreatures();initCursors();
-vpX=canvasEl.width/(2*zoom)-(WW*TS)/2;vpY=canvasEl.height/(2*zoom)-(WH*TS)/2;
+// Center camera on agents if available, otherwise center of world
+if(S.agents.length>0){
+  let avgX=0,avgY=0;for(const a of S.agents){avgX+=a.x;avgY+=a.y}
+  avgX/=S.agents.length;avgY/=S.agents.length;
+  vpX=canvasEl.width/(2*zoom)-avgX*TS-TS/2;vpY=canvasEl.height/(2*zoom)-avgY*TS-TS/2;
+}else{vpX=canvasEl.width/(2*zoom)-(WW*TS)/2;vpY=canvasEl.height/(2*zoom)-(WH*TS)/2}
 // Intro fade
 setTimeout(()=>{document.getElementById('intro-overlay').classList.add('fade')},2500);
 setTimeout(()=>{const io=document.getElementById('intro-overlay');if(io)io.remove()},4500);
