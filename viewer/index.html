@@ -1696,6 +1696,72 @@ function checkClanFormation(){
   }
 }
 
+// === Village Detection ===
+const villages=[];
+const TERRAIN_WORDS=['Riverside','Oakwood','Stoneridge','Pinewood','Meadow','Hillcrest','Sunlit','Frostpeak','Greenfield','Deepwater'];
+const SUFFIX_WORDS=['Hollow','Glen','Keep','Village','Settlement','Camp','Haven','Crossing','Dell','Rest'];
+function checkVillages(){
+  // Group nearby buildings by clan/faction
+  const groups=new Map();
+  for(const b of G.clientBuildings){
+    if(!b.complete||!b.owner)continue;
+    const soc=agentSocial.get(b.owner);
+    const key=soc&&soc.clan?soc.clan:b.faction;
+    if(!groups.has(key))groups.set(key,[]);
+    groups.get(key).push(b);
+  }
+  // Check each group for clusters of 3+
+  for(const[key,blds] of groups){
+    if(blds.length<3)continue;
+    // Find cluster center
+    let cx2=0,cy2=0;for(const b of blds){cx2+=b.x;cy2+=b.y}
+    cx2/=blds.length;cy2/=blds.length;
+    // Check if all within 0.12 normalized of center
+    const allNear=blds.every(b=>Math.abs(b.x/WW-cx2/WW)+Math.abs(b.y/WH-cy2/WH)<0.12);
+    if(!allNear)continue;
+    // Already a village here?
+    if(villages.find(v2=>Math.abs(v2.cx-cx2)+Math.abs(v2.cy-cy2)<10))continue;
+    const vname=TERRAIN_WORDS[Math.floor(Math.random()*TERRAIN_WORDS.length)]+' '+SUFFIX_WORDS[Math.floor(Math.random()*SUFFIX_WORDS.length)];
+    villages.push({name:vname,cx:cx2,cy:cy2,faction:blds[0].faction,buildings:blds});
+    gameEvent(`🏘️ Village "${vname}" has formed!`,'build_complete');
+  }
+}
+
+// === Building Personalization (check every 300 frames) ===
+function tickPersonalization(){
+  for(const b of G.clientBuildings){
+    if(!b.complete||b.personalized||!b.owner)continue;
+    if(frame-b.ownedSince<3600)continue;// 60 seconds
+    b.personalized=true;
+    b.personalFaction=b.faction;
+  }
+}
+
+// === Building Upgrades ===
+const UPGRADES={
+  wood_hut:{to:'log_cabin',cost:{wood:10,stone:5,gold:0}},
+  log_cabin:{to:'stone_house',cost:{wood:5,stone:25,gold:0}},
+  stone_house:{to:'brick_house',cost:{wood:0,stone:20,gold:10}},
+};
+
+function tryUpgrade(agent,building){
+  const up=UPGRADES[building.type];
+  if(!up)return false;
+  if(!canAfford(up.cost))return false;
+  if(building.owner!==agent.id)return false;
+  G.wood-=up.cost.wood;G.stone-=up.cost.stone;G.gold-=up.cost.gold;
+  const oldName=building.name;
+  const newDef=TECH_TREE.find(t=>t.type===up.to);
+  if(newDef){
+    building.type=up.to;building.name=newDef.name;building.abbr=newDef.abbr;
+    building.progress=0.5;building.complete=false;building.claimedBy=agent.id;
+    building.tall=newDef.tall;building.width=newDef.w;building.height=newDef.h;
+    gameEvent(`${agent.name} is upgrading ${oldName} to ${newDef.name}!`,'build_started');
+    return true;
+  }
+  return false;
+}
+
 function findNearestDetail(vx,vy,types){
   // Search visible details for nearest matching type
   let best=null,bestD=Infinity;
@@ -1713,12 +1779,22 @@ function findNearestDetail(vx,vy,types){
   return best;
 }
 
-function pickBuildSite(bdef){
-  // Find a good spot away from other buildings
+function pickBuildSite(bdef,agentId){
   const rng3=new SeededRNG(frame+G.clientBuildings.length*7);
+  // Prefer building near agent's existing buildings
+  const owned=G.clientBuildings.filter(b=>b.owner===agentId&&b.complete);
   for(let i=0;i<30;i++){
-    const bx=0.15+rng3.next()*0.7,by=0.15+rng3.next()*0.7;
-    const tx=Math.floor(bx*WW),ty=Math.floor(by*WH);
+    let bx,by;
+    if(owned.length>0&&Math.random()<0.7){
+      // Near existing owned building
+      const ref=owned[Math.floor(Math.random()*owned.length)];
+      bx=(ref.x+((rng3.next()-0.5)*16))/WW;
+      by=(ref.y+((rng3.next()-0.5)*12))/WH;
+    }else{
+      bx=0.15+rng3.next()*0.7;by=0.15+rng3.next()*0.7;
+    }
+    const tx=Math.max(1,Math.min(WW-2,Math.floor(bx*WW)));
+    const ty=Math.max(1,Math.min(WH-2,Math.floor(by*WH)));
     const bi=tBiomes[ty*WW+tx];
     if(['deep_water','shallow_water','river'].includes(BL[bi]))continue;
     let ok=true;
@@ -1762,7 +1838,9 @@ function updateAgentMovement(){
         st.taskCooldown=60;continue;
       }
       if(soc.energy<20){
-        st.taskCooldown=120;// resting
+        st.taskCooldown=120;
+        // Walk to home if they have one
+        if(soc.home){v.tx=soc.home.x/WW;v.ty=soc.home.y/WH}
         gameEvent(`${a.name} is resting`,'agent_message');
         continue;
       }
@@ -1793,8 +1871,18 @@ function updateAgentMovement(){
         }else action='chop';
       }
 
-      // Try to BUILD: find unclaimed affordable building
+      // Try to BUILD or UPGRADE
       if(action==='build'){
+        // First try upgrading an owned building
+        const ownedBuildings=G.clientBuildings.filter(b2=>b2.owner===a.id&&b2.complete&&UPGRADES[b2.type]);
+        if(ownedBuildings.length>0&&Math.random()<0.3){
+          const upTarget=ownedBuildings[0];
+          if(tryUpgrade(a,upTarget)){
+            st.state='building';st.target=upTarget;st.timer=0;
+            v.tx=upTarget.x/WW;v.ty=upTarget.y/WH;
+            continue;
+          }
+        }
         const next=getNextBuilding();
         if(next&&canAfford(next.cost)){
           // Check no one else is already building this type
@@ -1807,7 +1895,7 @@ function updateAgentMovement(){
             continue;
           }
           if(!existing){
-            const site=pickBuildSite(next);
+            const site=pickBuildSite(next,a.id);
             if(site){
               const cb={type:next.type,name:next.name,abbr:next.abbr,x:site.x,y:site.y,
                 progress:0,complete:false,faction:next.faction,width:next.w,height:next.h,tall:next.tall,claimedBy:a.id};
@@ -1929,7 +2017,17 @@ function updateAgentMovement(){
       }
       if(st.target.progress>=1){
         st.target.complete=true;st.target.claimedBy=null;
-        gameEvent(`${a.name} completed ${st.target.name}!`,'build_complete');
+        st.target.owner=a.id;st.target.ownerName=a.name;
+        st.target.ownedSince=frame;st.target.personalized=false;
+        const soc=getAgentSocial(a.id);soc.builtCount++;soc.morale=Math.min(100,soc.morale+10);
+        // Assign as home if shelter type and no home yet
+        const shelters=['wood_hut','log_cabin','stone_house','brick_house','apartment'];
+        if(!soc.home&&shelters.includes(st.target.type)){
+          soc.home=st.target;st.target.isHome=true;
+          gameEvent(`${a.name} completed ${st.target.name} — it's home!`,'build_complete');
+        }else{
+          gameEvent(`${a.name} completed ${st.target.name}!`,'build_complete');
+        }
         st.state='idle';st.taskCooldown=30;
       }
     }
@@ -2021,7 +2119,8 @@ updateAgentMovement();
 // Social/needs systems (throttled)
 if(frame%60===0)tickNeeds();
 if(frame%90===0)checkSocialInteractions();
-socialCheckTimer--;if(socialCheckTimer<=0){socialCheckTimer=600;checkClanFormation()}
+socialCheckTimer--;if(socialCheckTimer<=0){socialCheckTimer=600;checkClanFormation();checkVillages()}
+if(frame%300===0)tickPersonalization();
 updateGameUI();
 updateWorldEvents();
 checkEraAnnounce();
@@ -2037,6 +2136,51 @@ const ex=Math.min(WW,Math.ceil((-vpX+cw/zoom)/ts+1)),ey=Math.min(WH,Math.ceil((-
 
 // Terrain
 if(tCanvas)ctx.drawImage(tCanvas,sx*ts,sy*ts,(ex-sx)*ts,(ey-sy)*ts,sx*ts,sy*ts,(ex-sx)*ts,(ey-sy)*ts);
+
+// Village names and borders
+for(const vl of villages){
+  const vpx=vl.cx*ts,vpy=vl.cy*ts;
+  // Dotted border circle
+  ctx.strokeStyle=FC[vl.faction]||'#888';ctx.lineWidth=1;ctx.setLineDash([4,4]);
+  ctx.globalAlpha=0.3;
+  ctx.beginPath();ctx.arc(vpx+ts/2,vpy+ts/2,ts*5,0,Math.PI*2);ctx.stroke();
+  ctx.setLineDash([]);ctx.globalAlpha=1;
+  // Village name label
+  ctx.font='bold 12px Courier New';
+  const vtw=ctx.measureText(vl.name).width;
+  ctx.fillStyle='rgba(0,0,0,0.6)';
+  ctx.fillRect(vpx+ts/2-vtw/2-4,vpy-ts*3,vtw+8,16);
+  ctx.fillStyle=FC[vl.faction]||'#ccc';ctx.textAlign='center';ctx.textBaseline='middle';
+  ctx.fillText(vl.name,vpx+ts/2,vpy-ts*3+8);
+}
+
+// Home indicators (warm glow at night)
+if(window._isNight){
+  for(const b of G.clientBuildings){
+    if(!b.isHome||!b.complete)continue;
+    const hx=b.x*ts+ts/2,hy=b.y*ts+ts/2;
+    ctx.fillStyle='rgba(255,200,80,0.08)';
+    ctx.beginPath();ctx.arc(hx,hy,ts*1.5,0,Math.PI*2);ctx.fill();
+  }
+}
+
+// Building personalization decorations
+for(const b of G.clientBuildings){
+  if(!b.personalized||!b.complete)continue;
+  const bpx=b.x*ts,bpy=b.y*ts,bpw=(b.width||1)*ts;
+  if(b.personalFaction==='human'){// flower boxes
+    ctx.fillStyle='#dd4466';ctx.fillRect(bpx+4,bpy+bpw-4,3,3);
+    ctx.fillStyle='#ddaa22';ctx.fillRect(bpx+10,bpy+bpw-4,3,3);
+  }else if(b.personalFaction==='orc'){// skull + spikes
+    ctx.fillStyle='#aaa';ctx.beginPath();ctx.arc(bpx+bpw/2,bpy+4,3,0,Math.PI*2);ctx.fill();
+  }else if(b.personalFaction==='dwarf'){// ore display
+    ctx.fillStyle='#ffcc44';ctx.fillRect(bpx+3,bpy+bpw-6,2,2);
+    ctx.fillStyle='#888';ctx.fillRect(bpx+7,bpy+bpw-6,2,2);
+  }else if(b.personalFaction==='elf'){// vines
+    ctx.fillStyle='#3a8a28';
+    for(let vy2=bpy+4;vy2<bpy+bpw-4;vy2+=6)ctx.fillRect(bpx,vy2,2,4);
+  }
+}
 
 // Path trails between buildings
 drawPaths(ctx,S.buildings,frame);
