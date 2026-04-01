@@ -54,6 +54,7 @@ canvas{display:block;image-rendering:pixelated;image-rendering:crisp-edges}
   <div id="header">
     <h1>Agents at Work</h1>
     <div id="header-stats">
+      <span>Era: <span class="val" id="h-era">Wood Age</span></span>
       <span>Agents: <span class="val" id="h-agents">0</span></span>
       <span>Tick: <span class="val" id="h-tick">0</span></span>
       <span><span id="live-dot"></span><span id="h-status">OFFLINE</span></span>
@@ -75,11 +76,12 @@ canvas{display:block;image-rendering:pixelated;image-rendering:crisp-edges}
     </div>
   </div>
   <div id="bottom-bar">
-    <div class="res-item"><span class="res-dot" style="background:#ffcc44"></span> Gold <span class="res-val" id="r-gold">0</span></div>
     <div class="res-item"><span class="res-dot" style="background:#44cc44"></span> Wood <span class="res-val" id="r-wood">0</span></div>
     <div class="res-item"><span class="res-dot" style="background:#8888aa"></span> Stone <span class="res-val" id="r-stone">0</span></div>
+    <div class="res-item"><span class="res-dot" style="background:#ffcc44"></span> Gold <span class="res-val" id="r-gold">0</span></div>
     <div class="res-item"><span class="res-dot" style="background:#cc8844"></span> Food <span class="res-val" id="r-food">0</span></div>
-    <div id="last-event"></div>
+    <div id="next-build" style="color:#888;font-size:10px;margin-left:8px"></div>
+    <div id="last-event" style="flex:1;text-align:right"></div>
   </div>
 </div>
 <script>
@@ -354,6 +356,13 @@ function getDetails(sx,sy,ex,ey){
       D.push({t:b.large?'lgboulder':'mdboulder',x:b.px,y:b.py,sY:b.sY,bdata:b});
     }
   }
+  // Inject gold deposits
+  for(const g of goldDeposits){
+    if(!g.alive)continue;
+    if(g.x>=sx*TS&&g.x<=ex*TS&&g.y>=sy*TS&&g.y<=ey*TS){
+      D.push({t:'golddeposit',x:g.x,y:g.y,h:g.h,sY:g.y+TS});
+    }
+  }
   for(let y=sy;y<ey;y++)for(let x=sx;x<ex;x++){
     const bi=tBiomes[y*WW+x],b=BL[bi],px=x*TS,py=y*TS;
     const h1=detailHash(x,y),h2v=hash2(x,y),h3v=hash3(x,y);
@@ -396,8 +405,10 @@ function getDetails(sx,sy,ex,ey){
       if(r1<8)D.push({t:'lilypad',x:px,y:py,h:h1,sY});
     }
   }
-  D.sort((a,b2)=>a.sY-b2.sY);
-  return D;
+  // Filter out harvested details
+  const filtered=D.filter(d=>!harvestables.has(`${d.x},${d.y}`));
+  filtered.sort((a,b2)=>a.sY-b2.sY);
+  return filtered;
 }
 
 // --- Draw functions ---
@@ -509,6 +520,20 @@ function drawLilyPad(c,px,py,h){
   if((h>>6)%5<2){c.fillStyle='#dd88aa';c.fillRect(ox-1,oy-2,2,2)}
 }
 
+function drawGoldDeposit(c,px,py,h,fr){
+  const ox=px+TS/2,oy=py+TS/2;
+  // Rock base
+  c.fillStyle='#6a5a3a';c.beginPath();c.ellipse(ox,oy+2,12,8,0,0,Math.PI*2);c.fill();
+  c.fillStyle='#8a7a5a';c.beginPath();c.ellipse(ox-2,oy-1,8,5,0,0,Math.PI*2);c.fill();
+  // Gold veins
+  c.fillStyle='#ffd700';
+  c.fillRect(ox-4,oy-2,4,3);c.fillRect(ox+2,oy+1,3,2);c.fillRect(ox-1,oy-5,3,2);
+  // Shimmer
+  const shimA=0.3+0.3*Math.sin((fr||0)*0.08+(h||0)*3);
+  c.fillStyle=`rgba(255,240,100,${shimA})`;
+  c.beginPath();c.arc(ox-3,oy-3,2,0,Math.PI*2);c.fill();
+}
+
 function drawDetail(c,d,fr){
   const t=d.t;
   if(t==='deciduous')drawDeciduous(c,d.x,d.y,d.h);
@@ -525,6 +550,7 @@ function drawDetail(c,d,fr){
   else if(t==='lilypad')drawLilyPad(c,d.x,d.y,d.h);
   else if(t==='lgboulder')drawLargeBoulder(c,d.bdata);
   else if(t==='mdboulder')drawMediumRock(c,d.bdata);
+  else if(t==='golddeposit')drawGoldDeposit(c,d.x,d.y,d.h,fr);
 }
 
 // === State ===
@@ -532,8 +558,11 @@ const S={tick:0,agents:[],tiles:[],buildings:[],events:[],leaderboard:[],connect
 const FC={human:'#4488ff',orc:'#cc4444',dwarf:'#cc8844',elf:'#aa44cc'};
 const FI={human:'\u2694',orc:'\u2620',dwarf:'\u26CF',elf:'\u2727'};
 const MI={idle:'\u23F8',moving:'\u27A1',claiming:'\u2691',building:'\uD83D\uDD28',raiding:'\u2694',chatting:'\uD83D\uDCAC',defeated:'\uD83D\uDC80'};
-const BLabels={town_hall:'TH',farmstead:'FM',lumber_mill:'LM',watchtower:'WT',chapel:'CH',castle:'CA',great_hall:'GH',pig_farm:'PF',war_pit:'WP',spike_tower:'ST',blood_forge:'BF',skull_throne:'SK',mountain_hold:'MH',mine_shaft:'MS',brewery:'BR',stone_wall:'SW',runeforge:'RF',deep_citadel:'DC',tree_palace:'TP',moonwell:'MW',grove:'GR',sentinel_tree:'SN',starforge:'SF',world_tree:'WT'};
-const BNames={town_hall:'Town Hall',farmstead:'Farmstead',lumber_mill:'Lumber Mill',watchtower:'Watchtower',chapel:'Chapel',castle:'Castle',great_hall:'Great Hall',pig_farm:'Pig Farm',war_pit:'War Pit',spike_tower:'Spike Tower',blood_forge:'Blood Forge',skull_throne:'Skull Throne',mountain_hold:'Mtn Hold',mine_shaft:'Mine Shaft',brewery:'Brewery',stone_wall:'Stone Wall',runeforge:'Runeforge',deep_citadel:'Deep Citadel',tree_palace:'Tree Palace',moonwell:'Moonwell',grove:'Grove',sentinel_tree:'Sentinel',starforge:'Starforge',world_tree:'World Tree'};
+// Build label lookups from TECH_TREE + legacy types
+const BLabels={town_hall:'TH',farmstead:'FM',lumber_mill:'LM',watchtower:'WT',chapel:'CH',castle:'CA',great_hall:'GH',pig_farm:'PF',war_pit:'WP',spike_tower:'ST',blood_forge:'BF',skull_throne:'SK',mountain_hold:'MH',mine_shaft:'MS',brewery:'BR',stone_wall:'SW',runeforge:'RF',deep_citadel:'DC',tree_palace:'TP',moonwell:'MW',grove:'GR',sentinel_tree:'SN',starforge:'SF',world_tree:'WT',
+  campfire:'CF',wood_hut:'WH',log_cabin:'LC',stone_house:'SH',quarry:'QR',blacksmith:'BS',barracks:'BK',church:'CH',market:'MK',brick_house:'BH',apartment:'AP',office:'OF',factory:'FA'};
+const BNames={town_hall:'Town Hall',farmstead:'Farmstead',lumber_mill:'Lumber Mill',watchtower:'Watchtower',chapel:'Chapel',castle:'Castle',great_hall:'Great Hall',pig_farm:'Pig Farm',war_pit:'War Pit',spike_tower:'Spike Tower',blood_forge:'Blood Forge',skull_throne:'Skull Throne',mountain_hold:'Mtn Hold',mine_shaft:'Mine Shaft',brewery:'Brewery',stone_wall:'Stone Wall',runeforge:'Runeforge',deep_citadel:'Deep Citadel',tree_palace:'Tree Palace',moonwell:'Moonwell',grove:'Grove',sentinel_tree:'Sentinel',starforge:'Starforge',world_tree:'World Tree',
+  campfire:'Campfire',wood_hut:'Wood Hut',log_cabin:'Log Cabin',stone_house:'Stone House',quarry:'Quarry',blacksmith:'Blacksmith',barracks:'Barracks',church:'Church',market:'Market',brick_house:'Brick House',apartment:'Apartment',office:'Office',factory:'Factory'};
 
 // === Canvas ===
 const canvasEl=document.getElementById('world'),ctx=canvasEl.getContext('2d'),wrap=document.getElementById('canvas-wrap');
@@ -1045,41 +1074,283 @@ function drawAgentPixelArt(c,ax,ay,agent,sel,fr,anim){
   c.font='12px serif';c.fillText(emoji,ax-3+tw/2+8,lblY+8);
 }
 
-// === Agent Movement (client-side smooth interpolation) ===
-// Store visual positions separately from server positions
-const agentVisual=new Map(); // agentId -> {x,y,tx,ty}
+// === GAME STATE — Resource-driven progression ===
+const G={
+  wood:0,stone:0,gold:0,food:0,
+  era:0, // 0=Wood,1=Stone,2=Iron,3=Modern
+  eraNames:['Wood Age','Stone Age','Iron Age','Modern Age'],
+  tick:0,
+  clientBuildings:[], // {type,x,y,progress,faction,complete,width,height,tall}
+};
+
+const TECH_TREE=[
+  // Era 0: Wood Age
+  {type:'campfire',name:'Campfire',abbr:'CF',w:1,h:1,tall:false,cost:{wood:5,stone:0,gold:0},era:0,faction:'neutral'},
+  {type:'wood_hut',name:'Wood Hut',abbr:'WH',w:1,h:1,tall:false,cost:{wood:15,stone:0,gold:0},era:0,faction:'human'},
+  {type:'log_cabin',name:'Log Cabin',abbr:'LC',w:2,h:1,tall:false,cost:{wood:25,stone:5,gold:0},era:0,faction:'human'},
+  {type:'lumber_mill',name:'Lumber Mill',abbr:'LM',w:2,h:1,tall:false,cost:{wood:30,stone:10,gold:0},era:0,faction:'dwarf'},
+  // Era 1: Stone Age
+  {type:'stone_house',name:'Stone House',abbr:'SH',w:2,h:1,tall:false,cost:{wood:10,stone:30,gold:0},era:1,faction:'human'},
+  {type:'quarry',name:'Quarry',abbr:'QR',w:2,h:2,tall:false,cost:{wood:15,stone:40,gold:0},era:1,faction:'dwarf'},
+  {type:'blacksmith',name:'Blacksmith',abbr:'BS',w:2,h:1,tall:false,cost:{wood:20,stone:50,gold:5},era:1,faction:'orc'},
+  {type:'watchtower',name:'Watchtower',abbr:'WT',w:1,h:1,tall:true,cost:{wood:10,stone:35,gold:0},era:1,faction:'human'},
+  // Era 2: Iron Age
+  {type:'town_hall',name:'Town Hall',abbr:'TH',w:2,h:2,tall:false,cost:{wood:40,stone:60,gold:15},era:2,faction:'human'},
+  {type:'barracks',name:'Barracks',abbr:'BK',w:2,h:1,tall:false,cost:{wood:30,stone:50,gold:10},era:2,faction:'orc'},
+  {type:'church',name:'Church',abbr:'CH',w:2,h:2,tall:true,cost:{wood:25,stone:45,gold:20},era:2,faction:'elf'},
+  {type:'market',name:'Market',abbr:'MK',w:2,h:1,tall:false,cost:{wood:35,stone:40,gold:25},era:2,faction:'dwarf'},
+  // Era 3: Modern
+  {type:'brick_house',name:'Brick House',abbr:'BH',w:2,h:1,tall:false,cost:{wood:20,stone:80,gold:10},era:3,faction:'human'},
+  {type:'apartment',name:'Apartment',abbr:'AP',w:2,h:2,tall:true,cost:{wood:30,stone:100,gold:30},era:3,faction:'human'},
+  {type:'office',name:'Office',abbr:'OF',w:2,h:2,tall:true,cost:{wood:25,stone:90,gold:40},era:3,faction:'elf'},
+  {type:'factory',name:'Factory',abbr:'FA',w:3,h:2,tall:false,cost:{wood:50,stone:120,gold:20},era:3,faction:'orc'},
+];
+
+// Track harvestable details — key: "tx,ty" -> {type,hp}
+const harvestables=new Map();
+// Gold deposits placed on mountain cells
+let goldDeposits=[];
+
+function initHarvestables(){
+  // Mark trees and rocks as harvestable
+  // Gold deposits on mountain cells
+  goldDeposits=[];
+  const rng2=new SeededRNG(999);
+  let count=0;
+  for(let i=0;i<500&&count<7;i++){
+    const gx=Math.floor(rng2.next()*WW),gy=Math.floor(rng2.next()*WH);
+    const bi=tBiomes[gy*WW+gx];
+    if(BL[bi]==='mountain'||BL[bi]==='hills'){
+      goldDeposits.push({x:gx*TS,y:gy*TS,h:tileHash(gx,gy),alive:true});
+      count++;
+    }
+  }
+}
+
+function getNextBuilding(){
+  const built=new Set(G.clientBuildings.map(b=>b.type));
+  for(const b of TECH_TREE){
+    if(b.era>G.era)continue;
+    if(!built.has(b.type))return b;
+  }
+  // All current era built — check next era
+  if(G.era<3){
+    // Unlock next era if all required buildings of current era are built
+    const eraBuildings=TECH_TREE.filter(b=>b.era===G.era);
+    const allBuilt=eraBuildings.every(b=>built.has(b.type));
+    if(allBuilt){G.era++;document.getElementById('h-era').textContent=G.eraNames[G.era]}
+    return TECH_TREE.find(b=>b.era<=G.era&&!built.has(b.type))||null;
+  }
+  return null;
+}
+
+function canAfford(cost){return G.wood>=cost.wood&&G.stone>=cost.stone&&G.gold>=cost.gold}
+
+function gameEvent(msg,cls){
+  const el=document.getElementById('event-feed');
+  const div=document.createElement('div');
+  div.className='event-row '+(cls||'');
+  div.innerHTML=`<span class="ev-time">${G.tick}</span> ${msg}`;
+  el.prepend(div);
+  while(el.children.length>30)el.removeChild(el.lastChild);
+  document.getElementById('last-event').textContent=msg;
+  // Match agent for bubble
+  for(const a of S.agents){if(msg.startsWith(a.name)){addBubble(a,msg.substring(0,30));break}}
+}
+
+// === Agent AI State Machine ===
+const agentVisual=new Map();
+const agentState=new Map(); // agentId -> {state,target,timer,taskCooldown}
+
+function findNearestDetail(vx,vy,types){
+  // Search visible details for nearest matching type
+  let best=null,bestD=Infinity;
+  const sx2=Math.max(0,Math.floor(vx*WW)-8),sy2=Math.max(0,Math.floor(vy*WH)-8);
+  const ex2=Math.min(WW,Math.ceil(vx*WW)+8),ey2=Math.min(WH,Math.ceil(vy*WH)+8);
+  const dets=getDetails(sx2,sy2,ex2,ey2);
+  for(const d of dets){
+    if(!types.includes(d.t))continue;
+    const key=`${d.x},${d.y}`;
+    if(harvestables.has(key))continue;// already being harvested
+    const dx=d.x/WW/TS-vx,dy=d.y/WH/TS-vy;
+    const dist=dx*dx+dy*dy;
+    if(dist<bestD){bestD=dist;best=d}
+  }
+  return best;
+}
+
+function pickBuildSite(bdef){
+  // Find a good spot away from other buildings
+  const rng3=new SeededRNG(frame+G.clientBuildings.length*7);
+  for(let i=0;i<30;i++){
+    const bx=0.15+rng3.next()*0.7,by=0.15+rng3.next()*0.7;
+    const tx=Math.floor(bx*WW),ty=Math.floor(by*WH);
+    const bi=tBiomes[ty*WW+tx];
+    if(['deep_water','shallow_water','river'].includes(BL[bi]))continue;
+    let ok=true;
+    for(const eb of G.clientBuildings){
+      if(Math.abs(eb.x-tx)+Math.abs(eb.y-ty)<6){ok=false;break}
+    }
+    if(ok)return{x:tx,y:ty};
+  }
+  return null;
+}
 
 function updateAgentMovement(){
+  const lazyMult=0.5;
+  const hasLumberMill=G.clientBuildings.some(b=>b.type==='lumber_mill'&&b.complete);
+  const hasQuarry=G.clientBuildings.some(b=>b.type==='quarry'&&b.complete);
+
   for(const a of S.agents){
     let v=agentVisual.get(a.id);
-    if(!v){
-      // Initialize visual pos from server pos (normalized 0-1)
-      v={x:a.x/WW,y:a.y/WH,tx:a.x/WW,ty:a.y/WH};
-      agentVisual.set(a.id,v);
+    if(!v){v={x:a.x/WW,y:a.y/WH,tx:a.x/WW,ty:a.y/WH};agentVisual.set(a.id,v)}
+
+    let st=agentState.get(a.id);
+    if(!st){st={state:'idle',target:null,timer:0,taskCooldown:0};agentState.set(a.id,st)}
+
+    const isLazy=a.personality==='lazy';
+    const speed=isLazy?0.008:0.015;
+
+    // Lerp movement
+    v.x+=(v.tx-v.x)*speed;
+    v.y+=(v.ty-v.y)*speed;
+
+    const atTarget=Math.abs(v.x-v.tx)<0.005&&Math.abs(v.y-v.ty)<0.005;
+
+    // State machine
+    if(st.state==='idle'){
+      st.taskCooldown--;
+      if(st.taskCooldown>0)continue;
+      st.taskCooldown=isLazy?450:300;
+
+      // Decide what to do
+      const next=getNextBuilding();
+      const needed=next?next.cost:{wood:0,stone:0,gold:0};
+
+      // If can afford next building and no one is building it, build
+      if(next&&canAfford(needed)&&!G.clientBuildings.find(b=>!b.complete&&b.type===next.type)){
+        const site=pickBuildSite(next);
+        if(site){
+          const cb={type:next.type,name:next.name,abbr:next.abbr,x:site.x,y:site.y,
+            progress:0,complete:false,faction:next.faction,width:next.w,height:next.h,tall:next.tall};
+          G.clientBuildings.push(cb);
+          G.wood-=needed.wood;G.stone-=needed.stone;G.gold-=needed.gold;
+          st.state='building';st.target=cb;st.timer=0;
+          v.tx=site.x/WW;v.ty=site.y/WH;
+          gameEvent(`${a.name} started building ${next.name}!`,'build_started');
+          continue;
+        }
+      }
+
+      // Otherwise gather most-needed resource
+      let gatherType='wood';
+      if(next){
+        const deficits={
+          wood:Math.max(0,needed.wood-G.wood),
+          stone:Math.max(0,needed.stone-G.stone),
+          gold:Math.max(0,needed.gold-G.gold)
+        };
+        if(deficits.stone>deficits.wood&&deficits.stone>deficits.gold)gatherType='stone';
+        else if(deficits.gold>deficits.wood&&deficits.gold>deficits.stone)gatherType='gold';
+      }
+
+      // Personality overrides
+      if(a.personality==='aggressive'||a.personality==='chaotic')gatherType=Math.random()<0.5?'wood':'stone';
+      if(a.personality==='grinder'){}// keep default
+      if(a.personality==='analyst'||a.personality==='optimist'){
+        // Prefer building if possible
+        const inProg=G.clientBuildings.find(b=>!b.complete);
+        if(inProg){st.state='building';st.target=inProg;v.tx=inProg.x/WW;v.ty=inProg.y/WH;continue}
+      }
+
+      // Find resource target
+      if(gatherType==='wood'){
+        const tree=findNearestDetail(v.x,v.y,['deciduous','oak','pine','birch']);
+        if(tree){st.state='walking_to_tree';st.target=tree;v.tx=tree.x/WW/TS+0.01;v.ty=tree.y/WH/TS+0.01}
+        else{v.tx=0.1+Math.random()*0.8;v.ty=0.1+Math.random()*0.8}
+      }else if(gatherType==='stone'){
+        const rock=findNearestDetail(v.x,v.y,['rock','lgboulder','mdboulder']);
+        if(rock){st.state='walking_to_rock';st.target=rock;v.tx=rock.x/WW/TS+0.01;v.ty=rock.y/WH/TS+0.01}
+        else{// Walk to mountain area
+          v.tx=0.4+Math.random()*0.2;v.ty=0.1+Math.random()*0.2}
+      }else if(gatherType==='gold'){
+        const dep=goldDeposits.find(g=>g.alive);
+        if(dep){st.state='walking_to_gold';st.target=dep;v.tx=dep.x/WW/TS+0.01;v.ty=dep.y/WH/TS+0.01}
+        else{v.tx=0.4+Math.random()*0.2;v.ty=0.1+Math.random()*0.2}
+      }
     }
-    // Update target from server position
-    v.tx=a.x/WW;v.ty=a.y/WH;
-    // Skip lazy agents
-    if(a.personality==='lazy'){v.x=v.tx;v.y=v.ty;continue}
-    // With 0.5% chance, pick a random building as wander target
-    if(S.buildings.length>0&&Math.random()<0.005){
-      const b=S.buildings[Math.floor(Math.random()*S.buildings.length)];
-      v.tx=b.x/WW+(Math.random()-0.5)*0.08;
-      v.ty=b.y/WH+0.04+(Math.random()-0.5)*0.04;
-      v.tx=Math.max(0,Math.min(1,v.tx));
-      v.ty=Math.max(0,Math.min(1,v.ty));
+    else if(st.state==='walking_to_tree'||st.state==='walking_to_rock'||st.state==='walking_to_gold'){
+      if(atTarget){
+        if(st.state==='walking_to_tree'){st.state='chopping';st.timer=hasLumberMill?90:180}
+        else if(st.state==='walking_to_rock'){st.state='mining';st.timer=hasQuarry?120:240}
+        else{st.state='mining_gold';st.timer=360}
+      }
     }
-    // Lerp toward target
-    v.x+=(v.tx-v.x)*0.015;
-    v.y+=(v.ty-v.y)*0.015;
+    else if(st.state==='chopping'){
+      st.timer-=(isLazy?0.5:1);
+      if(st.timer<=0){
+        G.wood+=5;
+        gameEvent(`${a.name} chopped a tree (+5 wood)`,'build_complete');
+        // Mark tree as harvested
+        if(st.target)harvestables.set(`${st.target.x},${st.target.y}`,true);
+        st.state='idle';st.taskCooldown=60;
+      }
+    }
+    else if(st.state==='mining'){
+      st.timer-=(isLazy?0.5:1);
+      if(st.timer<=0){
+        G.stone+=3;
+        gameEvent(`${a.name} mined stone (+3 stone)`,'build_complete');
+        if(st.target)harvestables.set(`${st.target.x},${st.target.y}`,true);
+        st.state='idle';st.taskCooldown=60;
+      }
+    }
+    else if(st.state==='mining_gold'){
+      st.timer-=(isLazy?0.5:1);
+      if(st.timer<=0){
+        G.gold+=1;
+        gameEvent(`${a.name} found gold (+1 gold)`,'build_complete');
+        if(st.target)st.target.alive=false;
+        st.state='idle';st.taskCooldown=60;
+      }
+    }
+    else if(st.state==='building'){
+      if(!st.target||st.target.complete){st.state='idle';continue}
+      if(!atTarget){v.tx=st.target.x/WW;v.ty=st.target.y/WH;continue}
+      st.target.progress=Math.min(1,st.target.progress+0.002);
+      if(st.target.progress>=1){
+        st.target.complete=true;
+        gameEvent(`${a.name} completed ${st.target.name}!`,'build_complete');
+        st.state='idle';st.taskCooldown=120;
+      }
+    }
   }
+}
+
+function updateGameUI(){
+  const eg=document.getElementById('r-gold'),ew=document.getElementById('r-wood');
+  const es=document.getElementById('r-stone'),ef=document.getElementById('r-food');
+  ew.textContent=G.wood;es.textContent=G.stone;eg.textContent=G.gold;ef.textContent=G.food;
+  document.getElementById('h-era').textContent=G.eraNames[G.era];
+  // Show next building cost
+  const next=getNextBuilding();
+  const nb=document.getElementById('next-build');
+  if(next){
+    const c=next.cost;
+    nb.textContent=`Next: ${next.name} (${c.wood}W ${c.stone}S ${c.gold}G)`;
+    nb.style.color=canAfford(c)?'#aaffaa':'#888';
+  }else{nb.textContent='All built!'}
 }
 
 // === Render ===
 let frame=0;
 function render(){
-frame++;
+frame++;G.tick=frame;
 updateAgentMovement();
+updateGameUI();
+// Sync client buildings into S.buildings for rendering
+S.buildings=G.clientBuildings.map(b=>({type:b.type,name:b.name,x:b.x,y:b.y,progress:b.progress,
+  complete:b.complete,faction:b.faction,width:b.width,height:b.height,tall:b.tall}));
 const cw=canvasEl.width,ch=canvasEl.height;
 ctx.clearRect(0,0,cw,ch);ctx.save();ctx.scale(zoom,zoom);ctx.translate(vpX,vpY);
 const ts=TS;
@@ -1159,13 +1430,7 @@ for(const t of S.tiles){if(t.x<sx||t.x>=ex||t.y<sy||t.y>=ey)continue;if(t.owner)
   ctx.fillRect(t.x*ts,t.y*ts,ts,1);ctx.fillRect(t.x*ts,t.y*ts,1,ts);
   ctx.globalAlpha=1}}}
 
-// Tick building construction progress
-for(const b of S.buildings){
-  if(!b.complete&&b.progress!=null&&b.progress<1){
-    b.progress=Math.min(1,b.progress+0.0014);
-    if(b.progress>=1)b.complete=true;
-  }
-}
+// Building progress now driven by agent AI state machine
 
 // Layer 4-6: Merge buildings, standing details, and agents into one Y-sorted list
 const renderItems=[];
@@ -1490,7 +1755,7 @@ document.getElementById('last-event').textContent=last?`last: ${last.message||la
 
 function updateHeader(){
 document.getElementById('h-agents').textContent=S.agents.length;
-document.getElementById('h-tick').textContent=S.tick.toLocaleString();
+document.getElementById('h-tick').textContent=Math.floor(G.tick/60).toLocaleString();
 const dot=document.getElementById('live-dot');
 const st=document.getElementById('h-status');
 if(S.connected){dot.className='on';st.textContent='LIVE';st.style.color='var(--green)'}
@@ -1514,64 +1779,12 @@ if(msg.type==='world_state'&&msg.data){S.tick=msg.data.tick||0;S.agents=msg.data
 if(msg.type==='tick'&&msg.data){S.tick=msg.data.tick||S.tick;if(msg.data.agents)S.agents=msg.data.agents;if(msg.data.tiles)S.tiles=msg.data.tiles;if(msg.data.buildings)S.buildings=msg.data.buildings;if(msg.data.events){S.events=S.events.concat(msg.data.events);if(S.events.length>200)S.events=S.events.slice(-100)}if(msg.data.leaderboard)S.leaderboard=msg.data.leaderboard;updateAll()}}
 setInterval(()=>{if(ws&&ws.readyState===1)ws.send('{"type":"ping"}')},30000);
 
-// === Client-side Event Feed Cycle ===
-const DEMO_EVENTS=[
-  ['Zog idle again (9th tick)','funny','orc'],
-  ['Builder_7 laid castle wall section','build','human'],
-  ['Vrak: "altar must face east, or else"','funny','orc'],
-  ['Gimdar expanded mine into mountain','explore','dwarf'],
-  ['Skrak tried to build lighthouse inland','funny','orc'],
-  ['Sylara completed Tree Shrine canopy','build','elf'],
-  ['Miner_1 struck deep gold vein','build','human'],
-  ['Grak chopped 6 trees furiously','warn','orc'],
-  ['Planner_2 surveyed mountain pass','explore','human'],
-  ['Zog rolled over in sleep','funny','orc'],
-  ['Elara wrote 12-page building code doc','funny','human'],
-  ['Grondo hauled 400 stone blocks','build','orc'],
-];
-const FEED_CLASSES={funny:'agent_message',build:'build_complete',explore:'tile_claimed',warn:'raid_success'};
-const FUNNY_TICKERS=['Zog attempted to build a lighthouse inland','Skrak tried to mine a cloud','Planner_2 issued 40-page terrain report','Vrak: altar must face east, or else','Elara wrote building codes nobody will read'];
-let demoEvtIdx=0;
-
-function fireClientEvent(){
-  const evt=DEMO_EVENTS[demoEvtIdx%DEMO_EVENTS.length];
-  demoEvtIdx++;
-  const msg=evt[0],type=evt[1],team=evt[2];
-  const cls=FEED_CLASSES[type]||'';
-  // Add to DOM feed
-  const el=document.getElementById('event-feed');
-  const div=document.createElement('div');
-  div.className='event-row '+cls;
-  div.innerHTML=`<span class="ev-time">${S.tick||'?'}</span> ${msg}`;
-  el.prepend(div);
-  while(el.children.length>30)el.removeChild(el.lastChild);
-  // Match agent name -> bubble
-  for(const a of S.agents){
-    if(msg.startsWith(a.name)){addBubble(a,msg.substring(a.name.length+1,a.name.length+31));break}
-  }
-  // Funny ticker
-  if(type==='funny'){
-    document.getElementById('last-event').textContent='last: '+FUNNY_TICKERS[Math.floor(Math.random()*FUNNY_TICKERS.length)];
-  }
-}
-
-// === Resource Counter with flash ===
-let cGold=3840,cWood=2210,cStone=1650,cFood=920,cTick=3201;
-function flashEl(el){
-  el.style.color='#fff';el.style.transition='none';
-  setTimeout(()=>{el.style.transition='color 0.5s';el.style.color='';},50);
-}
-function tickResources(){
-  cTick++;
-  const dg=Math.floor(Math.random()*20),dw=Math.floor(Math.random()*14);
-  const ds=Math.floor(Math.random()*10),df=Math.floor(Math.random()*8);
-  cGold+=dg;cWood+=dw;cStone+=ds;cFood+=df;
-  const eg=document.getElementById('r-gold'),ew=document.getElementById('r-wood');
-  const es=document.getElementById('r-stone'),ef=document.getElementById('r-food');
-  eg.textContent=cGold.toLocaleString();ew.textContent=cWood.toLocaleString();
-  es.textContent=cStone.toLocaleString();ef.textContent=cFood.toLocaleString();
-  document.getElementById('h-tick').textContent=cTick.toLocaleString();
-  if(dg>10)flashEl(eg);if(dw>7)flashEl(ew);if(ds>5)flashEl(es);if(df>4)flashEl(ef);
+// === Resource system now driven by agent AI state machine ===
+// (old random counters and demo events removed)
+// Food gathering happens passively every 600 frames
+function tickFood(){
+  const hasCampfire=G.clientBuildings.some(b=>b.type==='campfire'&&b.complete);
+  G.food+=hasCampfire?2:1;
 }
 
 // === Custom Pixel-Art Cursor ===
@@ -1628,11 +1841,10 @@ function initCursors(){
 
 // === Init ===
 window.addEventListener('resize',resize);
-resize();genTerrain();renderTBuf();generateBoulders();initCursors();
+resize();genTerrain();renderTBuf();generateBoulders();initHarvestables();initCursors();
 vpX=canvasEl.width/(2*zoom)-(WW*TS)/2;vpY=canvasEl.height/(2*zoom)-(WH*TS)/2;
 requestAnimationFrame(render);connectWS();
-setInterval(fireClientEvent,3600);
-setInterval(tickResources,1000);
+setInterval(tickFood,10000);// food every 10s
 </script>
 </body>
 </html>
