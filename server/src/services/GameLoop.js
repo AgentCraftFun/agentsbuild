@@ -236,6 +236,12 @@ class GameLoop {
   _executeBuild(agent, decision, tick, events) {
     const { building: buildingType, x, y, resume } = decision.payload || {};
 
+    // 1. BUILDING LIMIT: max 25 buildings total
+    if (this.world.buildingsList.length >= 25 && !resume) {
+      events.push({ tick, type: 'action_failed', agent: agent.name, message: `${agent.name} can't build — world limit (25 buildings) reached.` });
+      return;
+    }
+
     // Validate building type
     const info = Building.CATALOG[buildingType];
     if (!info) {
@@ -249,6 +255,30 @@ class GameLoop {
     if (!tile) {
       events.push({ tick, type: 'action_failed', agent: agent.name, message: `${agent.name} tried to build on a nonexistent tile. Physics says no.` });
       return;
+    }
+
+    // 5. NO WATER BUILDING
+    if (!WorldGen.isBuildable(tile.biome)) {
+      events.push({ tick, type: 'action_failed', agent: agent.name, message: `${agent.name} tried to build on ${tile.biome}. That's not a foundation.` });
+      return;
+    }
+
+    // 2. MINIMUM SPACING: 120px = 5 tiles (TS=24, 120/24=5) from any existing building center
+    const MIN_DIST = 5;
+    if (!resume) {
+      let tooClose = false;
+      for (const b of this.world.buildingsList) {
+        const dx = Math.abs(b.x - x);
+        const dy = Math.abs(b.y - y);
+        if (dx + dy < MIN_DIST && !(b.x === x && b.y === y)) {
+          tooClose = true;
+          break;
+        }
+      }
+      if (tooClose) {
+        events.push({ tick, type: 'action_failed', agent: agent.name, message: `${agent.name} tried to build too close to another building.` });
+        return;
+      }
     }
 
     // If resuming an abandoned building, allow it
