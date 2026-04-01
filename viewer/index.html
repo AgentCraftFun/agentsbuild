@@ -372,6 +372,142 @@ function drawBuildingPixelArt(c,b,bx,by,bw,bh,fr){
   c.strokeStyle='#000';c.lineWidth=1;c.strokeRect(bx+0.5,by+0.5,bw-1,bh-1);
 }
 
+// === Special Building Renderers ===
+const SPECIAL_TYPES=new Set(['mine_shaft','moonwell','sentinel_tree','grove','tree_palace']);
+// Map our building types to special renderers
+function isSpecialBuilding(type){
+  return type==='mine_shaft'||type==='moonwell'||type==='grove'||type==='sentinel_tree'||type==='tree_palace';
+}
+
+function drawGoldMine(c,bx,by,bw,bh,p,fr){
+  // Dark brown box
+  c.fillStyle='#3a2a10';c.fillRect(bx,by,bw,bh);
+  // Arch entrance
+  c.fillStyle='#2a1a08';
+  c.beginPath();c.ellipse(bx+bw/2,by+bh*0.5,bw*0.3,bh*0.35,0,Math.PI,0);c.fill();
+  c.fillRect(bx+bw/2-bw*0.3,by+bh*0.5,bw*0.6,bh*0.4);
+  // Gold nuggets
+  c.fillStyle='#c8a020';
+  const spots=[[0.2,0.7],[0.7,0.75],[0.5,0.85],[0.3,0.6],[0.65,0.55]];
+  for(const s of spots)c.fillRect(bx+bw*s[0],by+bh*s[1],5,5);
+  // Border + label
+  c.strokeStyle='#000';c.lineWidth=1;c.strokeRect(bx+0.5,by+0.5,bw-1,bh-1);
+  c.font='bold 10px Courier New';c.textAlign='center';c.textBaseline='top';
+  c.fillStyle='rgba(0,0,0,0.7)';const tw=c.measureText('AU').width;
+  c.fillRect(bx+bw/2-tw/2-3,by+bh+2,tw+6,13);
+  c.fillStyle='#f0d060';c.fillText('AU',bx+bw/2,by+bh+3);
+  c.font='8px Courier New';c.fillStyle='#f0d060';c.fillText('Gold Mine',bx+bw/2,by+bh+16);
+}
+
+function drawLighthouse(c,bx,by,bw,bh,p,fr){
+  const colH=bh*Math.min(1,p*1.2);
+  // White column
+  const cw2=bw*0.5,cx2=bx+bw/2-cw2/2;
+  c.fillStyle='#d8d0c0';c.fillRect(cx2,by+bh-colH,cw2,colH);
+  // Stripe accents
+  c.fillStyle='#b8b0a0';
+  for(let sy2=by+bh-colH;sy2<by+bh;sy2+=18){c.fillRect(cx2,sy2,cw2,3)}
+  // Lamp room at top (p>0.8)
+  if(p>0.8){
+    c.fillStyle='#e8e8e8';c.fillRect(cx2-4,by+bh-colH-12,cw2+8,12);
+    c.fillStyle='#ffe840';c.fillRect(cx2,by+bh-colH-8,cw2,6);
+    // ROTATING LIGHT BEAM
+    const angle=fr*0.03;
+    c.save();c.translate(bx+bw/2,by+bh-colH-6);
+    c.rotate(angle);
+    const beamAlpha=0.3+0.15*Math.sin(fr*0.1);
+    c.strokeStyle=`rgba(255,255,100,${beamAlpha})`;
+    c.lineWidth=6;c.beginPath();c.moveTo(0,0);c.lineTo(60,0);c.stroke();
+    c.lineWidth=1;c.restore();
+  }
+  c.strokeStyle='#000';c.lineWidth=1;c.strokeRect(cx2+0.5,by+bh-colH+0.5,cw2-1,colH-1);
+  c.font='bold 10px Courier New';c.textAlign='center';c.textBaseline='top';
+  c.fillStyle='rgba(0,0,0,0.7)';const tw=c.measureText('LH').width;
+  c.fillRect(bx+bw/2-tw/2-3,by+bh+2,tw+6,13);
+  c.fillStyle='#ccddff';c.fillText('LH',bx+bw/2,by+bh+3);
+  c.font='8px Courier New';c.fillStyle='#ccddff';c.fillText('Lighthouse',bx+bw/2,by+bh+16);
+}
+
+function drawRuins(c,bx,by,bw,bh){
+  // Crumbling wall fragments
+  c.fillStyle='#6a6050';
+  c.fillRect(bx+2,by+bh*0.3,bw*0.25,bh*0.7);
+  c.fillRect(bx+bw*0.4,by+bh*0.5,bw*0.2,bh*0.5);
+  c.fillRect(bx+bw*0.7,by+bh*0.2,bw*0.25,bh*0.8);
+  // Rubble row
+  c.fillStyle='#5a5040';
+  for(let i=0;i<8;i++){c.fillRect(bx+i*(bw/8)+1,by+bh-8,6,6)}
+  c.strokeStyle='#000';c.lineWidth=1;c.strokeRect(bx+0.5,by+0.5,bw-1,bh-1);
+  c.font='bold 10px Courier New';c.textAlign='center';c.textBaseline='top';
+  c.fillStyle='rgba(0,0,0,0.7)';const tw=c.measureText('RU').width;
+  c.fillRect(bx+bw/2-tw/2-3,by+bh+2,tw+6,13);
+  c.fillStyle='#bbaa88';c.fillText('RU',bx+bw/2,by+bh+3);
+  c.font='8px Courier New';c.fillStyle='#bbaa88';c.fillText('Ruins',bx+bw/2,by+bh+16);
+}
+
+function drawQuarry(c,bx,by,bw,bh,p){
+  // Stepped pit - 3 nested rects
+  c.fillStyle='#7a6a5a';c.fillRect(bx,by+bh*0.2,bw,bh*0.8);
+  c.fillStyle='#6a5a4a';c.fillRect(bx+bw*0.1,by+bh*0.35,bw*0.8,bh*0.65);
+  c.fillStyle='#5a4a3a';c.fillRect(bx+bw*0.2,by+bh*0.5,bw*0.6,bh*0.5);
+  // Scattered stone blocks
+  if(p>0.4){c.fillStyle='#9a8a7a';
+    c.fillRect(bx+4,by+bh-12,8,6);c.fillRect(bx+bw-14,by+bh-10,7,5);
+    c.fillRect(bx+bw*0.4,by+bh*0.6,6,5)}
+  c.strokeStyle='#000';c.lineWidth=1;c.strokeRect(bx+0.5,by+0.5,bw-1,bh-1);
+  c.font='bold 10px Courier New';c.textAlign='center';c.textBaseline='top';
+  c.fillStyle='rgba(0,0,0,0.7)';const tw=c.measureText('QR').width;
+  c.fillRect(bx+bw/2-tw/2-3,by+bh+2,tw+6,13);
+  c.fillStyle='#ccbbaa';c.fillText('QR',bx+bw/2,by+bh+3);
+  c.font='8px Courier New';c.fillStyle='#ccbbaa';c.fillText('Quarry',bx+bw/2,by+bh+16);
+}
+
+function drawTreeShrine(c,bx,by,bw,bh,p,fr){
+  // Green platform
+  c.fillStyle='#2a5a20';c.fillRect(bx,by+bh-20,bw,20);
+  // Trunk growing with progress
+  const trunkH=bh*0.6*Math.min(1,p*1.5);
+  c.fillStyle='#5a3010';
+  c.fillRect(bx+bw/2-3,by+bh-20-trunkH,6,trunkH);
+  // Canopy (p>0.3)
+  if(p>0.3){
+    const canopyR=Math.min(bw*0.45,bw*0.45*(p-0.1));
+    const ccx=bx+bw/2,ccy=by+bh-20-trunkH;
+    c.fillStyle='#1a6010';c.beginPath();c.arc(ccx,ccy,canopyR,0,Math.PI*2);c.fill();
+    c.fillStyle='#226614';c.beginPath();c.arc(ccx,ccy,canopyR*0.75,0,Math.PI*2);c.fill();
+    c.fillStyle='#2a7a18';c.beginPath();c.arc(ccx,ccy,canopyR*0.5,0,Math.PI*2);c.fill();
+  }
+  // Orbiting glowing runes (p>0.8)
+  if(p>0.8){
+    const ccx=bx+bw/2,ccy=by+bh-20-trunkH;
+    const runeAlpha=0.4+0.3*Math.sin(fr*0.07);
+    c.fillStyle=`rgba(100,255,150,${runeAlpha})`;
+    for(let i=0;i<4;i++){
+      const a=fr*0.01+i*Math.PI/2;
+      const rx=ccx+Math.cos(a)*22,ry=ccy+Math.sin(a)*22;
+      c.beginPath();c.arc(rx,ry,3,0,Math.PI*2);c.fill();
+    }
+  }
+  c.strokeStyle='#000';c.lineWidth=1;c.strokeRect(bx+0.5,by+0.5,bw-1,bh-1);
+  c.font='bold 10px Courier New';c.textAlign='center';c.textBaseline='top';
+  c.fillStyle='rgba(0,0,0,0.7)';const tw=c.measureText('TS').width;
+  c.fillRect(bx+bw/2-tw/2-3,by+bh+2,tw+6,13);
+  c.fillStyle='#88ffaa';c.fillText('TS',bx+bw/2,by+bh+3);
+  c.font='8px Courier New';c.fillStyle='#88ffaa';c.fillText('Tree Shrine',bx+bw/2,by+bh+16);
+}
+
+// Dispatch: check if special type, else generic
+function drawBuilding(c,b,bx,by,bw,bh,fr){
+  const p=b.progress!=null?b.progress:1;
+  const type=b.type;
+  if(type==='mine_shaft')return drawGoldMine(c,bx,by,bw,bh,p,fr);
+  if(type==='moonwell')return drawLighthouse(c,bx,by,bw,bh,p,fr);
+  if(type==='stone_wall')return drawRuins(c,bx,by,bw,bh);
+  if(type==='runeforge')return drawQuarry(c,bx,by,bw,bh,p);
+  if(type==='tree_palace'||type==='grove'||type==='sentinel_tree')return drawTreeShrine(c,bx,by,bw,bh,p,fr);
+  drawBuildingPixelArt(c,b,bx,by,bw,bh,fr);
+}
+
 const TEAM_COL={human:'#3366ee',orc:'#cc3311',dwarf:'#cc8822',elf:'#22aa44'};
 const TEAM_LIGHT={human:'#88aaff',orc:'#ff8866',dwarf:'#ffcc88',elf:'#88ffaa'};
 const TEAM_SKIN={human:'#d4a870',orc:'#7a9a30',dwarf:'#c47a40',elf:'#d0c8a0'};
@@ -519,7 +655,7 @@ const sortedBuildings=[...S.buildings].sort((a,b2)=>(a.y+(a.height||1))-(b2.y+(b
 for(const b of sortedBuildings){
   if(b.x+(b.width||1)<sx||b.x>=ex||b.y+(b.height||1)<sy||b.y>=ey)continue;
   const bw=(b.width||1)*ts,bh=(b.height||1)*ts,bx=b.x*ts,by=b.y*ts;
-  drawBuildingPixelArt(ctx,b,bx+2,by+2,bw-4,bh-4,frame);
+  drawBuilding(ctx,b,bx+2,by+2,bw-4,bh-4,frame);
   // Label (only when mostly built)
   const p=b.progress!=null?b.progress:1;
   if(p>0.92){
