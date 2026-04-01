@@ -521,6 +521,12 @@ function drawDeciduous(c,px,py,h){
   c.fillStyle='#3a9a2a';c.beginPath();c.arc(ox-2,oy-29,10,0,Math.PI*2);c.fill();// front bright
   // Highlight spot
   c.fillStyle='#5ebc40';c.beginPath();c.arc(ox-5,oy-33,4,0,Math.PI*2);c.fill();
+  // Leaf texture: 5 tiny scattered circles on front canopy
+  const leafGreens=['#4aaa30','#32882a','#56c442','#3a9828','#48b636'];
+  for(let li=0;li<5;li++){
+    c.fillStyle=leafGreens[li];
+    c.beginPath();c.arc(ox-6+((h>>(li*3))%12),oy-32+((h>>(li*3+1))%10),2+((h>>(li*5))%2),0,Math.PI*2);c.fill();
+  }
   // Top-left bright rim (edge highlight)
   c.strokeStyle='#5abc3a';c.lineWidth=1;
   c.beginPath();c.arc(ox-2,oy-29,10,Math.PI*1.1,Math.PI*1.6);c.stroke();
@@ -534,6 +540,8 @@ function drawOak(c,px,py,h){
   c.fillStyle='#2a6a14';c.beginPath();c.ellipse(ox,oy-21,19,13,0,0,Math.PI*2);c.fill();
   c.fillStyle='#3a8a24';c.beginPath();c.ellipse(ox-1,oy-24,14,9,0,0,Math.PI*2);c.fill();
   c.fillStyle='#4aa832';c.beginPath();c.arc(ox-6,oy-28,3,0,Math.PI*2);c.fill();
+  // Leaf texture on front canopy
+  for(let li=0;li<4;li++){c.fillStyle=li%2?'#48b636':'#32882a';c.beginPath();c.arc(ox-8+((h>>(li*3))%16),oy-25+((h>>(li*3+2))%8),2,0,Math.PI*2);c.fill()}
   c.strokeStyle='#5abc3a';c.lineWidth=1;
   c.beginPath();c.ellipse(ox-1,oy-24,14,9,0,Math.PI*1.1,Math.PI*1.6);c.stroke();
 }
@@ -2737,6 +2745,37 @@ function updateParticles(){
     }
   }
 
+  // Ambient atmosphere particles (cap check: only spawn if under 15 ambient)
+  const ambientCount=particles.filter(p=>p.type==='mist'||p.type==='pollen'||p.type==='ember').length;
+  if(ambientCount<15){
+    // Mist near water (every 60 frames)
+    if(frame%60===0){
+      const rx=Math.floor(Math.random()*WW),ry=Math.floor(Math.random()*WH);
+      if(tBiomes&&(tBiomes[ry*WW+rx]===0||tBiomes[ry*WW+rx]===1||tBiomes[ry*WW+rx]===10)){
+        const p2={x:rx*TS+Math.random()*TS,y:ry*TS+Math.random()*TS,type:'mist',life:0,maxLife:180,alpha:0.05,size:0,color:'#fff',vx:(Math.random()-0.5)*0.2,vy:-0.1,radius:8+Math.random()*4};
+        if(particles.length<30)particles.push(p2);
+      }
+    }
+    // Embers near campfires (every 30 frames)
+    if(frame%30===0){
+      for(const b of G.clientBuildings){
+        if(b.type==='campfire'&&b.complete){
+          const p2={x:b.x*TS+TS/2+(Math.random()-0.5)*8,y:b.y*TS+TS/2,type:'ember',life:0,maxLife:60,alpha:0.7,size:1+Math.round(Math.random()),color:'#ff8833',vx:(Math.random()-0.5)*0.3,vy:-0.4,radius:0};
+          if(particles.length<30)particles.push(p2);
+          break;// only 1 per frame
+        }
+      }
+    }
+    // Pollen/dust motes in forest (every 50 frames)
+    if(frame%50===0){
+      const rx=Math.floor(Math.random()*WW),ry=Math.floor(Math.random()*WH);
+      if(tBiomes&&(tBiomes[ry*WW+rx]===4||tBiomes[ry*WW+rx]===5||tBiomes[ry*WW+rx]===3)){
+        const p2={x:rx*TS+Math.random()*TS,y:ry*TS+Math.random()*TS,type:'pollen',life:0,maxLife:150,alpha:0.2,size:1,color:'rgba(200,180,100,1)',vx:0.1,vy:0,radius:0};
+        if(particles.length<30)particles.push(p2);
+      }
+    }
+  }
+
   // Update all particles
   for(let i=particles.length-1;i>=0;i--){
     const p=particles[i];
@@ -2754,10 +2793,15 @@ function updateParticles(){
       p.x+=Math.sin(p.life*0.08)*0.3;// sine drift
       p.alpha=0.6*(1-t);
     }else if(p.type==='debris'){
-      p.vy+=0.08;// gravity
-      p.alpha=1-t;
+      p.vy+=0.08;p.alpha=1-t;
+    }else if(p.type==='mist'){
+      p.alpha=0.05*(1-t);p.radius=8+t*4;// grow and fade
+    }else if(p.type==='ember'){
+      p.alpha=0.7*(1-t);p.vy-=0.005;// float upward faster over time
+    }else if(p.type==='pollen'){
+      p.x+=Math.sin(p.life*0.04)*0.3;// sine drift
+      p.alpha=0.2*(1-t);
     }
-    // cap enforced in spawnParticle
   }
 }
 
