@@ -195,18 +195,23 @@ function getDetails(sx,sy,ex,ey){
     if((b==='forest'||b==='dense_forest')&&r<18){
       details.push({type:'tree',x:px,y:py,h,s:1.0,sortY:py+TS})
     }else if(b==='grassland'&&r<4){
-      details.push({type:'tree',x:px,y:py,h,s:0.6+((h>>8)%10)*0.005,sortY:py+TS})
+      details.push({type:'tree',x:px,y:py,h,s:0.6,small:true,sortY:py+TS})
     }else if((b==='hills'||b==='mountain')&&r<12){
       details.push({type:'rock',x:px,y:py,h,sortY:py+TS})
     }else if(b==='sand'&&r<6){
       details.push({type:'cactus',x:px,y:py,h,sortY:py+TS})
-    }else if(b==='grassland'&&r>=4&&r<4+8&&tBiomes[y*WW+x]===BL.indexOf('grassland')){
-      // swamp check - skip, we don't have swamp biome, use dense_forest as proxy
     }else if(b==='snow'&&r<10){
       details.push({type:'pine',x:px,y:py,h,sortY:py+TS})
     }
-    // Additional dense_forest always gets a second tree
-    if(b==='dense_forest'&&r>=18&&r<36){
+    // Bushes: 10% on grass, 20% on forest edges
+    if(b==='grassland'&&r>=4&&r<14){
+      details.push({type:'bush',x:px,y:py,h,sortY:py+TS})
+    }
+    if((b==='forest'||b==='dense_forest')&&r>=18&&r<38){
+      details.push({type:'bush',x:px,y:py,h:h^0x1234,sortY:py+TS})
+    }
+    // Additional dense_forest gets a second tree
+    if(b==='dense_forest'&&r>=38&&r<56){
       details.push({type:'tree',x:px,y:py,h:h^0xABCD,s:0.8,sortY:py+TS})
     }
   }
@@ -214,34 +219,45 @@ function getDetails(sx,sy,ex,ey){
   return details;
 }
 
-function drawTree(c,px,py,h,scale){
+function drawTree(c,px,py,h,scale,small){
   scale=scale||1.0;
-  const ox=px+4+(h%10),oy=py+TS-6*scale;
   const s=scale;
+  const ox=px+TS/2+(h%6)-3,oy=py+TS-2;
   // Shadow
-  c.fillStyle='rgba(0,0,0,0.2)';
-  c.beginPath();c.ellipse(ox+2*s,oy+4*s,6*s,3*s,0,0,Math.PI*2);c.fill();
+  c.fillStyle='rgba(0,0,0,0.25)';
+  c.beginPath();c.ellipse(ox+3,oy+3,18*s,8*s,0,0,Math.PI*2);c.fill();
   // Trunk
   c.fillStyle='#5a3010';
-  c.fillRect(ox,oy-8*s,5*s,10*s);
-  // Canopy layer 1 (dark)
-  c.fillStyle='#1a6010';
-  const cx=ox+2.5*s,cy=oy-10*s;
-  c.beginPath();c.moveTo(cx-8*s,cy+6*s);c.lineTo(cx,cy-6*s);c.lineTo(cx+8*s,cy+6*s);c.fill();
-  // Canopy layer 2 (lighter)
-  c.fillStyle='#226614';
-  c.beginPath();c.moveTo(cx-6*s,cy+3*s);c.lineTo(cx,cy-8*s);c.lineTo(cx+6*s,cy+3*s);c.fill();
-  // Highlight
-  c.fillStyle='#44aa22';
-  c.fillRect(cx-2*s,cy-2*s,4*s,3*s);
+  c.fillRect(ox-3*s,oy-16*s,6*s,16*s);
+  // Canopy: 3 overlapping filled circles
+  const ccx=ox,ccy=oy-26*s;
+  // Back layer (larger, darker)
+  c.fillStyle=small?'#2a7a18':'#1a5a10';
+  c.beginPath();c.arc(ccx,ccy+4*s,15*s,0,Math.PI*2);c.fill();
+  // Middle layer (shifted up-left, mid green)
+  c.fillStyle=small?'#3a9a28':'#2a7a1a';
+  c.beginPath();c.arc(ccx-2*s,ccy,13*s,0,Math.PI*2);c.fill();
+  // Front layer (smaller, shifted up, bright)
+  c.fillStyle=small?'#4aaa38':'#3a9a2a';
+  c.beginPath();c.arc(ccx,ccy-3*s,11*s,0,Math.PI*2);c.fill();
+  // Highlight spot
+  c.fillStyle='#5abc3a';
+  c.beginPath();c.arc(ccx-4*s,ccy-6*s,3.5*s,0,Math.PI*2);c.fill();
+}
+
+function drawBush(c,px,py,h){
+  const ox=px+6+(h%10),oy=py+TS-4;
+  const r1=6+((h>>4)%3),r2=5+((h>>6)%3);
+  c.fillStyle='#2a6a18';
+  c.beginPath();c.arc(ox,oy,r1,0,Math.PI*2);c.fill();
+  c.fillStyle='#3a8a28';
+  c.beginPath();c.arc(ox+4,oy-2,r2,0,Math.PI*2);c.fill();
 }
 
 function drawRock(c,px,py,h){
   const ox=px+3+(h%12),oy=py+8+(h>>4)%8;
-  // Dark ellipse
   c.fillStyle='#444450';
   c.beginPath();c.ellipse(ox+5,oy+3,9,6,0,0,Math.PI*2);c.fill();
-  // Lighter highlight
   c.fillStyle='#666672';
   c.beginPath();c.ellipse(ox+4,oy+1,5,3,0,0,Math.PI*2);c.fill();
 }
@@ -258,19 +274,34 @@ function drawCactus(c,px,py,h){
 }
 
 function drawPine(c,px,py,h){
-  const ox=px+6+(h%8),oy=py+TS-4;
-  // Trunk
+  const ox=px+TS/2+(h%4)-2,oy=py+TS-2;
+  // Shadow
+  c.fillStyle='rgba(0,0,0,0.2)';
+  c.beginPath();c.ellipse(ox,oy+2,12,5,0,0,Math.PI*2);c.fill();
+  // Trunk (visible below canopy)
   c.fillStyle='#5a3010';
-  c.fillRect(ox,oy-8,4,10);
-  // Canopy layer 1
+  c.fillRect(ox-2,oy-14,4,16);
+  // Bottom tier (wide)
   c.fillStyle='#226614';
-  const cx=ox+2,cy=oy-10;
-  c.beginPath();c.moveTo(cx-7,cy+5);c.lineTo(cx,cy-6);c.lineTo(cx+7,cy+5);c.fill();
-  // Canopy layer 2
-  c.beginPath();c.moveTo(cx-5,cy+1);c.lineTo(cx,cy-9);c.lineTo(cx+5,cy+1);c.fill();
-  // Snow dots
+  const cx2=ox,cy2=oy-18;
+  c.beginPath();c.moveTo(cx2-14,cy2+10);c.lineTo(cx2,cy2-4);c.lineTo(cx2+14,cy2+10);c.fill();
+  // Snow cap bottom
   c.fillStyle='#e8f0ff';
-  c.fillRect(cx-3,cy-1,2,2);c.fillRect(cx+2,cy+2,2,2);c.fillRect(cx-1,cy-5,2,1);
+  c.beginPath();c.arc(cx2-6,cy2+6,3,0,Math.PI*2);c.fill();
+  c.beginPath();c.arc(cx2+5,cy2+7,2.5,0,Math.PI*2);c.fill();
+  // Middle tier
+  c.fillStyle='#226614';
+  c.beginPath();c.moveTo(cx2-10,cy2+2);c.lineTo(cx2,cy2-12);c.lineTo(cx2+10,cy2+2);c.fill();
+  // Snow cap middle
+  c.fillStyle='#e8f0ff';
+  c.beginPath();c.arc(cx2-4,cy2-1,2.5,0,Math.PI*2);c.fill();
+  c.beginPath();c.arc(cx2+4,cy2,2,0,Math.PI*2);c.fill();
+  // Top tier (narrow)
+  c.fillStyle='#226614';
+  c.beginPath();c.moveTo(cx2-6,cy2-6);c.lineTo(cx2,cy2-20);c.lineTo(cx2+6,cy2-6);c.fill();
+  // Snow cap top
+  c.fillStyle='#e8f0ff';
+  c.beginPath();c.arc(cx2,cy2-14,3,0,Math.PI*2);c.fill();
 }
 
 // === State ===
@@ -713,7 +744,8 @@ for(let y=sy;y<ey;y++){for(let x=sx;x<ex;x++){
 // Terrain detail sprites (y-sorted)
 const details=getDetails(sx,sy,ex,ey);
 for(const d of details){
-  if(d.type==='tree')drawTree(ctx,d.x,d.y,d.h,d.s);
+  if(d.type==='tree')drawTree(ctx,d.x,d.y,d.h,d.s,d.small);
+  else if(d.type==='bush')drawBush(ctx,d.x,d.y,d.h);
   else if(d.type==='rock')drawRock(ctx,d.x,d.y,d.h);
   else if(d.type==='cactus')drawCactus(ctx,d.x,d.y,d.h);
   else if(d.type==='pine')drawPine(ctx,d.x,d.y,d.h);
