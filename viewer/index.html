@@ -95,12 +95,12 @@ function fbm(x,y,oct,lac,gain,seed){oct=oct||6;lac=lac||2;gain=gain||0.5;seed=se
 const WW=200,WH=150,WSEED=42,TS=24;
 const BT=[{m:0.25,b:'deep_water'},{m:0.32,b:'shallow_water'},{m:0.38,b:'sand'},{m:0.55,b:'grassland'},{m:0.62,b:'forest'},{m:0.70,b:'dense_forest'},{m:0.78,b:'hills'},{m:0.85,b:'mountain'},{m:0.92,b:'snow'},{m:1.01,b:'gold_vein'}];
 const BC={
-  deep_water:['#1a3366','#162e5c'],shallow_water:['#2255bb','#1e4da8'],
-  river:['#2266cc','#1e5cb8'],sand:['#d4c484','#c8b878'],
-  grassland:['#4a9a3a','#428e32'],forest:['#3a7a2a','#327022'],
-  dense_forest:['#2a5a1a','#225012'],hills:['#8a8a6a','#7e7e60'],
-  mountain:['#6a6a7a','#5e5e70'],snow:['#e0e0f0','#d4d4e4'],
-  gold_vein:['#d4aa22','#c8a01e']
+  deep_water:['#0a1a6a','#081460'],shallow_water:['#1840a8','#143898'],
+  river:['#1840a8','#143898'],sand:['#d4c472','#c4b462'],
+  grassland:['#3a8c2a','#2e7020'],forest:['#1a5c10','#145008'],
+  dense_forest:['#1a5c10','#145008'],hills:['#7a6a5a','#6a5a4a'],
+  mountain:['#9a8a7a','#8a7a6a'],snow:['#e8e8ee','#d8d8de'],
+  gold_vein:['#c8a840','#b89830']
 };
 const BL=['deep_water','shallow_water','sand','grassland','forest','dense_forest','hills','mountain','snow','gold_vein','river'];
 let tBiomes=null,tCanvas=null;
@@ -266,7 +266,9 @@ function drawAgentPixelArt(c,ax,ay,fc,name,mood,sel){
 }
 
 // === Render ===
+let frame=0;
 function render(){
+frame++;
 const cw=canvasEl.width,ch=canvasEl.height;
 ctx.clearRect(0,0,cw,ch);ctx.save();ctx.scale(zoom,zoom);ctx.translate(vpX,vpY);
 const ts=TS;
@@ -275,6 +277,17 @@ const ex=Math.min(WW,Math.ceil((-vpX+cw/zoom)/ts+1)),ey=Math.min(WH,Math.ceil((-
 
 // Terrain
 if(tCanvas)ctx.drawImage(tCanvas,sx*ts,sy*ts,(ex-sx)*ts,(ey-sy)*ts,sx*ts,sy*ts,(ex-sx)*ts,(ey-sy)*ts);
+
+// Water shimmer animation
+const shimAlpha=0.08+0.04*Math.sin(frame*0.05);
+ctx.fillStyle=`rgba(100,160,255,${shimAlpha})`;
+for(let y=sy;y<ey;y++){for(let x=sx;x<ex;x++){
+  const bi=tBiomes[y*WW+x];
+  if(bi===0||bi===1||bi===10){// deep_water, shallow_water, river
+    const off=(tileHash(x,y)+frame)%6;
+    if(off===0){ctx.fillRect(x*ts+2,y*ts+8+(frame%12),8,2)}
+  }
+}}
 
 // Territory overlays
 for(const t of S.tiles){if(t.x<sx||t.x>=ex||t.y<sy||t.y>=ey)continue;if(t.owner){const ag=agentById(t.owner);if(ag){ctx.fillStyle=FC[ag.faction]||'#888';ctx.globalAlpha=0.15;ctx.fillRect(t.x*ts,t.y*ts,ts,ts);ctx.globalAlpha=1;
