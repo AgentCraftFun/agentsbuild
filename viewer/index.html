@@ -82,7 +82,7 @@ canvas { display: block; }
   <div id="canvas-wrap">
     <canvas id="world"></canvas>
     <div id="tooltip"></div>
-    <div id="conn-overlay"><h2>Connecting...</h2><p>Waiting for server on ws://localhost:3001</p></div>
+    <div id="conn-overlay"><h2>Connecting...</h2><p>Waiting for game server...</p></div>
   </div>
   <div id="right-sidebar">
     <div class="panel-title">Event Feed</div>
@@ -584,7 +584,8 @@ function connectWS() {
   overlay.querySelector('h2').textContent = 'Connecting...';
 
   try {
-    ws = new WebSocket('ws://localhost:3001');
+    const proto = location.protocol === 'https:' ? 'wss:' : 'ws:';
+    ws = new WebSocket(`${proto}//${location.host}`);
   } catch (e) {
     scheduleReconnect();
     return;

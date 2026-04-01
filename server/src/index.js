@@ -91,15 +91,15 @@ app.get('*', (req, res) => {
 
 // ─── Start HTTP Server ───
 
-const httpServer = app.listen(PORT, () => {
+const httpServer = app.listen(PORT, '0.0.0.0', () => {
   console.log(`[Server] HTTP server listening on port ${PORT}`);
   console.log(`[Server] Viewer served from ${viewerPath}`);
 });
 
-// ─── WebSocket Server ───
+// ─── WebSocket Server (attached to HTTP server for single-port hosting) ───
 
-const wss = new WebSocketServer({ port: WS_PORT });
-console.log(`[Server] WebSocket server listening on port ${WS_PORT}`);
+const wss = new WebSocketServer({ server: httpServer });
+console.log(`[Server] WebSocket server attached to HTTP server on port ${PORT}`);
 
 wss.on('connection', (ws, req) => {
   const clientAddr = req.socket.remoteAddress;
