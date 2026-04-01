@@ -1681,6 +1681,7 @@ function render(){
 frame++;G.tick=frame;
 updateAgentMovement();
 updateGameUI();
+updateWorldEvents();
 // Sync client buildings into S.buildings for rendering
 S.buildings=G.clientBuildings.map(b=>({type:b.type,name:b.name,x:b.x,y:b.y,progress:b.progress,
   complete:b.complete,faction:b.faction,width:b.width,height:b.height,tall:b.tall}));
@@ -1926,8 +1927,42 @@ const vigGrad=ctx.createRadialGradient(cw2/2,ch2/2,Math.min(cw2,ch2)*0.35,cw2/2,
 vigGrad.addColorStop(0,'rgba(0,0,0,0)');vigGrad.addColorStop(1,'rgba(0,0,0,0.3)');
 ctx.fillStyle=vigGrad;ctx.fillRect(0,0,cw2,ch2);
 
-// 2. AMBIENT LIGHT TINT
-ctx.fillStyle='rgba(255,240,200,0.03)';ctx.fillRect(0,0,cw2,ch2);
+// 2. DAY/NIGHT CYCLE (5 minute loop)
+const dayPhase=(frame%(60*60*5))/(60*60*5);// 0-1 over 5 min
+if(dayPhase>0.6&&dayPhase<0.8){// Sunset
+  const t2=(dayPhase-0.6)/0.2;
+  ctx.fillStyle=`rgba(255,180,100,${0.05*t2})`;ctx.fillRect(0,0,cw2,ch2);
+}else if(dayPhase>=0.8&&dayPhase<0.9){// Night
+  const t2=Math.min(1,(dayPhase-0.8)/0.05);
+  ctx.fillStyle=`rgba(10,10,40,${0.15*t2})`;ctx.fillRect(0,0,cw2,ch2);
+}else if(dayPhase>=0.9&&dayPhase<1.0){// Dawn
+  const t2=1-(dayPhase-0.9)/0.1;
+  ctx.fillStyle=`rgba(255,150,150,${0.04*t2})`;ctx.fillRect(0,0,cw2,ch2);
+}else{// Day
+  ctx.fillStyle='rgba(255,240,200,0.02)';ctx.fillRect(0,0,cw2,ch2);
+}
+
+// WEATHER — Rain
+if(weatherState.type==='rain'){
+  ctx.strokeStyle='rgba(150,180,220,0.15)';ctx.lineWidth=1;
+  for(let i=0;i<40;i++){
+    const rx=(tileHash(i,frame)%cw2),ry=((frame*3+i*47)%ch2);
+    ctx.beginPath();ctx.moveTo(rx,ry);ctx.lineTo(rx-3,ry+8);ctx.stroke();
+  }
+}
+
+// AMBIENT CREATURES (screen-space)
+updateAmbientCreatures(cw2,ch2);
+for(const bird of ambientBirds){
+  ctx.strokeStyle='#333';ctx.lineWidth=1.5;
+  ctx.beginPath();ctx.moveTo(bird.x-4,bird.y+2);ctx.lineTo(bird.x,bird.y);ctx.lineTo(bird.x+4,bird.y+2);ctx.stroke();
+  ctx.lineWidth=1;
+}
+for(const bf of ambientButterflies){
+  ctx.fillStyle=bf.col;
+  ctx.fillRect(bf.x-1,bf.y-1,3,3);
+  ctx.fillRect(bf.x-3,bf.y,2,2);ctx.fillRect(bf.x+2,bf.y,2,2);
+}
 
 // 6. PULSE LIVE INDICATOR
 const liveEl=document.getElementById('h-status');
@@ -2205,9 +2240,112 @@ function setCursor(type){
   wrap.style.cursor=`url(${url}) 2 2, pointer`;
 }
 
+// === Ambient Creatures ===
+const ambientBirds=[];
+const ambientButterflies=[];
+const ambientLeaves=[];
+let fishJumpTimer=400+Math.floor(Math.random()*200);
+
+function initCreatures(){
+  for(let i=0;i<4;i++)ambientBirds.push({x:Math.random()*1200,y:30+Math.random()*60,vx:0.3+Math.random()*0.4,phase:Math.random()*10});
+  const bfCols=['#ddaa22','#4488cc','#ee8833','#dddddd'];
+  for(let i=0;i<3;i++)ambientButterflies.push({x:200+Math.random()*600,y:200+Math.random()*300,col:bfCols[i%4],phase:Math.random()*10});
+}
+
+function updateAmbientCreatures(cw3,ch3){
+  // Birds
+  for(const b of ambientBirds){
+    b.x+=b.vx;
+    b.y=40+Math.sin(frame*0.01+b.phase)*20+Math.sin(frame*0.003+b.phase*2)*15;
+    if(b.x>cw3+20){b.x=-20;b.y=30+Math.random()*60}
+  }
+  // Butterflies (chaotic flutter near center)
+  for(const bf of ambientButterflies){
+    bf.x+=Math.sin(frame*0.03+bf.phase)*1.2+0.2;
+    bf.y+=Math.cos(frame*0.04+bf.phase*1.3)*0.8;
+    if(bf.x>cw3-100)bf.x=100;if(bf.x<100)bf.x=cw3-100;
+    if(bf.y>ch3-100)bf.y=200;if(bf.y<100)bf.y=ch3-200;
+  }
+  // Fish jumps
+  fishJumpTimer--;
+  if(fishJumpTimer<=0){
+    fishJumpTimer=400+Math.floor(Math.random()*200);
+    // Spawn a fish jump particle near water
+    const fx=Math.random()*WW*TS,fy=Math.random()*WH*TS;
+    const tx=Math.floor(fx/TS),ty=Math.floor(fy/TS);
+    if(tx>=0&&tx<WW&&ty>=0&&ty<WH){
+      const bi=tBiomes[ty*WW+tx];
+      if(bi===0||bi===1||bi===10){
+        particles.push({x:fx,y:fy,type:'fish',life:0,maxLife:40,alpha:1,size:4,color:'#8a9ab0',vx:0,vy:-0.8,radius:0});
+      }
+    }
+  }
+  // Falling leaves (spawn from trees)
+  if(frame%80===0&&ambientLeaves.length<6){
+    const rx=Math.floor(Math.random()*WW),ry=Math.floor(Math.random()*WH);
+    if(tBiomes&&(tBiomes[ry*WW+rx]===4||tBiomes[ry*WW+rx]===5)){
+      const leafCol=Math.random()>0.5?'#8a6a20':'#cc8830';
+      particles.push({x:rx*TS+Math.random()*TS,y:ry*TS,type:'fallingLeaf',life:0,maxLife:120,alpha:0.8,size:2,color:leafCol,vx:0,vy:0.3,radius:0});
+    }
+  }
+  // Update fish particles specially
+  for(const p of particles){
+    if(p.type==='fish'){
+      const t2=p.life/p.maxLife;
+      p.vy=t2<0.5?-0.8:0.5;// arc up then down
+      p.alpha=t2>0.9?1-(t2-0.9)*10:1;
+      if(t2>0.5&&t2<0.55){// splash ring
+        spawnParticle(p.x,p.y+5,'debris');
+      }
+    }
+    if(p.type==='fallingLeaf'){
+      p.x+=Math.sin(p.life*0.08)*0.5;// zigzag
+      p.alpha=0.8*(1-p.life/p.maxLife);
+    }
+  }
+}
+
+// === Weather & World Events ===
+const weatherState={type:'clear',timer:0};
+const WEATHER_INTERVAL=60*60*1.5;// ~90 sec at 60fps
+let weatherCooldown=WEATHER_INTERVAL;
+const DISCOVERY_MSGS=['Found ancient ruins nearby!','Discovered a hidden gold vein!','Uncovered a crystal cave!','Found fertile soil patch!','Spotted rare minerals!'];
+
+function updateWorldEvents(){
+  weatherCooldown--;
+  if(weatherCooldown<=0){
+    weatherCooldown=WEATHER_INTERVAL*(0.7+Math.random()*0.6);
+    const roll=Math.random();
+    if(roll<0.3){
+      // Rain
+      weatherState.type='rain';weatherState.timer=60*15;
+      const a=S.agents[Math.floor(Math.random()*S.agents.length)];
+      if(a)gameEvent(`${a.name}: It's raining...`,'agent_message');
+    }else if(roll<0.5){
+      // Wind gust
+      weatherState.type='wind';weatherState.timer=60*5;
+    }else if(roll<0.7){
+      // Discovery event
+      const a=S.agents[Math.floor(Math.random()*S.agents.length)];
+      if(a){
+        const msg=DISCOVERY_MSGS[Math.floor(Math.random()*DISCOVERY_MSGS.length)];
+        gameEvent(`${a.name}: ${msg}`,'build_complete');
+        // Sparkle particles
+        const v=agentVisual.get(a.id);
+        if(v){for(let i=0;i<5;i++)spawnParticle(v.x*WW*TS+Math.random()*20-10,v.y*WH*TS-10+Math.random()*20,'gold')}
+      }
+    }
+  }
+  // Tick weather timer
+  if(weatherState.timer>0){
+    weatherState.timer--;
+    if(weatherState.timer<=0)weatherState.type='clear';
+  }
+}
+
 // === Init ===
 window.addEventListener('resize',resize);
-resize();genTerrain();renderTBuf();generateBoulders();initHarvestables();initCursors();
+resize();genTerrain();renderTBuf();generateBoulders();initHarvestables();initCreatures();initCursors();
 vpX=canvasEl.width/(2*zoom)-(WW*TS)/2;vpY=canvasEl.height/(2*zoom)-(WH*TS)/2;
 requestAnimationFrame(render);connectWS();
 setInterval(tickFood,10000);// food every 10s
