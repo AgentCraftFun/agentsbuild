@@ -1146,13 +1146,15 @@ for(let y=sy;y<ey;y++){for(let x=sx;x<ex;x++){
   }
 }}
 
-// Terrain detail sprites (y-sorted)
+// === LAYERED DRAW ORDER ===
+
+// Layer 2: Ground-level details (lily pads, flowers, tall grass, mushrooms)
 const details=getDetails(sx,sy,ex,ey);
-for(const d of details)drawDetail(ctx,d,frame);
+const groundTypes=new Set(['lilypad','flower','tallgrass','mushroom']);
+for(const d of details){if(groundTypes.has(d.t))drawDetail(ctx,d,frame)}
 
 // Territory overlays
 for(const t of S.tiles){if(t.x<sx||t.x>=ex||t.y<sy||t.y>=ey)continue;if(t.owner){const ag=agentById(t.owner);if(ag){ctx.fillStyle=FC[ag.faction]||'#888';ctx.globalAlpha=0.15;ctx.fillRect(t.x*ts,t.y*ts,ts,ts);ctx.globalAlpha=1;
-  // Ownership border dots
   ctx.fillStyle=FC[ag.faction]||'#888';ctx.globalAlpha=0.5;
   ctx.fillRect(t.x*ts,t.y*ts,ts,1);ctx.fillRect(t.x*ts,t.y*ts,1,ts);
   ctx.globalAlpha=1}}}
@@ -1165,99 +1167,99 @@ for(const b of S.buildings){
   }
 }
 
-// Buildings (y-sorted for depth)
-const sortedBuildings=[...S.buildings].sort((a,b2)=>(a.y+(a.height||1))-(b2.y+(b2.height||1)));
+// Layer 4-6: Merge buildings, standing details, and agents into one Y-sorted list
+const renderItems=[];
+// Standing details (trees, bushes, boulders, rocks, cacti, dead trees, pines)
+for(const d of details){if(!groundTypes.has(d.t))renderItems.push({type:'detail',d,sortY:d.sY})}
+// Buildings
+const sortedBuildings=[...S.buildings];
 for(const b of sortedBuildings){
   if(b.x+(b.width||1)<sx||b.x>=ex||b.y+(b.height||1)<sy||b.y>=ey)continue;
-  const bw=(b.width||1)*ts,bh=(b.height||1)*ts,bx=b.x*ts,by=b.y*ts;
-  drawBuilding(ctx,b,bx+2,by+2,bw-4,bh-4,frame);
-  // Label (only when mostly built)
-  const p=b.progress!=null?b.progress:1;
-  if(p>0.92){
-    const label=BLabels[b.type]||'??';
-    const nm=BNames[b.type]||b.type;
-    const fc2=b.faction||'human',cols2=BFC[fc2]||BFC.human;
-    // Abbreviation pill
-    ctx.font=`bold ${Math.max(10,ts*0.5)}px Courier New`;
-    const tw2=ctx.measureText(label).width;
-    const lx=bx+bw/2,ly=by+bh/2;
-    ctx.fillStyle='rgba(0,0,0,0.8)';
-    ctx.beginPath();
-    if(ctx.roundRect)ctx.roundRect(lx-tw2/2-5,ly-8,tw2+10,16,4);
-    else ctx.rect(lx-tw2/2-5,ly-8,tw2+10,16);
-    ctx.fill();
-    ctx.strokeStyle=cols2.accent;ctx.lineWidth=1;ctx.stroke();
-    ctx.fillStyle='#fff';ctx.textAlign='center';ctx.textBaseline='middle';
-    ctx.fillText(label,lx,ly);
-    // Name below
-    ctx.font=`${Math.max(8,ts*0.4)}px Courier New`;
-    const ntw=ctx.measureText(nm).width;
-    ctx.fillStyle='rgba(0,0,0,0.7)';
-    ctx.beginPath();
-    if(ctx.roundRect)ctx.roundRect(bx+bw/2-ntw/2-4,by+bh+2,ntw+8,13,3);
-    else ctx.rect(bx+bw/2-ntw/2-4,by+bh+2,ntw+8,13);
-    ctx.fill();
-    ctx.fillStyle='#ddd';ctx.textAlign='center';ctx.textBaseline='top';
-    ctx.fillText(nm,bx+bw/2,by+bh+4);
-  }
+  renderItems.push({type:'building',b,sortY:(b.y+(b.height||1))*ts});
 }
-
-// Agents (using visual interpolated positions) with trails + idle bob
+// Agents — compute animation state
+const agentRenderData=[];
 for(const a of S.agents){
   const v=agentVisual.get(a.id);
   const vx=v?v.x*WW:a.x,vy=v?v.y*WH:a.y;
-  if(vx<sx-1||vx>=ex+1||vy<sy-1||vy>=ey+1)continue;
-
-  // Track previous positions for trail
+  if(vx<sx-2||vx>=ex+2||vy<sy-2||vy>=ey+2)continue;
   if(!a._trail)a._trail=[];
   if(!a._prevX||Math.abs(a._prevX-vx)>0.01||Math.abs(a._prevY-vy)>0.01){
-    a._trail.push({x:vx,y:vy});if(a._trail.length>3)a._trail.shift();
-    a._idleFrames=0;
-  }else{
-    a._idleFrames=(a._idleFrames||0)+1;
-  }
+    a._trail.push({x:vx,y:vy});if(a._trail.length>3)a._trail.shift();a._idleFrames=0;
+  }else{a._idleFrames=(a._idleFrames||0)+1}
   a._prevX=vx;a._prevY=vy;
-
-  // 4. MOVEMENT TRAIL
-  const tc=TEAM_COL[a.faction]||'#888';
-  for(let ti=0;ti<a._trail.length-1;ti++){
-    const tp=a._trail[ti];
-    const trailA=0.06*(ti+1)/a._trail.length;
-    ctx.fillStyle=tc;ctx.globalAlpha=trailA;
-    const tr=4-ti;
-    ctx.beginPath();ctx.arc(tp.x*ts+ts/2,tp.y*ts+ts-4,tr,0,Math.PI*2);ctx.fill();
-    ctx.globalAlpha=1;
-  }
-
-  // Detect animation state
   const isWalking=v&&(Math.abs(v.x-v.tx)>0.001||Math.abs(v.y-v.ty)>0.001);
   const faceLeft=v&&(v.tx<v.x);
-
-  // Check if near under-construction building
   let isBuilding=false;
-  for(const b of S.buildings){
-    if(!b.complete&&b.progress!=null&&b.progress<1){
-      const bdx=Math.abs(vx-b.x),bdy=Math.abs(vy-b.y);
-      if(bdx<3&&bdy<3){isBuilding=true;break}
+  for(const b of S.buildings){if(!b.complete&&b.progress!=null&&b.progress<1){if(Math.abs(vx-b.x)+Math.abs(vy-b.y)<4){isBuilding=true;break}}}
+  if(isWalking&&frame%20===0)spawnParticle(vx*ts+ts/2,vy*ts+ts,'debris');
+  if(isBuilding&&frame%10===4)spawnParticle(vx*ts+ts/2+((Math.random()-0.5)*8),vy*ts,'debris');
+  if(a.personality==='lazy'&&frame%45===0)spawnParticle(vx*ts+ts/2+(Math.random()-0.5)*6,vy*ts-10,'leaf');
+  agentRenderData.push({a,vx,vy,isWalking,faceLeft,isBuilding});
+  renderItems.push({type:'agent',idx:agentRenderData.length-1,sortY:vy*ts+ts});
+}
+
+// Agent Z-fighting: offset agents within 5px of each other
+for(let i=0;i<agentRenderData.length;i++){
+  for(let j=i+1;j<agentRenderData.length;j++){
+    const ai=agentRenderData[i],aj=agentRenderData[j];
+    if(Math.abs(ai.vy*ts-aj.vy*ts)<5){aj.vy+=0.15}// offset ~3.6px
+  }
+}
+
+// Sort everything by Y
+renderItems.sort((a2,b2)=>a2.sortY-b2.sortY);
+
+// Draw all items in order
+for(const item of renderItems){
+  if(item.type==='detail'){
+    drawDetail(ctx,item.d,frame);
+  }else if(item.type==='building'){
+    const b=item.b;
+    const bw=(b.width||1)*ts,bh=(b.height||1)*ts,bx=b.x*ts,by=b.y*ts;
+    drawBuilding(ctx,b,bx+2,by+2,bw-4,bh-4,frame);
+    // Label (only when mostly built)
+    const p=b.progress!=null?b.progress:1;
+    if(p>0.92){
+      const label=BLabels[b.type]||'??';
+      const nm=BNames[b.type]||b.type;
+      const fc2=b.faction||'human',cols2=BFC[fc2]||BFC.human;
+      ctx.font=`bold ${Math.max(10,ts*0.5)}px Courier New`;
+      const tw2=ctx.measureText(label).width;
+      const lx=bx+bw/2,ly=by+bh/2;
+      ctx.fillStyle='rgba(0,0,0,0.8)';
+      ctx.beginPath();
+      if(ctx.roundRect)ctx.roundRect(lx-tw2/2-5,ly-8,tw2+10,16,4);
+      else ctx.rect(lx-tw2/2-5,ly-8,tw2+10,16);
+      ctx.fill();ctx.strokeStyle=cols2.accent;ctx.lineWidth=1;ctx.stroke();
+      ctx.fillStyle='#fff';ctx.textAlign='center';ctx.textBaseline='middle';
+      ctx.fillText(label,lx,ly);
+      // Name below (only if zoom > 0.7 to reduce clutter)
+      if(zoom>0.7){
+        ctx.font=`${Math.max(8,ts*0.4)}px Courier New`;
+        const ntw=ctx.measureText(nm).width;
+        ctx.fillStyle='rgba(0,0,0,0.7)';
+        ctx.beginPath();
+        if(ctx.roundRect)ctx.roundRect(bx+bw/2-ntw/2-4,by+bh+2,ntw+8,13,3);
+        else ctx.rect(bx+bw/2-ntw/2-4,by+bh+2,ntw+8,13);
+        ctx.fill();ctx.fillStyle='#ddd';ctx.textAlign='center';ctx.textBaseline='top';
+        ctx.fillText(nm,bx+bw/2,by+bh+4);
+      }
     }
+  }else if(item.type==='agent'){
+    const ad=agentRenderData[item.idx];
+    // Movement trail
+    const tc=TEAM_COL[ad.a.faction]||'#888';
+    for(let ti=0;ti<ad.a._trail.length-1;ti++){
+      const tp=ad.a._trail[ti];
+      ctx.fillStyle=tc;ctx.globalAlpha=0.06*(ti+1)/ad.a._trail.length;
+      ctx.beginPath();ctx.arc(tp.x*ts+ts/2,tp.y*ts+ts-4,4-ti,0,Math.PI*2);ctx.fill();
+      ctx.globalAlpha=1;
+    }
+    const ax=ad.vx*ts+ts/2,ay=ad.vy*ts+ts-4;
+    const sel=selAgent&&selAgent.id===ad.a.id;
+    drawAgentPixelArt(ctx,ax,ay,ad.a,sel,frame,{walking:ad.isWalking,building:ad.isBuilding,faceLeft:ad.faceLeft,idleFrames:ad.a._idleFrames||0});
   }
-
-  // Walking dust puffs
-  if(isWalking&&frame%20===0){
-    spawnParticle(vx*ts+ts/2,vy*ts+ts,'debris');
-  }
-  // Building impact particles
-  if(isBuilding&&frame%10===4){
-    spawnParticle(vx*ts+ts/2+((Math.random()-0.5)*8),vy*ts,'debris');
-  }
-  // Lazy z particles
-  if(a.personality==='lazy'&&frame%45===0){
-    spawnParticle(vx*ts+ts/2+(Math.random()-0.5)*6,vy*ts-10,'leaf');
-  }
-
-  const ax=vx*ts+ts/2,ay=vy*ts+ts-4;
-  const sel=selAgent&&selAgent.id===a.id;
-  drawAgentPixelArt(ctx,ax,ay,a,sel,frame,{walking:isWalking,building:isBuilding,faceLeft,idleFrames:a._idleFrames||0});
 }
 
 // === Ambient Particles ===
@@ -1423,9 +1425,23 @@ function updateParticles(){
   }
 }
 
+let shiftDown=false;
+window.addEventListener('keydown',e=>{if(e.key==='Shift')shiftDown=true});
+window.addEventListener('keyup',e=>{if(e.key==='Shift')shiftDown=false});
+
 function updateTooltip(){
 const tt=document.getElementById('tooltip');
-if(dragging||mx<0){tt.style.display='none';return}
+if(dragging||mx<0||!shiftDown){tt.style.display='none';
+  // Still update cursor even without tooltip
+  if(mx>=0&&!dragging){
+    const wx2=Math.floor((mx/zoom-vpX)/TS),wy2=Math.floor((my/zoom-vpY)/TS);
+    if(wx2>=0&&wx2<WW&&wy2>=0&&wy2<WH){
+      const bld2=bldMap.get(`${wx2},${wy2}`);
+      const hasI=!!(bld2||S.agents.find(a=>a.x===wx2&&a.y===wy2));
+      if(cursorNormal)wrap.style.cursor=hasI?`url(${cursorInteract}) 0 0, pointer`:`url(${cursorNormal}) 0 0, pointer`;
+    }
+  }
+  return}
 const wx=Math.floor((mx/zoom-vpX)/TS),wy=Math.floor((my/zoom-vpY)/TS);
 if(wx<0||wx>=WW||wy<0||wy>=WH){tt.style.display='none';return}
 const bi=tBiomes[wy*WW+wx],biome=BL[bi],key=`${wx},${wy}`,own=ownerMap.get(key),bld=bldMap.get(key);
