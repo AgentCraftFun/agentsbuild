@@ -1575,6 +1575,127 @@ function gameEvent(msg,cls){
 const agentVisual=new Map();
 const agentState=new Map(); // agentId -> {state,target,timer,taskCooldown}
 
+// === Agent Social & Needs System ===
+const agentSocial=new Map(); // agentId -> {inventory,relationships,clan,reputation,hunger,energy,morale,home,builtCount}
+const clans=[]; // [{name,members:[id,...],color}]
+const CLAN_COLORS=['Red','Blue','Iron','Gold','Shadow','Stone','Green','Silver'];
+const CLAN_ANIMALS=['Wolves','Bears','Hawks','Lions','Foxes','Stags','Owls','Vipers'];
+let socialCheckTimer=0;
+
+function getAgentSocial(id){
+  let s=agentSocial.get(id);
+  if(!s){s={inventory:{wood:0,stone:0,gold:0,food:0},relationships:{},clan:null,reputation:50,hunger:100,energy:100,morale:70,home:null,builtCount:0};agentSocial.set(id,s)}
+  return s;
+}
+
+function tickNeeds(){
+  for(const a of S.agents){
+    const s=getAgentSocial(a.id);
+    const st=agentState.get(a.id);
+    const working=st&&st.state!=='idle';
+    s.hunger=Math.max(0,s.hunger-0.3);
+    if(working)s.energy=Math.max(0,s.energy-0.2);
+    else s.energy=Math.min(100,s.energy+0.5);
+    // Morale effects
+    if(s.hunger<30)s.morale=Math.max(0,s.morale-3);
+    // Nearby allies boost morale
+    const v=agentVisual.get(a.id);if(!v)continue;
+    for(const a2 of S.agents){
+      if(a2.id===a.id)continue;
+      const v2=agentVisual.get(a2.id);if(!v2)continue;
+      const dist=Math.abs(v.x-v2.x)+Math.abs(v.y-v2.y);
+      if(dist<0.05){
+        const rel=(s.relationships[a2.id]||0);
+        if(rel>20)s.morale=Math.min(100,s.morale+0.5);
+        else if(rel<-20)s.morale=Math.max(0,s.morale-0.5);
+      }
+    }
+    // Force rest if exhausted
+    if(s.energy<20&&st&&st.state!=='idle'){
+      st.state='idle';st.taskCooldown=120;// rest for a bit
+    }
+  }
+}
+
+function checkSocialInteractions(){
+  for(let i=0;i<S.agents.length;i++){
+    const a1=S.agents[i],v1=agentVisual.get(a1.id);if(!v1)continue;
+    const s1=getAgentSocial(a1.id);
+    for(let j=i+1;j<S.agents.length;j++){
+      const a2=S.agents[j],v2=agentVisual.get(a2.id);if(!v2)continue;
+      const dist=Math.abs(v1.x-v2.x)+Math.abs(v1.y-v2.y);
+      if(dist>0.03)continue;// too far
+      const s2=getAgentSocial(a2.id);
+      // Only interact occasionally
+      if(Math.random()>0.02)continue;// ~2% per check per pair
+      const roll=Math.random();
+      if(roll<0.4){// TRADE
+        // Find most abundant and most needed
+        const give1=Object.entries(s1.inventory).sort((a3,b)=>b[1]-a3[1])[0];
+        const need2=Object.entries(s2.inventory).sort((a3,b)=>a3[1]-b[1])[0];
+        if(give1&&need2&&give1[1]>2){
+          const amt=Math.min(3,give1[1]);
+          // Actually transfer from global resources (simplified)
+          s1.relationships[a2.id]=(s1.relationships[a2.id]||0)+10;
+          s2.relationships[a1.id]=(s2.relationships[a1.id]||0)+10;
+          gameEvent(`${a1.name} traded with ${a2.name}`,'agent_message');
+          addBubble(a1,'traded!');addBubble(a2,'thanks!');
+        }
+      }else if(roll<0.7){// CHAT
+        const lines={optimist:['Beautiful day!','Love this place!'],aggressive:['Stay back.','My territory.'],analyst:['Interesting ratios.','Calculating...'],lazy:['...zzz...huh?','five more min...'],chaotic:['WANNA SEE SOMETHING?!','*wild gesture*'],confused:['Wait, who are you?','Am I lost?'],grinder:['Back to work.','No time to chat.'],overachiever:['Onward!','No rest!']};
+        const pool=lines[a1.personality]||['Hey.'];
+        addBubble(a1,pool[Math.floor(Math.random()*pool.length)]);
+        s1.relationships[a2.id]=(s1.relationships[a2.id]||0)+(Math.random()>0.5?5:-5);
+      }else if(roll<0.9){// HELP
+        s1.relationships[a2.id]=(s1.relationships[a2.id]||0)+15;
+        s2.relationships[a1.id]=(s2.relationships[a1.id]||0)+15;
+        gameEvent(`${a1.name} helped ${a2.name}`,'build_complete');
+        addBubble(a1,'here, take this');
+      }else{// DISPUTE
+        const penalty=a1.personality==='aggressive'?-25:-15;
+        s1.relationships[a2.id]=(s1.relationships[a2.id]||0)+penalty;
+        s2.relationships[a1.id]=(s2.relationships[a1.id]||0)+penalty;
+        gameEvent(`${a1.name} and ${a2.name} had a disagreement`,'raid_success');
+        addBubble(a1,'Hey!');addBubble(a2,'Back off!');
+      }
+    }
+  }
+}
+
+function checkClanFormation(){
+  for(let i=0;i<S.agents.length;i++){
+    const a1=S.agents[i],s1=getAgentSocial(a1.id);
+    for(let j=i+1;j<S.agents.length;j++){
+      const a2=S.agents[j],s2=getAgentSocial(a2.id);
+      if(a1.faction!==a2.faction)continue;
+      const rel=(s1.relationships[a2.id]||0);
+      // Form new clan
+      if(rel>60&&!s1.clan&&!s2.clan){
+        const name=CLAN_COLORS[Math.floor(Math.random()*CLAN_COLORS.length)]+' '+CLAN_ANIMALS[Math.floor(Math.random()*CLAN_ANIMALS.length)];
+        const clan={name,members:[a1.id,a2.id],faction:a1.faction};
+        clans.push(clan);
+        s1.clan=name;s2.clan=name;
+        gameEvent(`🏰 ${a1.name} and ${a2.name} formed the ${name}!`,'build_complete');
+      }
+      // Join existing clan
+      if(!s1.clan&&s2.clan&&rel>40){
+        const clan=clans.find(c=>c.name===s2.clan);
+        if(clan&&!clan.members.includes(a1.id)){
+          clan.members.push(a1.id);s1.clan=s2.clan;
+          gameEvent(`${a1.name} joined the ${s2.clan}`,'tile_claimed');
+        }
+      }
+      if(!s2.clan&&s1.clan&&rel>40){
+        const clan=clans.find(c=>c.name===s1.clan);
+        if(clan&&!clan.members.includes(a2.id)){
+          clan.members.push(a2.id);s2.clan=s1.clan;
+          gameEvent(`${a2.name} joined the ${s1.clan}`,'tile_claimed');
+        }
+      }
+    }
+  }
+}
+
 function findNearestDetail(vx,vy,types){
   // Search visible details for nearest matching type
   let best=null,bestD=Infinity;
@@ -1631,7 +1752,22 @@ function updateAgentMovement(){
       if(st.taskCooldown>0)continue;
       // Lazy agents take breaks
       if(isLazy){st.taskCooldown=120;if(Math.random()<0.4)continue}
-      else{st.taskCooldown=30}// Fast re-engage (was 300!)
+      else{st.taskCooldown=30}
+
+      const soc=getAgentSocial(a.id);
+      // Needs override: hungry agents forage, exhausted agents rest
+      if(soc.hunger<30){
+        G.food=Math.max(0,G.food);soc.hunger=Math.min(100,soc.hunger+40);
+        gameEvent(`${a.name} stopped to eat`,'agent_message');
+        st.taskCooldown=60;continue;
+      }
+      if(soc.energy<20){
+        st.taskCooldown=120;// resting
+        gameEvent(`${a.name} is resting`,'agent_message');
+        continue;
+      }
+      // Morale affects speed (stored for use in movement)
+      const moraleSpeedMult=Math.max(0.5,soc.morale/100);
 
       // Personality-driven decision
       const roll=Math.random();
@@ -1727,7 +1863,7 @@ function updateAgentMovement(){
         }
       }
       if(st.timer<=0){
-        G.wood+=5;
+        G.wood+=5;getAgentSocial(a.id).morale=Math.min(100,getAgentSocial(a.id).morale+5);
         gameEvent(`${a.name} chopped a tree (+5 wood)`,'build_complete');
         if(st.target){
           const key2=`${st.target.x},${st.target.y}`;
@@ -1755,7 +1891,7 @@ function updateAgentMovement(){
         }
       }
       if(st.timer<=0){
-        G.stone+=3;
+        G.stone+=3;getAgentSocial(a.id).morale=Math.min(100,getAgentSocial(a.id).morale+5);
         gameEvent(`${a.name} mined stone (+3 stone)`,'build_complete');
         if(st.target){
           const key2=`${st.target.x},${st.target.y}`;
@@ -1882,6 +2018,10 @@ if(panTarget&&panFrames>0){
 }
 if(panHighlight&&panHighlight.timer>0)panHighlight.timer--;
 updateAgentMovement();
+// Social/needs systems (throttled)
+if(frame%60===0)tickNeeds();
+if(frame%90===0)checkSocialInteractions();
+socialCheckTimer--;if(socialCheckTimer<=0){socialCheckTimer=600;checkClanFormation()}
 updateGameUI();
 updateWorldEvents();
 checkEraAnnounce();
@@ -2378,10 +2518,13 @@ else if(st.state==='mining'){progPct=1-st.timer/240;progCol='#8888aa'}
 else if(st.state==='mining_gold'){progPct=1-st.timer/360;progCol='#ffcc44'}
 else if(st.state==='building'&&st.target){progPct=st.target.progress||0;progCol='#ff8844'}
 const progBar=progPct>0?`<div class="agent-progress"><div class="agent-progress-fill" style="width:${Math.round(progPct*100)}%;background:${progCol}"></div></div>`:'';
+const soc=getAgentSocial(a.id);
+const clanTag=soc.clan?`<span style="font-size:8px;color:${FC[fc]};opacity:0.7"> [${soc.clan}]</span>`:'';
+const needsBar=`<span style="font-size:8px;color:var(--dim);margin-left:4px">${soc.hunger<50?'🍖':''}${soc.energy<30?'💤':''}${soc.morale<40?'😞':''}</span>`;
 return`<div class="agent-row" onclick="selAg('${a.id}')">
 <div class="agent-icon" style="background:${FC[fc]};color:#fff">${FI[fc]||'?'}</div>
 <div class="agent-info">
-<div class="agent-name" style="color:${FC[fc]}">${a.name}</div>
+<div class="agent-name" style="color:${FC[fc]}">${a.name}${clanTag}${needsBar}</div>
 <div class="agent-action">${icon} ${label}${extra}</div>
 ${progBar}
 </div></div>`}).join('')}
