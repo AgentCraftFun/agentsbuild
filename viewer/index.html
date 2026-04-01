@@ -890,6 +890,24 @@ for(let y=sy;y<ey;y++){for(let x=sx;x<ex;x++){
       ctx.lineWidth=1;
       ctx.beginPath();ctx.arc(px2+ts/2,py2+ts/2,rr,0,Math.PI*2);ctx.stroke();
     }
+    // 3. WATER REFLECTIONS: faint mirrored strip of adjacent land color
+    const neighbors2=[[0,-1],[0,1],[-1,0],[1,0]];
+    for(const[dx2,dy2] of neighbors2){
+      const nx=x+dx2,ny=y+dy2;
+      if(nx>=0&&nx<WW&&ny>=0&&ny<WH){
+        const nbi=tBiomes[ny*WW+nx];
+        if(nbi!==0&&nbi!==1&&nbi!==10){// neighbor is land
+          const nb2=BL[nbi],nco=BC[nb2];
+          ctx.fillStyle=nco[0];ctx.globalAlpha=0.1;
+          // Draw faint strip on the side facing the land
+          if(dy2<0)ctx.fillRect(px2,py2,ts,4);
+          else if(dy2>0)ctx.fillRect(px2,py2+ts-4,ts,4);
+          else if(dx2<0)ctx.fillRect(px2,py2,4,ts);
+          else ctx.fillRect(px2+ts-4,py2,4,ts);
+          ctx.globalAlpha=1;
+        }
+      }
+    }
   }
 }}
 
@@ -955,12 +973,44 @@ for(const b of sortedBuildings){
   }
 }
 
-// Agents (using visual interpolated positions)
+// Agents (using visual interpolated positions) with trails + idle bob
 for(const a of S.agents){
   const v=agentVisual.get(a.id);
   const vx=v?v.x*WW:a.x,vy=v?v.y*WH:a.y;
   if(vx<sx-1||vx>=ex+1||vy<sy-1||vy>=ey+1)continue;
-  const ax=vx*ts+ts/2,ay=vy*ts+ts-4;// center-bottom of tile
+
+  // Track previous positions for trail
+  if(!a._trail)a._trail=[];
+  if(!a._prevX||Math.abs(a._prevX-vx)>0.01||Math.abs(a._prevY-vy)>0.01){
+    a._trail.push({x:vx,y:vy});if(a._trail.length>3)a._trail.shift();
+    a._idleFrames=0;
+  }else{
+    a._idleFrames=(a._idleFrames||0)+1;
+  }
+  a._prevX=vx;a._prevY=vy;
+
+  // 4. MOVEMENT TRAIL
+  const tc=TEAM_COL[a.faction]||'#888';
+  for(let ti=0;ti<a._trail.length-1;ti++){
+    const tp=a._trail[ti];
+    const trailA=0.06*(ti+1)/a._trail.length;
+    ctx.fillStyle=tc;ctx.globalAlpha=trailA;
+    const tr=4-ti;
+    ctx.beginPath();ctx.arc(tp.x*ts+ts/2,tp.y*ts+ts-4,tr,0,Math.PI*2);ctx.fill();
+    ctx.globalAlpha=1;
+  }
+
+  // 5. IDLE ANIMATIONS
+  let idleBob=0;
+  if((a._idleFrames||0)>60){
+    idleBob=Math.sin(frame*0.06)*1;// subtle bob
+  }
+  // Lazy agents: floating z particles
+  if(a.personality==='lazy'&&frame%45===0){
+    spawnParticle(vx*ts+ts/2+(Math.random()-0.5)*6,vy*ts-10,'leaf');// reuse leaf type for drift
+  }
+
+  const ax=vx*ts+ts/2,ay=vy*ts+ts-4+idleBob;
   const sel=selAgent&&selAgent.id===a.id;
   drawAgentPixelArt(ctx,ax,ay,a,sel);
 }
@@ -1021,6 +1071,25 @@ for(let i=bubbles.length-1;i>=0;i--){
 }
 
 ctx.restore();
+
+// 1. VIGNETTE (screen-space)
+const cw2=canvasEl.width,ch2=canvasEl.height;
+const vigGrad=ctx.createRadialGradient(cw2/2,ch2/2,Math.min(cw2,ch2)*0.35,cw2/2,ch2/2,Math.max(cw2,ch2)*0.7);
+vigGrad.addColorStop(0,'rgba(0,0,0,0)');vigGrad.addColorStop(1,'rgba(0,0,0,0.3)');
+ctx.fillStyle=vigGrad;ctx.fillRect(0,0,cw2,ch2);
+
+// 2. AMBIENT LIGHT TINT
+ctx.fillStyle='rgba(255,240,200,0.03)';ctx.fillRect(0,0,cw2,ch2);
+
+// 6. PULSE LIVE INDICATOR
+const liveEl=document.getElementById('h-status');
+const liveDot=document.getElementById('live-dot');
+if(S.connected&&liveEl){
+  const pulseA=0.5+0.5*Math.sin(frame*0.05);
+  liveEl.style.opacity=0.5+0.5*pulseA;
+  liveDot.style.opacity=0.5+0.5*pulseA;
+}
+
 updateTooltip();
 requestAnimationFrame(render)}
 
@@ -1223,19 +1292,23 @@ function fireClientEvent(){
   }
 }
 
-// === Resource Counter ===
+// === Resource Counter with flash ===
 let cGold=3840,cWood=2210,cStone=1650,cFood=920,cTick=3201;
+function flashEl(el){
+  el.style.color='#fff';el.style.transition='none';
+  setTimeout(()=>{el.style.transition='color 0.5s';el.style.color='';},50);
+}
 function tickResources(){
   cTick++;
-  cGold+=Math.floor(Math.random()*20);
-  cWood+=Math.floor(Math.random()*14);
-  cStone+=Math.floor(Math.random()*10);
-  cFood+=Math.floor(Math.random()*8);
-  document.getElementById('r-gold').textContent=cGold.toLocaleString();
-  document.getElementById('r-wood').textContent=cWood.toLocaleString();
-  document.getElementById('r-stone').textContent=cStone.toLocaleString();
-  document.getElementById('r-food').textContent=cFood.toLocaleString();
+  const dg=Math.floor(Math.random()*20),dw=Math.floor(Math.random()*14);
+  const ds=Math.floor(Math.random()*10),df=Math.floor(Math.random()*8);
+  cGold+=dg;cWood+=dw;cStone+=ds;cFood+=df;
+  const eg=document.getElementById('r-gold'),ew=document.getElementById('r-wood');
+  const es=document.getElementById('r-stone'),ef=document.getElementById('r-food');
+  eg.textContent=cGold.toLocaleString();ew.textContent=cWood.toLocaleString();
+  es.textContent=cStone.toLocaleString();ef.textContent=cFood.toLocaleString();
   document.getElementById('h-tick').textContent=cTick.toLocaleString();
+  if(dg>10)flashEl(eg);if(dw>7)flashEl(ew);if(ds>5)flashEl(es);if(df>4)flashEl(ef);
 }
 
 // === Init ===
