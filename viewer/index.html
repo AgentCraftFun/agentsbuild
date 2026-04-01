@@ -858,39 +858,43 @@ const ex=Math.min(WW,Math.ceil((-vpX+cw/zoom)/ts+1)),ey=Math.min(WH,Math.ceil((-
 // Terrain
 if(tCanvas)ctx.drawImage(tCanvas,sx*ts,sy*ts,(ex-sx)*ts,(ey-sy)*ts,sx*ts,sy*ts,(ex-sx)*ts,(ey-sy)*ts);
 
-// Water shimmer animation
+// Water animation — calm and gentle
+// Gentle wave lines every 3-4 rows
+for(let y=sy;y<ey;y++){
+  if(y%3!==0)continue;// only every 3rd row
+  for(let x=sx;x<ex;x++){
+    const bi=tBiomes[y*WW+x];
+    if(bi===0||bi===1||bi===10){
+      const px2=x*ts,py2=y*ts;
+      const waveY=py2+ts/2+Math.sin(x*0.3+frame*0.015)*2;
+      ctx.strokeStyle='rgba(80,140,255,0.08)';ctx.lineWidth=1;
+      ctx.beginPath();ctx.moveTo(px2,waveY);ctx.lineTo(px2+ts,waveY);ctx.stroke();
+    }
+  }
+}
+// Gentle color variation + reflections + rare sparkles
+let sparkleCount=0;
 for(let y=sy;y<ey;y++){for(let x=sx;x<ex;x++){
   const bi=tBiomes[y*WW+x];
-  if(bi===0||bi===1||bi===10){// deep_water, shallow_water, river
-    const px2=x*ts,py2=y*ts,h=tileHash(x,y);
-    // Lighter blue layer with sine-wave distortion
-    const waveOff=Math.sin(frame*0.02+x*0.3)*2;
-    ctx.fillStyle='rgba(60,130,220,0.08)';
-    ctx.fillRect(px2,py2+10+waveOff,ts,4);
-    // Shimmer line segments
-    const shimAlpha=0.08+0.04*Math.sin(frame*0.05);
-    const off=(h+frame)%6;
-    if(off===0){
-      ctx.fillStyle=`rgba(100,160,255,${shimAlpha})`;
-      ctx.fillRect(px2+2,py2+8+(frame%12),8,2);
+  if(bi===0||bi===1||bi===10){
+    const px2=x*ts,py2=y*ts;
+    // Subtle color breathing
+    const blueShift=Math.sin(frame*0.008+x*0.1)*5;
+    ctx.fillStyle=`rgba(${24+blueShift|0},${64+blueShift|0},${168+blueShift|0},0.04)`;
+    ctx.fillRect(px2,py2,ts,ts);
+    // Rare shimmer sparkles (0.2% chance, max 6 visible)
+    const h=tileHash(x,y);
+    const sparklePhase=((h*31+frame)%500);
+    if(sparklePhase<40&&sparkleCount<6){
+      const sa=Math.sin(sparklePhase/40*Math.PI)*0.35;
+      if(sa>0.05){
+        ctx.fillStyle=`rgba(170,221,255,${sa})`;
+        const spx=px2+4+((h>>3)%14),spy=py2+4+((h>>6)%14);
+        ctx.fillRect(spx,spy,2,2);
+        sparkleCount++;
+      }
     }
-    // Caustic sparkle dots
-    const sparkle=((h*37+frame)%120);
-    if(sparkle<3){
-      ctx.fillStyle='rgba(136,204,255,0.5)';
-      const spx=px2+4+((h>>3)%14),spy=py2+4+((h>>6)%14);
-      ctx.fillRect(spx,spy,2,2);
-    }
-    // Circular ripple rings (very subtle, every few seconds per tile)
-    const ripplePhase=((h*13+frame)%300);
-    if(ripplePhase<60){
-      const rr=ripplePhase*0.5;
-      const ra=Math.max(0,0.12-ripplePhase*0.002);
-      ctx.strokeStyle=`rgba(150,200,255,${ra})`;
-      ctx.lineWidth=1;
-      ctx.beginPath();ctx.arc(px2+ts/2,py2+ts/2,rr,0,Math.PI*2);ctx.stroke();
-    }
-    // 3. WATER REFLECTIONS: faint mirrored strip of adjacent land color
+    // Water reflections: faint mirrored strip of adjacent land color
     const neighbors2=[[0,-1],[0,1],[-1,0],[1,0]];
     for(const[dx2,dy2] of neighbors2){
       const nx=x+dx2,ny=y+dy2;
