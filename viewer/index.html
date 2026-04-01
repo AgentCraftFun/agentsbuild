@@ -1675,9 +1675,9 @@ function tickNeeds(){
         else if(rel<-20)s.morale=Math.max(0,s.morale-0.5);
       }
     }
-    // Force rest if exhausted
-    if(s.energy<20&&st&&st.state!=='idle'){
-      st.state='idle';st.taskCooldown=120;// rest for a bit
+    // Force brief rest if exhausted (but quick recovery)
+    if(s.energy<10&&st&&st.state!=='idle'){
+      st.state='idle';st.taskCooldown=60;s.energy+=20;// quick forced rest
     }
   }
 }
@@ -1891,22 +1891,20 @@ function updateAgentMovement(){
     if(st.state==='idle'){
       st.taskCooldown--;
       if(st.taskCooldown>0)continue;
-      // Lazy agents take breaks
-      if(isLazy){st.taskCooldown=120;if(Math.random()<0.4)continue}
-      else{st.taskCooldown=30}
+      // Lazy agents take short breaks, everyone else acts fast
+      if(isLazy){st.taskCooldown=90;if(Math.random()<0.3)continue}
+      else{st.taskCooldown=15}// ~0.25 sec decision time
 
       const soc=getAgentSocial(a.id);
       // Needs override: hungry agents forage, exhausted agents rest
       if(soc.hunger<30){
-        G.food=Math.max(0,G.food);soc.hunger=Math.min(100,soc.hunger+40);
-        gameEvent(`${a.name} stopped to eat`,'agent_message');
-        st.taskCooldown=60;continue;
+        G.food=Math.max(0,G.food);soc.hunger=Math.min(100,soc.hunger+50);
+        st.taskCooldown=30;continue;// quick eat, back to work
       }
-      if(soc.energy<20){
-        st.taskCooldown=120;
-        // Walk to home if they have one
+      if(soc.energy<15){
+        soc.energy=Math.min(100,soc.energy+30);// quick rest boost
+        st.taskCooldown=60;// ~1 sec rest max
         if(soc.home){v.tx=soc.home.x/WW;v.ty=soc.home.y/WH}
-        gameEvent(`${a.name} is resting`,'agent_message');
         continue;
       }
       // Morale affects speed (stored for use in movement)
@@ -1995,9 +1993,9 @@ function updateAgentMovement(){
     }
     else if(st.state==='walking_to_tree'||st.state==='walking_to_rock'||st.state==='walking_to_gold'){
       if(atTarget){
-        if(st.state==='walking_to_tree'){st.state='chopping';st.timer=hasLumberMill?50:100}
-        else if(st.state==='walking_to_rock'){st.state='mining';st.timer=hasQuarry?70:140}
-        else{st.state='mining_gold';st.timer=200}
+        if(st.state==='walking_to_tree'){st.state='chopping';st.timer=hasLumberMill?120:200}// 2-3.3 sec
+        else if(st.state==='walking_to_rock'){st.state='mining';st.timer=hasQuarry?160:260}// 2.7-4.3 sec
+        else{st.state='mining_gold';st.timer=340}// ~5.7 sec
       }
     }
     else if(st.state==='chopping'){
@@ -2018,6 +2016,7 @@ function updateAgentMovement(){
       }
       if(st.timer<=0){
         G.wood+=5;getAgentSocial(a.id).morale=Math.min(100,getAgentSocial(a.id).morale+5);
+        milestones.trees++;checkMilestones();
         gameEvent(`${a.name} chopped a tree (+5 wood)`,'build_complete');
         if(st.target){
           const key2=`${st.target.x},${st.target.y}`;
@@ -2046,6 +2045,7 @@ function updateAgentMovement(){
       }
       if(st.timer<=0){
         G.stone+=3;getAgentSocial(a.id).morale=Math.min(100,getAgentSocial(a.id).morale+5);
+        milestones.stones++;checkMilestones();
         gameEvent(`${a.name} mined stone (+3 stone)`,'build_complete');
         if(st.target){
           const key2=`${st.target.x},${st.target.y}`;
@@ -2072,7 +2072,10 @@ function updateAgentMovement(){
     else if(st.state==='building'){
       if(!st.target||st.target.complete){st.state='idle';st.taskCooldown=15;continue}
       if(!atTarget){v.tx=st.target.x/WW;v.ty=st.target.y/WH;continue}
-      st.target.progress=Math.min(1,st.target.progress+0.008);
+      // Build speed scales with building era: small=fast, large=slower
+      const buildEra=TECH_TREE.find(t2=>t2.type===st.target.type);
+      const buildSpeed=buildEra?(0.003+0.01/(1+buildEra.era)):0.008;// era0=0.013, era3=0.0055
+      st.target.progress=Math.min(1,st.target.progress+buildSpeed);
       // Building impact effects
       if(frame%12===0){
         const bpx=st.target.x*TS+TS,bpy=st.target.y*TS+TS;
@@ -2086,6 +2089,7 @@ function updateAgentMovement(){
         st.target.owner=a.id;st.target.ownerName=a.name;
         st.target.ownedSince=frame;st.target.personalized=false;
         const soc=getAgentSocial(a.id);soc.builtCount++;soc.morale=Math.min(100,soc.morale+10);
+        milestones.builds++;checkMilestones();
         // Assign as home if shelter type and no home yet
         const shelters=['wood_hut','log_cabin','stone_house','brick_house','apartment'];
         if(!soc.home&&shelters.includes(st.target.type)){
@@ -3044,32 +3048,74 @@ function updateAmbientCreatures(cw3,ch3){
 
 // === Weather & World Events ===
 const weatherState={type:'clear',timer:0};
-const WEATHER_INTERVAL=60*60*1.5;// ~90 sec at 60fps
+const WEATHER_INTERVAL=60*45;// ~45 sec at 60fps
 let weatherCooldown=WEATHER_INTERVAL;
-const DISCOVERY_MSGS=['Found ancient ruins nearby!','Discovered a hidden gold vein!','Uncovered a crystal cave!','Found fertile soil patch!','Spotted rare minerals!'];
+const DISCOVERY_MSGS=['Found ancient ruins!','Discovered a hidden gold vein!','Uncovered a crystal cave!','Found fertile soil!','Spotted rare minerals!'];
+// Milestones tracking
+const milestones={trees:0,stones:0,builds:0,trades:0,firstTree:false,firstBuild:false,firstClan:false};
+const NEW_AGENT_NAMES=['Ash','Rowan','Flint','Sage','Reed','Briar','Cedar','Hazel','Wren','Pike','Slate','Birch'];
+
+function checkMilestones(){
+  if(!milestones.firstTree&&milestones.trees>=1){milestones.firstTree=true;showNotification('🌲 First tree chopped!')}
+  if(milestones.trees===10)showNotification('🪓 10 trees chopped!');
+  if(!milestones.firstBuild&&milestones.builds>=1){milestones.firstBuild=true;showNotification('🏗️ First building completed!')}
+  if(milestones.builds===5)showNotification('🏘️ 5 buildings completed!');
+}
 
 function updateWorldEvents(){
   weatherCooldown--;
   if(weatherCooldown<=0){
     weatherCooldown=WEATHER_INTERVAL*(0.7+Math.random()*0.6);
     const roll=Math.random();
-    if(roll<0.3){
-      // Rain
+    if(roll<0.2){
       weatherState.type='rain';weatherState.timer=60*15;
       const a=S.agents[Math.floor(Math.random()*S.agents.length)];
       if(a)gameEvent(`${a.name}: It's raining...`,'agent_message');
-    }else if(roll<0.5){
-      // Wind gust
+    }else if(roll<0.35){
       weatherState.type='wind';weatherState.timer=60*5;
-    }else if(roll<0.7){
-      // Discovery event
+    }else if(roll<0.55){
+      // Resource discovery — spawn new gold deposit
       const a=S.agents[Math.floor(Math.random()*S.agents.length)];
       if(a){
         const msg=DISCOVERY_MSGS[Math.floor(Math.random()*DISCOVERY_MSGS.length)];
         gameEvent(`${a.name}: ${msg}`,'build_complete');
-        // Sparkle particles
         const v=agentVisual.get(a.id);
-        if(v){for(let i=0;i<5;i++)spawnParticle(v.x*WW*TS+Math.random()*20-10,v.y*WH*TS-10+Math.random()*20,'gold')}
+        if(v){
+          for(let i=0;i<5;i++)spawnParticle(v.x*WW*TS+Math.random()*20-10,v.y*WH*TS-10+Math.random()*20,'gold');
+          // Actually spawn a new gold deposit nearby
+          if(goldDeposits.filter(g=>g.alive).length<12){
+            goldDeposits.push({x:v.x*WW*TS,y:v.y*WH*TS,h:tileHash(frame,frame*7),alive:true});
+          }
+        }
+      }
+    }else if(roll<0.7){
+      // Natural regrowth — remove some old stumps and let trees regrow
+      if(harvestables.size>5){
+        let cleared=0;
+        for(const[key] of harvestables){if(cleared<3){harvestables.delete(key);cleared++}}
+        gameEvent('🌱 New growth spotted in the forest','tile_claimed');
+      }
+    }else if(roll<0.85){
+      // Population growth — spawn new agent if conditions met
+      if(S.agents.length<16&&G.clientBuildings.filter(b=>b.complete).length>=5&&G.food>30){
+        const faction=['human','orc','dwarf','elf'][Math.floor(Math.random()*4)];
+        const name2=NEW_AGENT_NAMES[Math.floor(Math.random()*NEW_AGENT_NAMES.length)];
+        const pers2=['optimist','grinder','analyst','aggressive','chaotic'][Math.floor(Math.random()*5)];
+        const spawnB=G.clientBuildings.find(b=>b.complete);
+        if(spawnB){
+          const newA={id:'new_'+frame,name:name2,faction,personality:pers2,x:spawnB.x,y:spawnB.y,mood:'idle',current_action:null,message:'',resources:{food:0,wood:0,stone:0,gold:0},work_balance:0,owned_tiles:0};
+          S.agents.push(newA);
+          const vName=villages.length>0?villages[0].name:'the settlement';
+          gameEvent(`👤 ${name2} arrived at ${vName}!`,'build_complete');
+          showNotification(`👤 New settler: ${name2}!`);
+        }
+      }
+    }else{
+      // Wandering trader event
+      const a=S.agents[Math.floor(Math.random()*S.agents.length)];
+      if(a){
+        G.gold+=2;G.food+=5;
+        gameEvent(`🧳 A wandering trader visited and left gifts (+2 gold, +5 food)`,'build_complete');
       }
     }
   }
