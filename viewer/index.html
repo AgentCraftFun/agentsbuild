@@ -1330,9 +1330,12 @@ function drawAgentPixelArt(c,ax,ay,agent,sel,fr,anim){
   const walking=anim.walking||false;
   const building=anim.building||false;
   const faceLeft=anim.faceLeft||false;
+  const resting=anim.resting||false;
+  const carrying=anim.carrying||null;
   const phase=Math.floor(fr/8)%2;
   const walkBob=walking?(phase===0?-1:0):0;
-  const breathe=(!walking&&!building)?Math.sin(fr*0.05)*0.5:0;
+  const restDrop=resting?6:0;// body drops when sitting
+  const breathe=(!walking&&!building&&!resting)?Math.sin(fr*0.05)*0.5:0;
   const idleFrames=anim.idleFrames||0;
   // Pupil direction: walk direction or idle look-around
   let pupilX=faceLeft?-1:1;
@@ -1342,16 +1345,28 @@ function drawAgentPixelArt(c,ax,ay,agent,sel,fr,anim){
   c.fillStyle='rgba(0,0,0,0.35)';
   c.beginPath();c.ellipse(ax+3,ay+3,12,5,0,0,Math.PI*2);c.fill();
 
-  // BOOTS (chunky 5x4 with sole)
+  // BOOTS (chunky 5x4 with sole) — resting: legs forward
   const bootCol=(t==='dwarf')?'#442208':(t==='orc')?'#441100':'#224488';
   const solCol='#1a1208';
-  const lLeg=walking?(phase===0?-3:1):0;
-  const rLeg=walking?(phase===0?1:-3):0;
-  c.fillStyle=solCol;c.fillRect(ax-6,ay+lLeg,5,1);c.fillRect(ax+1,ay+rLeg,5,1);
-  c.fillStyle=bootCol;c.fillRect(ax-6,ay-3+lLeg,5,4);c.fillRect(ax+1,ay-3+rLeg,5,4);
+  if(resting){
+    // Sitting pose: legs extend forward horizontally
+    c.fillStyle=bootCol;c.fillRect(ax-8,ay+restDrop-2,6,3);c.fillRect(ax+2,ay+restDrop-2,6,3);
+    c.fillStyle=solCol;c.fillRect(ax-8,ay+restDrop+1,6,1);c.fillRect(ax+2,ay+restDrop+1,6,1);
+    // Energy bar above when resting
+    const soc2=getAgentSocial(agent.id);
+    if(soc2){
+      c.fillStyle='#333';c.fillRect(ax-10,ay+restDrop-22,20,3);
+      c.fillStyle='#44cc66';c.fillRect(ax-10,ay+restDrop-22,20*(soc2.energy/100),3);
+    }
+  }else{
+    const lLeg=walking?(phase===0?-3:1):0;
+    const rLeg=walking?(phase===0?1:-3):0;
+    c.fillStyle=solCol;c.fillRect(ax-6,ay+lLeg,5,1);c.fillRect(ax+1,ay+rLeg,5,1);
+    c.fillStyle=bootCol;c.fillRect(ax-6,ay-3+lLeg,5,4);c.fillRect(ax+1,ay-3+rLeg,5,4);
+  }
 
   // BODY (tapered: 14px top, 16px bottom)
-  const by=ay-16+walkBob;
+  const by=ay-16+walkBob+restDrop;
   const bh=14+breathe;
   c.fillStyle=col;
   c.fillRect(ax-8,by+bh/2,16,bh/2);// bottom wider
@@ -1453,6 +1468,15 @@ function drawAgentPixelArt(c,ax,ay,agent,sel,fr,anim){
     if(hammerPhase===1&&fr%10<5){c.fillStyle='#ffee44';c.fillRect(ix-1,iy+2,3,3)}
   }
 
+  // CARRIED ITEM on back (bobs with walk)
+  if(carrying&&!resting){
+    const cby=by-2+walkBob;
+    if(carrying==='wood'){c.fillStyle='#6a4a20';c.fillRect(ax-6,cby-4,12,3);c.fillStyle='#5a3a10';c.fillRect(ax-4,cby-6,8,3)}
+    else if(carrying==='stone'){c.fillStyle='#7a7a82';c.beginPath();c.arc(ax,cby-4,5,0,Math.PI*2);c.fill()}
+    else if(carrying==='gold'){c.fillStyle='#ccaa22';c.beginPath();c.arc(ax,cby-3,4,0,Math.PI*2);c.fill();c.fillStyle='#aa8811';c.strokeStyle='#886600';c.lineWidth=1;c.beginPath();c.arc(ax,cby-3,4,0,Math.PI*2);c.stroke()}
+    else if(carrying==='food'){c.fillStyle='#6a4a20';c.fillRect(ax-4,cby-4,8,4);c.fillStyle='#cc3333';c.fillRect(ax-2,cby-6,2,2);c.fillStyle='#44aa22';c.fillRect(ax+1,cby-5,2,2)}
+  }
+
   // Selection
   if(sel){c.strokeStyle='#ffcc44';c.lineWidth=2;c.strokeRect(ax-10,hy-8,20,ay-hy+12);c.lineWidth=1}
 
@@ -1513,6 +1537,8 @@ const harvestAnim=new Map();
 const stumps=[];
 // Impact text particles: [{x,y,text,color,life,maxLife}]
 const impactTexts=[];
+// Footprints: [{x,y,life}]
+const footprints=[];
 // Gold deposits placed on mountain cells
 let goldDeposits=[];
 
@@ -2329,17 +2355,33 @@ for(const item of renderItems){
     }
   }else if(item.type==='agent'){
     const ad=agentRenderData[item.idx];
-    // Movement trail
     const tc=TEAM_COL[ad.a.faction]||'#888';
+    // Movement trail
     for(let ti=0;ti<ad.a._trail.length-1;ti++){
       const tp=ad.a._trail[ti];
       ctx.fillStyle=tc;ctx.globalAlpha=0.06*(ti+1)/ad.a._trail.length;
       ctx.beginPath();ctx.arc(tp.x*ts+ts/2,tp.y*ts+ts-4,4-ti,0,Math.PI*2);ctx.fill();
       ctx.globalAlpha=1;
     }
+    // Footprints (stamp every 30 frames while walking)
+    if(ad.isWalking&&frame%30===0){
+      footprints.push({x:ad.vx*ts+ts/2,y:ad.vy*ts+ts,life:120});
+    }
     const ax=ad.vx*ts+ts/2,ay=ad.vy*ts+ts-4;
     const sel=selAgent&&selAgent.id===ad.a.id;
-    drawAgentPixelArt(ctx,ax,ay,ad.a,sel,frame,{walking:ad.isWalking,building:ad.isBuilding,faceLeft:ad.faceLeft,idleFrames:ad.a._idleFrames||0});
+    // Determine carrying/resting state
+    const ast2=agentState.get(ad.a.id);
+    const isResting=ast2&&ast2.taskCooldown>60&&getAgentSocial(ad.a.id).energy<40;
+    const isChopping2=ast2&&ast2.state==='chopping';
+    const isMining2=ast2&&(ast2.state==='mining'||ast2.state==='mining_gold');
+    // Carrying: if walking to build after gathering
+    let carrying=null;
+    if(ad.isWalking&&ast2){
+      if(ast2.state==='walking_to_tree')carrying=null;
+      else if(G.wood>5)carrying='wood';
+      else if(G.stone>3)carrying='stone';
+    }
+    drawAgentPixelArt(ctx,ax,ay,ad.a,sel,frame,{walking:ad.isWalking,building:ad.isBuilding,faceLeft:ad.faceLeft,idleFrames:ad.a._idleFrames||0,resting:isResting,carrying,chopping:isChopping2,mining:isMining2});
     // Highlight circle for pan-to-agent
     if(panHighlight&&panHighlight.id===ad.a.id&&panHighlight.timer>0){
       const hAlpha=0.3+0.3*Math.sin(frame*0.15);
@@ -2364,6 +2406,15 @@ for(let si=stumps.length-1;si>=0;si--){
   }
   ctx.globalAlpha=1;
 }
+
+// Footprints
+for(let fi=footprints.length-1;fi>=0;fi--){
+  const fp=footprints[fi];fp.life--;
+  if(fp.life<=0){footprints.splice(fi,1);continue}
+  ctx.fillStyle=`rgba(90,80,60,${fp.life/120*0.15})`;
+  ctx.fillRect(fp.x-1,fp.y,2,1);
+}
+if(footprints.length>100)footprints.splice(0,30);
 
 // Impact text particles
 for(let ti=impactTexts.length-1;ti>=0;ti--){
