@@ -3,680 +3,261 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Agents at Work - World Viewer</title>
+<title>Agents at Work</title>
 <style>
-* { margin: 0; padding: 0; box-sizing: border-box; }
-:root {
-  --bg: #0d0d12; --panel: #13131a; --border: #2a2a3a; --text: #c8c8d8;
-  --dim: #666680; --accent: #4488ff; --gold: #ffcc44; --red: #ff4444;
-  --green: #44cc44; --human: #4488ff; --orc: #44aa44; --dwarf: #cc8844; --elf: #aa44cc;
-}
-html, body { height: 100%; overflow: hidden; background: var(--bg); color: var(--text); font-family: 'Courier New', monospace; font-size: 13px; }
-#app { display: grid; grid-template-columns: 240px 1fr 260px; grid-template-rows: 1fr 120px; height: 100vh; gap: 1px; background: var(--border); }
-#left-sidebar { grid-row: 1/3; background: var(--panel); overflow-y: auto; }
-#canvas-wrap { background: #000; position: relative; overflow: hidden; }
-#right-sidebar { grid-row: 1/3; background: var(--panel); overflow-y: auto; }
-#bottom-bar { background: var(--panel); overflow-y: auto; display: flex; flex-direction: column; }
-canvas { display: block; }
-
-/* Scrollbars */
-::-webkit-scrollbar { width: 6px; }
-::-webkit-scrollbar-track { background: var(--bg); }
-::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
-
-/* Panels */
-.panel-title { padding: 10px 12px 6px; font-size: 11px; text-transform: uppercase; letter-spacing: 2px; color: var(--dim); border-bottom: 1px solid var(--border); }
-
-/* Agent Cards */
-.agent-card { padding: 8px 12px; border-bottom: 1px solid var(--border); cursor: pointer; transition: background .15s; }
-.agent-card:hover { background: rgba(255,255,255,0.03); }
-.agent-card .name { font-weight: bold; font-size: 13px; }
-.agent-card .name.human { color: var(--human); }
-.agent-card .name.orc { color: var(--orc); }
-.agent-card .name.dwarf { color: var(--dwarf); }
-.agent-card .name.elf { color: var(--elf); }
-.agent-card .meta { font-size: 10px; color: var(--dim); margin-top: 2px; }
-.agent-card .mood { font-size: 10px; margin-top: 2px; }
-.agent-card .resources { font-size: 10px; color: var(--dim); margin-top: 2px; }
-.agent-card .msg { font-size: 10px; color: var(--text); font-style: italic; margin-top: 3px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-
-/* Event Feed */
-.event-item { padding: 5px 12px; border-bottom: 1px solid rgba(42,42,58,0.5); font-size: 11px; line-height: 1.4; }
-.event-item .tick-num { color: var(--dim); font-size: 9px; }
-.event-item.build_complete { border-left: 2px solid var(--gold); }
-.event-item.raid_success { border-left: 2px solid var(--red); }
-.event-item.raid_failed { border-left: 2px solid var(--dim); }
-.event-item.tile_claimed { border-left: 2px solid var(--green); }
-.event-item.build_started { border-left: 2px solid var(--accent); }
-.event-item.agent_message { border-left: 2px solid #8888aa; }
-
-/* Leaderboard */
-#leaderboard { flex: 1; overflow-y: auto; }
-.lb-row { display: flex; align-items: center; padding: 4px 12px; font-size: 12px; border-bottom: 1px solid rgba(42,42,58,0.3); }
-.lb-row .rank { width: 24px; color: var(--dim); }
-.lb-row .lb-name { flex: 1; font-weight: bold; }
-.lb-row .lb-score { color: var(--gold); width: 60px; text-align: right; }
-.lb-row .lb-terr { color: var(--green); width: 40px; text-align: right; font-size: 10px; }
-.lb-row .lb-bld { color: var(--accent); width: 40px; text-align: right; font-size: 10px; }
-
-/* Status Bar */
-#status-bar { display: flex; align-items: center; gap: 16px; padding: 6px 12px; border-top: 1px solid var(--border); font-size: 11px; color: var(--dim); background: var(--bg); }
-#status-bar .connected { color: var(--green); }
-#status-bar .disconnected { color: var(--red); }
-
-/* Tooltip */
-#tooltip { position: absolute; background: rgba(13,13,18,0.95); border: 1px solid var(--border); padding: 6px 10px; font-size: 11px; pointer-events: none; display: none; z-index: 100; max-width: 220px; line-height: 1.4; border-radius: 3px; }
-
-/* Connection overlay */
-#conn-overlay { position: absolute; top: 50%; left: 50%; transform: translate(-50%,-50%); background: var(--panel); border: 1px solid var(--border); padding: 20px 30px; text-align: center; border-radius: 6px; z-index: 200; }
-#conn-overlay h2 { font-size: 14px; margin-bottom: 8px; color: var(--accent); }
-#conn-overlay p { font-size: 11px; color: var(--dim); }
+*{margin:0;padding:0;box-sizing:border-box}
+:root{--bg:#111118;--panel:#181820;--border:#2a2a3a;--text:#c8c8d8;--dim:#666680;--accent:#4488ff;--gold:#ffcc44;--red:#ff4444;--green:#44cc44;--human:#4488ff;--orc:#cc4444;--dwarf:#cc8844;--elf:#aa44cc}
+html,body{height:100%;overflow:hidden;background:var(--bg);color:var(--text);font-family:'Courier New',monospace;font-size:13px}
+#app{display:grid;grid-template-columns:1fr 320px;grid-template-rows:36px 1fr 32px;height:100vh}
+#header{grid-column:1/3;background:var(--panel);display:flex;align-items:center;justify-content:space-between;padding:0 16px;border-bottom:1px solid var(--border)}
+#header h1{font-size:14px;letter-spacing:4px;text-transform:uppercase;color:var(--text)}
+#header-stats{display:flex;gap:20px;font-size:12px;align-items:center}
+#header-stats span{color:var(--dim)}
+#header-stats .val{color:var(--accent);font-weight:bold}
+#live-dot{display:inline-block;width:8px;height:8px;border-radius:50%;margin-right:4px;background:var(--red)}
+#live-dot.on{background:var(--green);box-shadow:0 0 6px var(--green)}
+#canvas-wrap{position:relative;overflow:hidden;background:#000}
+canvas{display:block}
+#sidebar{display:flex;flex-direction:column;border-left:1px solid var(--border);background:var(--panel);overflow:hidden}
+#agent-section{flex:0 0 auto;max-height:55%;overflow-y:auto;border-bottom:1px solid var(--border)}
+#event-section{flex:1;overflow-y:auto}
+.section-title{padding:8px 12px;font-size:10px;text-transform:uppercase;letter-spacing:2px;color:var(--dim);border-bottom:1px solid var(--border);background:var(--bg);position:sticky;top:0;z-index:1}
+.agent-row{display:flex;align-items:center;gap:8px;padding:6px 12px;border-bottom:1px solid rgba(42,42,58,0.4);cursor:pointer}
+.agent-row:hover{background:rgba(255,255,255,0.03)}
+.agent-icon{width:28px;height:28px;border-radius:4px;display:flex;align-items:center;justify-content:center;font-size:14px;flex-shrink:0}
+.agent-info{flex:1;min-width:0}
+.agent-name{font-weight:bold;font-size:13px;display:flex;align-items:center;gap:4px}
+.agent-action{font-size:10px;color:var(--dim);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.event-row{padding:5px 12px;border-bottom:1px solid rgba(42,42,58,0.3);font-size:11px;line-height:1.4}
+.event-row .ev-time{color:var(--dim);font-size:9px;margin-right:4px}
+.event-row.build_complete{border-left:2px solid var(--gold)}
+.event-row.build_started{border-left:2px solid var(--accent)}
+.event-row.tile_claimed{border-left:2px solid var(--green)}
+.event-row.raid_success{border-left:2px solid var(--red)}
+.event-row.agent_message{border-left:2px solid #8888aa}
+#bottom-bar{grid-column:1/3;background:var(--panel);border-top:1px solid var(--border);display:flex;align-items:center;padding:0 16px;gap:24px;font-size:12px}
+.res-item{display:flex;align-items:center;gap:4px}
+.res-dot{width:10px;height:10px;border-radius:2px;display:inline-block}
+.res-val{font-weight:bold;color:var(--text)}
+#last-event{flex:1;text-align:right;color:var(--dim);font-size:11px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+#tooltip{position:absolute;background:rgba(13,13,18,0.95);border:1px solid var(--border);padding:6px 10px;font-size:11px;pointer-events:none;display:none;z-index:100;max-width:220px;line-height:1.4;border-radius:3px}
+#conn-overlay{position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);background:var(--panel);border:1px solid var(--border);padding:20px 30px;text-align:center;border-radius:6px;z-index:200}
+#conn-overlay h2{font-size:14px;margin-bottom:8px;color:var(--accent)}
+#conn-overlay p{font-size:11px;color:var(--dim)}
+::-webkit-scrollbar{width:5px}
+::-webkit-scrollbar-track{background:var(--bg)}
+::-webkit-scrollbar-thumb{background:var(--border);border-radius:3px}
 </style>
 </head>
 <body>
 <div id="app">
-  <div id="left-sidebar">
-    <div class="panel-title">Agents</div>
-    <div id="agent-list"></div>
+  <div id="header">
+    <h1>Agents at Work</h1>
+    <div id="header-stats">
+      <span>Agents: <span class="val" id="h-agents">0</span></span>
+      <span>Tick: <span class="val" id="h-tick">0</span></span>
+      <span><span id="live-dot"></span><span id="h-status">OFFLINE</span></span>
+    </div>
   </div>
   <div id="canvas-wrap">
     <canvas id="world"></canvas>
     <div id="tooltip"></div>
     <div id="conn-overlay"><h2>Connecting...</h2><p>Waiting for game server...</p></div>
   </div>
-  <div id="right-sidebar">
-    <div class="panel-title">Event Feed</div>
-    <div id="event-feed"></div>
-  </div>
-  <div id="bottom-bar">
-    <div class="panel-title">Leaderboard</div>
-    <div id="leaderboard"></div>
-    <div id="status-bar">
-      <span id="conn-status" class="disconnected">DISCONNECTED</span>
-      <span id="tick-display">Tick: 0</span>
-      <span id="agent-count">Agents: 0</span>
-      <span id="tile-count">Tiles: 0</span>
+  <div id="sidebar">
+    <div id="agent-section">
+      <div class="section-title">Active Agents</div>
+      <div id="agent-list"></div>
+    </div>
+    <div id="event-section">
+      <div class="section-title">Event Feed</div>
+      <div id="event-feed"></div>
     </div>
   </div>
+  <div id="bottom-bar">
+    <div class="res-item"><span class="res-dot" style="background:#ffcc44"></span> Gold <span class="res-val" id="r-gold">0</span></div>
+    <div class="res-item"><span class="res-dot" style="background:#44cc44"></span> Wood <span class="res-val" id="r-wood">0</span></div>
+    <div class="res-item"><span class="res-dot" style="background:#8888aa"></span> Stone <span class="res-val" id="r-stone">0</span></div>
+    <div class="res-item"><span class="res-dot" style="background:#cc8844"></span> Food <span class="res-val" id="r-food">0</span></div>
+    <div id="last-event"></div>
+  </div>
 </div>
-
 <script>
-// ============================================================
-// SECTION 1: Noise — exact copy of server/src/utils/noise.js
-// ============================================================
-class SeededRNG {
-  constructor(seed) { this.seed = seed; }
-  next() {
-    this.seed ^= this.seed << 13;
-    this.seed ^= this.seed >> 17;
-    this.seed ^= this.seed << 5;
-    return (this.seed >>> 0) / 4294967296;
+// === Noise (exact copy of server) ===
+class SeededRNG{constructor(s){this.seed=s}next(){this.seed^=this.seed<<13;this.seed^=this.seed>>17;this.seed^=this.seed<<5;return(this.seed>>>0)/4294967296}}
+let _perm=null,_cs=null;
+function initPerm(seed){if(_cs===seed&&_perm)return;_cs=seed;const r=new SeededRNG(seed),p=new Array(256);for(let i=0;i<256;i++)p[i]=i;for(let i=255;i>0;i--){const j=Math.floor(r.next()*(i+1));[p[i],p[j]]=[p[j],p[i]]}_perm=new Array(512);for(let i=0;i<512;i++)_perm[i]=p[i&255]}
+const G2=[[1,1],[-1,1],[1,-1],[-1,-1],[1,0],[-1,0],[0,1],[0,-1]];
+function noise2D(x,y,seed){seed=seed||42;initPerm(seed);const X=Math.floor(x)&255,Y=Math.floor(y)&255,xf=x-Math.floor(x),yf=y-Math.floor(y),u=xf*xf*xf*(xf*(xf*6-15)+10),v=yf*yf*yf*(yf*(yf*6-15)+10);const aa=_perm[_perm[X]+Y],ab=_perm[_perm[X]+Y+1],ba=_perm[_perm[X+1]+Y],bb=_perm[_perm[X+1]+Y+1];const g=G2,d=(g,x,y)=>g[0]*x+g[1]*y;const n00=d(g[aa%8],xf,yf),n10=d(g[ba%8],xf-1,yf),n01=d(g[ab%8],xf,yf-1),n11=d(g[bb%8],xf-1,yf-1);return((n00+(n10-n00)*u+(n01-n00)*v+(n00-n10-n01+n11)*u*v)+1)*0.5}
+function fbm(x,y,oct,lac,gain,seed){oct=oct||6;lac=lac||2;gain=gain||0.5;seed=seed||42;let v=0,a=1,f=1,m=0;for(let i=0;i<oct;i++){v+=a*noise2D(x*f,y*f,seed);m+=a;a*=gain;f*=lac}return v/m}
+
+// === Terrain ===
+const WW=200,WH=150,WSEED=42,TS=6;
+const BT=[{m:0.25,b:'deep_water'},{m:0.32,b:'shallow_water'},{m:0.38,b:'sand'},{m:0.55,b:'grassland'},{m:0.62,b:'forest'},{m:0.70,b:'dense_forest'},{m:0.78,b:'hills'},{m:0.85,b:'mountain'},{m:0.92,b:'snow'},{m:1.01,b:'gold_vein'}];
+const BC={deep_water:['#1a2a5e','#182858'],shallow_water:['#2244aa','#204099'],river:['#2255bb','#2050aa'],sand:['#c8b878','#bfb070'],grassland:['#3a7a2a','#357025'],forest:['#2a5a1a','#255215'],dense_forest:['#1a3a10','#16340d'],hills:['#7a7a5a','#727254'],mountain:['#5a5a6a','#545464'],snow:['#d8d8e8','#d0d0e0'],gold_vein:['#ccaa22','#c4a01e']};
+const BL=['deep_water','shallow_water','sand','grassland','forest','dense_forest','hills','mountain','snow','gold_vein','river'];
+let tBiomes=null,tCanvas=null;
+function genTerrain(){tBiomes=new Uint8Array(WW*WH);for(let y=0;y<WH;y++)for(let x=0;x<WW;x++){const n=fbm(x*0.02,y*0.02,6,2,0.5,WSEED);let bi=9;for(const t of BT)if(n<t.m){bi=BL.indexOf(t.b);break}tBiomes[y*WW+x]=bi}
+for(let y=0;y<WH;y++){const rx=Math.floor(WW*0.45+Math.sin(y*0.08)*6);for(let dx=-1;dx<=1;dx++){const xx=rx+dx;if(xx>=0&&xx<WW)tBiomes[y*WW+xx]=10}}
+for(let x=0;x<WW;x++){const ry=Math.floor(WH*0.55+Math.sin(x*0.06)*5);for(let dy=-1;dy<=1;dy++){const yy=ry+dy;if(yy>=0&&yy<WH)tBiomes[yy*WW+x]=10}}}
+function renderTBuf(){tCanvas=document.createElement('canvas');tCanvas.width=WW*TS;tCanvas.height=WH*TS;const c=tCanvas.getContext('2d');for(let y=0;y<WH;y++)for(let x=0;x<WW;x++){const b=BL[tBiomes[y*WW+x]],co=BC[b];c.fillStyle=(x+y)%2===0?co[0]:co[1];c.fillRect(x*TS,y*TS,TS,TS)}}
+
+// === State ===
+const S={tick:0,agents:[],tiles:[],buildings:[],events:[],leaderboard:[],connected:false};
+const FC={human:'#4488ff',orc:'#cc4444',dwarf:'#cc8844',elf:'#aa44cc'};
+const FI={human:'\u2694',orc:'\u2620',dwarf:'\u26CF',elf:'\u2727'};
+const MI={idle:'\u23F8',moving:'\u27A1',claiming:'\u2691',building:'\uD83D\uDD28',raiding:'\u2694',chatting:'\uD83D\uDCAC',defeated:'\uD83D\uDC80'};
+const BLabels={town_hall:'TH',farmstead:'FM',lumber_mill:'LM',watchtower:'WT',chapel:'CH',castle:'CA',great_hall:'GH',pig_farm:'PF',war_pit:'WP',spike_tower:'ST',blood_forge:'BF',skull_throne:'SK',mountain_hold:'MH',mine_shaft:'MS',brewery:'BR',stone_wall:'SW',runeforge:'RF',deep_citadel:'DC',tree_palace:'TP',moonwell:'MW',grove:'GR',sentinel_tree:'SN',starforge:'SF',world_tree:'WT'};
+const BNames={town_hall:'Town Hall',farmstead:'Farmstead',lumber_mill:'Lumber Mill',watchtower:'Watchtower',chapel:'Chapel',castle:'Castle',great_hall:'Great Hall',pig_farm:'Pig Farm',war_pit:'War Pit',spike_tower:'Spike Tower',blood_forge:'Blood Forge',skull_throne:'Skull Throne',mountain_hold:'Mtn Hold',mine_shaft:'Mine Shaft',brewery:'Brewery',stone_wall:'Stone Wall',runeforge:'Runeforge',deep_citadel:'Deep Citadel',tree_palace:'Tree Palace',moonwell:'Moonwell',grove:'Grove',sentinel_tree:'Sentinel',starforge:'Starforge',world_tree:'World Tree'};
+
+// === Canvas ===
+const canvasEl=document.getElementById('world'),ctx=canvasEl.getContext('2d'),wrap=document.getElementById('canvas-wrap');
+let vpX=0,vpY=0,zoom=1,dragging=false,dsx=0,dsy=0,dvx=0,dvy=0,mx=-1,my=-1,selAgent=null;
+function resize(){canvasEl.width=wrap.clientWidth;canvasEl.height=wrap.clientHeight}
+wrap.addEventListener('mousedown',e=>{if(e.button===0){dragging=true;dsx=e.clientX;dsy=e.clientY;dvx=vpX;dvy=vpY}});
+window.addEventListener('mousemove',e=>{if(dragging){vpX=dvx+(e.clientX-dsx)/zoom;vpY=dvy+(e.clientY-dsy)/zoom}const r=canvasEl.getBoundingClientRect();mx=e.clientX-r.left;my=e.clientY-r.top});
+window.addEventListener('mouseup',()=>{dragging=false});
+wrap.addEventListener('wheel',e=>{e.preventDefault();const oz=zoom;zoom*=e.deltaY<0?1.15:1/1.15;zoom=Math.max(0.3,Math.min(5,zoom));const r=canvasEl.getBoundingClientRect(),px=e.clientX-r.left,py=e.clientY-r.top;vpX+=px/zoom-px/oz;vpY+=py/zoom-py/oz},{passive:false});
+
+// === Maps ===
+const ownerMap=new Map(),bldMap=new Map();
+function updateMaps(){ownerMap.clear();bldMap.clear();for(const t of S.tiles)if(t.owner)ownerMap.set(t.tileId||`${t.x},${t.y}`,t.owner);for(const b of S.buildings)for(let dy=0;dy<(b.height||1);dy++)for(let dx=0;dx<(b.width||1);dx++)bldMap.set(`${b.x+dx},${b.y+dy}`,b)}
+function agentById(id){return S.agents.find(a=>a.id===id)}
+
+// === Render ===
+function render(){
+const cw=canvasEl.width,ch=canvasEl.height;
+ctx.clearRect(0,0,cw,ch);ctx.save();ctx.scale(zoom,zoom);ctx.translate(vpX,vpY);
+const ts=TS;
+const sx=Math.max(0,Math.floor(-vpX/ts-1)),sy=Math.max(0,Math.floor(-vpY/ts-1));
+const ex=Math.min(WW,Math.ceil((-vpX+cw/zoom)/ts+1)),ey=Math.min(WH,Math.ceil((-vpY+ch/zoom)/ts+1));
+
+if(tCanvas)ctx.drawImage(tCanvas,sx*ts,sy*ts,(ex-sx)*ts,(ey-sy)*ts,sx*ts,sy*ts,(ex-sx)*ts,(ey-sy)*ts);
+
+// Territory
+for(const t of S.tiles){if(t.x<sx||t.x>=ex||t.y<sy||t.y>=ey)continue;if(t.owner){const ag=agentById(t.owner);if(ag){ctx.fillStyle=FC[ag.faction]||'#888';ctx.globalAlpha=0.2;ctx.fillRect(t.x*ts,t.y*ts,ts,ts);ctx.globalAlpha=0.4;ctx.strokeStyle=FC[ag.faction]||'#888';ctx.lineWidth=0.5;ctx.strokeRect(t.x*ts+0.5,t.y*ts+0.5,ts-1,ts-1);ctx.globalAlpha=1}}}
+
+// Buildings
+for(const b of S.buildings){
+  if(b.x+(b.width||1)<sx||b.x>=ex||b.y+(b.height||1)<sy||b.y>=ey)continue;
+  const bw=(b.width||1)*ts,bh=(b.height||1)*ts,bx=b.x*ts,by=b.y*ts,fc=FC[b.faction]||'#888';
+  // Dark background
+  ctx.fillStyle='#000';ctx.globalAlpha=0.5;ctx.fillRect(bx,by,bw,bh);ctx.globalAlpha=1;
+  // Colored body
+  ctx.fillStyle=fc;ctx.globalAlpha=b.complete?0.8:0.4;ctx.fillRect(bx+1,by+1,bw-2,bh-2);ctx.globalAlpha=1;
+  ctx.strokeStyle=b.complete?'#fff':fc;ctx.lineWidth=b.complete?1:0.5;ctx.strokeRect(bx+0.5,by+0.5,bw-1,bh-1);
+  // Label
+  const label=BLabels[b.type]||'??';
+  if(zoom>=0.5){ctx.fillStyle='#fff';ctx.font=`bold ${Math.max(7,ts*0.8)}px Courier New`;ctx.textAlign='center';ctx.textBaseline='middle';ctx.fillText(label,bx+bw/2,by+bh/2)}
+  // Name below
+  if(zoom>=1.2&&bw>=ts*1.5){const nm=BNames[b.type]||b.type;ctx.fillStyle='#fff';ctx.font=`${Math.max(5,ts*0.5)}px Courier New`;ctx.textAlign='center';ctx.textBaseline='top';ctx.fillText(nm,bx+bw/2,by+bh+1)}
+  // Progress bar
+  if(!b.complete&&b.progress!=null){ctx.fillStyle='#000';ctx.globalAlpha=0.6;ctx.fillRect(bx+1,by+bh-3,bw-2,2);ctx.globalAlpha=1;ctx.fillStyle='#ffcc44';ctx.fillRect(bx+1,by+bh-3,(bw-2)*b.progress,2)}
+}
+
+// Agents - pixel art style characters
+for(const a of S.agents){
+  if(a.x<sx-1||a.x>=ex+1||a.y<sy-1||a.y>=ey+1)continue;
+  const ax=a.x*ts,ay=a.y*ts,fc=FC[a.faction]||'#888';
+  const sel=selAgent&&selAgent.id===a.id;
+  // Shadow
+  ctx.fillStyle='rgba(0,0,0,0.3)';ctx.fillRect(ax+1,ay+ts-2,ts-2,2);
+  // Body (square pixel character)
+  ctx.fillStyle=fc;ctx.fillRect(ax+1,ay+1,ts-2,ts-2);
+  // Head highlight
+  ctx.fillStyle='rgba(255,255,255,0.3)';ctx.fillRect(ax+2,ay+1,ts-4,Math.max(1,ts/3));
+  // Selection glow
+  if(sel){ctx.strokeStyle='#fff';ctx.lineWidth=1.5;ctx.strokeRect(ax-1,ay-1,ts+2,ts+2)}
+  // Name + mood emoji
+  if(zoom>=0.7){
+    const emoji=MI[a.mood]||'';
+    ctx.fillStyle='#fff';ctx.font=`bold ${Math.max(6,ts*0.6)}px Courier New`;ctx.textAlign='center';ctx.textBaseline='bottom';
+    ctx.fillText(a.name+(emoji?' '+emoji:''),ax+ts/2,ay-2);
   }
 }
 
-let _perm = null, _currentSeed = null;
-function initPerm(seed) {
-  if (_currentSeed === seed && _perm) return;
-  _currentSeed = seed;
-  const rng = new SeededRNG(seed);
-  const p = new Array(256);
-  for (let i = 0; i < 256; i++) p[i] = i;
-  for (let i = 255; i > 0; i--) {
-    const j = Math.floor(rng.next() * (i + 1));
-    [p[i], p[j]] = [p[j], p[i]];
-  }
-  _perm = new Array(512);
-  for (let i = 0; i < 512; i++) _perm[i] = p[i & 255];
+ctx.restore();
+updateTooltip();
+requestAnimationFrame(render)}
+
+function updateTooltip(){
+const tt=document.getElementById('tooltip');
+if(dragging||mx<0){tt.style.display='none';return}
+const wx=Math.floor((mx/zoom-vpX)/TS),wy=Math.floor((my/zoom-vpY)/TS);
+if(wx<0||wx>=WW||wy<0||wy>=WH){tt.style.display='none';return}
+const bi=tBiomes[wy*WW+wx],biome=BL[bi],key=`${wx},${wy}`,own=ownerMap.get(key),bld=bldMap.get(key);
+let h=`<b>(${wx},${wy})</b> ${biome}`;
+if(own){const ag=agentById(own);if(ag)h+=`<br>Owner: <span style="color:${FC[ag.faction]}">${ag.name}</span>`}
+if(bld){h+=`<br>${bld.name||bld.type}`;if(!bld.complete)h+=` (${Math.round((bld.progress||0)*100)}%)`}
+for(const a of S.agents)if(a.x===wx&&a.y===wy)h+=`<br><span style="color:${FC[a.faction]}">${a.name}</span> [${a.mood||'idle'}]`;
+tt.innerHTML=h;tt.style.display='block';tt.style.left=Math.min(mx+12,canvasEl.width-230)+'px';tt.style.top=Math.min(my+12,canvasEl.height-80)+'px'}
+
+// === UI Updates ===
+function getActionText(a){
+  if(a.message)return'"'+a.message+'"';
+  if(a.current_action)return a.current_action.type+(a.current_action.building?' '+a.current_action.building:'');
+  return a.mood||'idle';
 }
 
-const GRAD2 = [[1,1],[-1,1],[1,-1],[-1,-1],[1,0],[-1,0],[0,1],[0,-1]];
-function dot2(g, x, y) { return g[0] * x + g[1] * y; }
-function fade(t) { return t * t * t * (t * (t * 6 - 15) + 10); }
-function lerp(a, b, t) { return a + t * (b - a); }
-
-function noise2D(x, y, seed) {
-  seed = seed || 42;
-  initPerm(seed);
-  const X = Math.floor(x) & 255, Y = Math.floor(y) & 255;
-  const xf = x - Math.floor(x), yf = y - Math.floor(y);
-  const u = fade(xf), v = fade(yf);
-  const aa = _perm[_perm[X] + Y], ab = _perm[_perm[X] + Y + 1];
-  const ba = _perm[_perm[X + 1] + Y], bb = _perm[_perm[X + 1] + Y + 1];
-  const g00 = GRAD2[aa % 8], g10 = GRAD2[ba % 8], g01 = GRAD2[ab % 8], g11 = GRAD2[bb % 8];
-  const n00 = dot2(g00, xf, yf), n10 = dot2(g10, xf - 1, yf);
-  const n01 = dot2(g01, xf, yf - 1), n11 = dot2(g11, xf - 1, yf - 1);
-  const nx0 = lerp(n00, n10, u), nx1 = lerp(n01, n11, u);
-  return (lerp(nx0, nx1, v) + 1) * 0.5;
-}
-
-function fbm(x, y, octaves, lacunarity, gain, seed) {
-  octaves = octaves || 6; lacunarity = lacunarity || 2; gain = gain || 0.5; seed = seed || 42;
-  let value = 0, amplitude = 1, frequency = 1, maxAmplitude = 0;
-  for (let i = 0; i < octaves; i++) {
-    value += amplitude * noise2D(x * frequency, y * frequency, seed);
-    maxAmplitude += amplitude;
-    amplitude *= gain;
-    frequency *= lacunarity;
-  }
-  return value / maxAmplitude;
-}
-
-// ============================================================
-// SECTION 2: Biome & Terrain
-// ============================================================
-const WORLD_W = 200, WORLD_H = 150, WORLD_SEED = 42;
-const TILE_SIZE = 6;
-
-const BIOME_THRESHOLDS = [
-  { max: 0.25, biome: 'deep_water' },
-  { max: 0.32, biome: 'shallow_water' },
-  { max: 0.38, biome: 'sand' },
-  { max: 0.55, biome: 'grassland' },
-  { max: 0.62, biome: 'forest' },
-  { max: 0.70, biome: 'dense_forest' },
-  { max: 0.78, biome: 'hills' },
-  { max: 0.85, biome: 'mountain' },
-  { max: 0.92, biome: 'snow' },
-  { max: 1.01, biome: 'gold_vein' },
-];
-
-const BIOME_COLORS = {
-  deep_water:    ['#1a2a5e', '#182858'],
-  shallow_water: ['#2244aa', '#204099'],
-  river:         ['#2255bb', '#2050aa'],
-  sand:          ['#c8b878', '#bfb070'],
-  grassland:     ['#3a7a2a', '#357025'],
-  forest:        ['#2a5a1a', '#255215'],
-  dense_forest:  ['#1a3a10', '#16340d'],
-  hills:         ['#7a7a5a', '#727254'],
-  mountain:      ['#5a5a6a', '#545464'],
-  snow:          ['#d8d8e8', '#d0d0e0'],
-  gold_vein:     ['#ccaa22', '#c4a01e'],
-};
-
-function getBiome(n) {
-  for (const t of BIOME_THRESHOLDS) { if (n < t.max) return t.biome; }
-  return 'gold_vein';
-}
-
-// Pre-generate terrain (biome per tile) into typed arrays for speed
-let terrainBiomes = null; // Uint8Array index into biome name list
-const BIOME_LIST = ['deep_water','shallow_water','sand','grassland','forest','dense_forest','hills','mountain','snow','gold_vein','river'];
-
-function generateTerrain() {
-  terrainBiomes = new Uint8Array(WORLD_W * WORLD_H);
-  for (let y = 0; y < WORLD_H; y++) {
-    for (let x = 0; x < WORLD_W; x++) {
-      const n = fbm(x * 0.02, y * 0.02, 6, 2, 0.5, WORLD_SEED);
-      terrainBiomes[y * WORLD_W + x] = BIOME_LIST.indexOf(getBiome(n));
-    }
-  }
-  // Overlay rivers
-  for (let y = 0; y < WORLD_H; y++) {
-    const rx = Math.floor(WORLD_W * 0.45 + Math.sin(y * 0.08) * 6);
-    for (let dx = -1; dx <= 1; dx++) {
-      const xx = rx + dx;
-      if (xx >= 0 && xx < WORLD_W) terrainBiomes[y * WORLD_W + xx] = 10; // river
-    }
-  }
-  for (let x = 0; x < WORLD_W; x++) {
-    const ry = Math.floor(WORLD_H * 0.55 + Math.sin(x * 0.06) * 5);
-    for (let dy = -1; dy <= 1; dy++) {
-      const yy = ry + dy;
-      if (yy >= 0 && yy < WORLD_H) terrainBiomes[yy * WORLD_W + x] = 10; // river
-    }
-  }
-}
-
-// Pre-render terrain to offscreen canvas
-let terrainCanvas = null;
-function renderTerrainToBuffer() {
-  terrainCanvas = document.createElement('canvas');
-  terrainCanvas.width = WORLD_W * TILE_SIZE;
-  terrainCanvas.height = WORLD_H * TILE_SIZE;
-  const ctx = terrainCanvas.getContext('2d');
-  for (let y = 0; y < WORLD_H; y++) {
-    for (let x = 0; x < WORLD_W; x++) {
-      const bi = terrainBiomes[y * WORLD_W + x];
-      const biome = BIOME_LIST[bi];
-      const colors = BIOME_COLORS[biome];
-      ctx.fillStyle = (x + y) % 2 === 0 ? colors[0] : colors[1];
-      ctx.fillRect(x * TILE_SIZE, y * TILE_SIZE, TILE_SIZE, TILE_SIZE);
-    }
-  }
-}
-
-// ============================================================
-// SECTION 3: Game State
-// ============================================================
-const state = {
-  tick: 0,
-  agents: [],
-  tiles: [],       // sparse — only claimed/built tiles from server
-  buildings: [],
-  events: [],
-  leaderboard: [],
-  connected: false,
-};
-
-const FACTION_COLORS = { human: '#4488ff', orc: '#44aa44', dwarf: '#cc8844', elf: '#aa44cc' };
-const FACTION_ICONS = { human: '\u2694', orc: '\u2620', dwarf: '\u26CF', elf: '\u2727' };
-const MOOD_ICONS = { idle: '\u23F8', moving: '\u2192', claiming: '\u2691', building: '\uD83D\uDD28', raiding: '\u2694', chatting: '\uD83D\uDCAC', defeated: '\uD83D\uDC80' };
-
-const BUILDING_LABELS = {
-  town_hall:'TH', farmstead:'FM', lumber_mill:'LM', watchtower:'WT', chapel:'CH', castle:'CA',
-  great_hall:'GH', pig_farm:'PF', war_pit:'WP', spike_tower:'ST', blood_forge:'BF', skull_throne:'SK',
-  mountain_hold:'MH', mine_shaft:'MS', brewery:'BR', stone_wall:'SW', runeforge:'RF', deep_citadel:'DC',
-  tree_palace:'TP', moonwell:'MW', grove:'GR', sentinel_tree:'SN', starforge:'SF', world_tree:'WT',
-};
-
-// ============================================================
-// SECTION 4: Canvas & Viewport
-// ============================================================
-const canvasEl = document.getElementById('world');
-const ctx = canvasEl.getContext('2d');
-const wrap = document.getElementById('canvas-wrap');
-
-let vpX = 0, vpY = 0, zoom = 1;
-let dragging = false, dragStartX = 0, dragStartY = 0, dragVpX = 0, dragVpY = 0;
-let mouseX = -1, mouseY = -1;
-let selectedAgent = null;
-
-function resizeCanvas() {
-  canvasEl.width = wrap.clientWidth;
-  canvasEl.height = wrap.clientHeight;
-}
-
-wrap.addEventListener('mousedown', e => {
-  if (e.button === 0) { dragging = true; dragStartX = e.clientX; dragStartY = e.clientY; dragVpX = vpX; dragVpY = vpY; }
-});
-window.addEventListener('mousemove', e => {
-  if (dragging) {
-    vpX = dragVpX + (e.clientX - dragStartX) / zoom;
-    vpY = dragVpY + (e.clientY - dragStartY) / zoom;
-  }
-  const rect = canvasEl.getBoundingClientRect();
-  mouseX = e.clientX - rect.left;
-  mouseY = e.clientY - rect.top;
-});
-window.addEventListener('mouseup', () => { dragging = false; });
-
-wrap.addEventListener('wheel', e => {
-  e.preventDefault();
-  const oldZoom = zoom;
-  zoom *= e.deltaY < 0 ? 1.15 : 1 / 1.15;
-  zoom = Math.max(0.3, Math.min(5, zoom));
-  // Zoom toward mouse
-  const rect = canvasEl.getBoundingClientRect();
-  const mx = e.clientX - rect.left, my = e.clientY - rect.top;
-  vpX += mx / zoom - mx / oldZoom;
-  vpY += my / zoom - my / oldZoom;
-}, { passive: false });
-
-// ============================================================
-// SECTION 5: Rendering
-// ============================================================
-const tileOwnerMap = new Map(); // "x,y" -> agentId
-const tileBuildingMap = new Map(); // "x,y" -> building
-
-function updateMaps() {
-  tileOwnerMap.clear();
-  tileBuildingMap.clear();
-  for (const t of state.tiles) {
-    if (t.owner) tileOwnerMap.set(t.tileId || `${t.x},${t.y}`, t.owner);
-  }
-  for (const b of state.buildings) {
-    for (let dy = 0; dy < (b.height || 1); dy++) {
-      for (let dx = 0; dx < (b.width || 1); dx++) {
-        tileBuildingMap.set(`${b.x + dx},${b.y + dy}`, b);
-      }
-    }
-  }
-}
-
-function agentById(id) { return state.agents.find(a => a.id === id); }
-
-function render() {
-  const cw = canvasEl.width, ch = canvasEl.height;
-  ctx.clearRect(0, 0, cw, ch);
-  ctx.save();
-  ctx.scale(zoom, zoom);
-  ctx.translate(vpX, vpY);
-
-  const ts = TILE_SIZE;
-  // Determine visible tile range
-  const startTX = Math.max(0, Math.floor(-vpX / ts - 1));
-  const startTY = Math.max(0, Math.floor(-vpY / ts - 1));
-  const endTX = Math.min(WORLD_W, Math.ceil((-vpX + cw / zoom) / ts + 1));
-  const endTY = Math.min(WORLD_H, Math.ceil((-vpY + ch / zoom) / ts + 1));
-
-  // Draw terrain from buffer
-  if (terrainCanvas) {
-    ctx.drawImage(terrainCanvas,
-      startTX * ts, startTY * ts, (endTX - startTX) * ts, (endTY - startTY) * ts,
-      startTX * ts, startTY * ts, (endTX - startTX) * ts, (endTY - startTY) * ts);
-  }
-
-  // Draw territory overlays (owned tiles)
-  for (const t of state.tiles) {
-    if (t.x < startTX || t.x >= endTX || t.y < startTY || t.y >= endTY) continue;
-    if (t.owner) {
-      const ag = agentById(t.owner);
-      if (ag) {
-        ctx.fillStyle = FACTION_COLORS[ag.faction] || '#888';
-        ctx.globalAlpha = 0.2;
-        ctx.fillRect(t.x * ts, t.y * ts, ts, ts);
-        ctx.globalAlpha = 1;
-        // Border
-        ctx.strokeStyle = FACTION_COLORS[ag.faction] || '#888';
-        ctx.globalAlpha = 0.4;
-        ctx.lineWidth = 0.5;
-        ctx.strokeRect(t.x * ts + 0.5, t.y * ts + 0.5, ts - 1, ts - 1);
-        ctx.globalAlpha = 1;
-      }
-    }
-  }
-
-  // Draw buildings
-  for (const b of state.buildings) {
-    if (b.x + (b.width || 1) < startTX || b.x >= endTX || b.y + (b.height || 1) < startTY || b.y >= endTY) continue;
-    const bw = (b.width || 1) * ts, bh = (b.height || 1) * ts;
-    const bx = b.x * ts, by = b.y * ts;
-    const fc = FACTION_COLORS[b.faction] || '#888';
-
-    // Building body
-    ctx.fillStyle = fc;
-    ctx.globalAlpha = b.complete ? 0.7 : 0.35;
-    ctx.fillRect(bx + 1, by + 1, bw - 2, bh - 2);
-    ctx.globalAlpha = 1;
-
-    // Border
-    ctx.strokeStyle = fc;
-    ctx.lineWidth = 1;
-    ctx.strokeRect(bx + 0.5, by + 0.5, bw - 1, bh - 1);
-
-    // Label
-    const label = BUILDING_LABELS[b.type] || b.type.substring(0, 2).toUpperCase();
-    if (zoom >= 0.6) {
-      ctx.fillStyle = '#fff';
-      ctx.font = `bold ${Math.max(6, ts * 0.7)}px Courier New`;
-      ctx.textAlign = 'center';
-      ctx.textBaseline = 'middle';
-      ctx.fillText(label, bx + bw / 2, by + bh / 2);
-    }
-
-    // Construction progress bar
-    if (!b.complete && b.progress != null) {
-      const barW = bw - 4, barH = 2;
-      const barX = bx + 2, barY = by + bh - 4;
-      ctx.fillStyle = '#000';
-      ctx.globalAlpha = 0.5;
-      ctx.fillRect(barX, barY, barW, barH);
-      ctx.globalAlpha = 1;
-      ctx.fillStyle = '#ffcc44';
-      ctx.fillRect(barX, barY, barW * b.progress, barH);
-    }
-  }
-
-  // Draw agents
-  for (const a of state.agents) {
-    if (a.x < startTX - 1 || a.x >= endTX + 1 || a.y < startTY - 1 || a.y >= endTY + 1) continue;
-    const ax = a.x * ts + ts / 2, ay = a.y * ts + ts / 2;
-    const fc = FACTION_COLORS[a.faction] || '#888';
-    const isSelected = selectedAgent && selectedAgent.id === a.id;
-
-    // Glow
-    if (isSelected) {
-      ctx.beginPath(); ctx.arc(ax, ay, ts * 0.8, 0, Math.PI * 2);
-      ctx.fillStyle = fc; ctx.globalAlpha = 0.25; ctx.fill(); ctx.globalAlpha = 1;
-    }
-
-    // Body
-    ctx.beginPath(); ctx.arc(ax, ay, ts * 0.35, 0, Math.PI * 2);
-    ctx.fillStyle = fc; ctx.fill();
-    ctx.strokeStyle = '#fff'; ctx.lineWidth = 0.5; ctx.stroke();
-
-    // Name tag (at sufficient zoom)
-    if (zoom >= 0.8) {
-      ctx.fillStyle = '#fff';
-      ctx.font = `bold ${Math.max(6, ts * 0.55)}px Courier New`;
-      ctx.textAlign = 'center';
-      ctx.textBaseline = 'bottom';
-      ctx.fillText(a.name, ax, ay - ts * 0.45);
-    }
-
-    // Mood indicator
-    if (zoom >= 1 && a.mood && MOOD_ICONS[a.mood]) {
-      ctx.font = `${ts * 0.5}px serif`;
-      ctx.textAlign = 'center';
-      ctx.textBaseline = 'top';
-      ctx.fillText(MOOD_ICONS[a.mood], ax, ay + ts * 0.4);
-    }
-  }
-
-  ctx.restore();
-
-  // Tooltip
-  updateTooltip(startTX, startTY, endTX, endTY);
-
-  requestAnimationFrame(render);
-}
-
-function updateTooltip(startTX, startTY, endTX, endTY) {
-  const tooltip = document.getElementById('tooltip');
-  if (dragging || mouseX < 0 || mouseY < 0) { tooltip.style.display = 'none'; return; }
-  const wx = Math.floor((mouseX / zoom - vpX) / TILE_SIZE);
-  const wy = Math.floor((mouseY / zoom - vpY) / TILE_SIZE);
-  if (wx < 0 || wx >= WORLD_W || wy < 0 || wy >= WORLD_H) { tooltip.style.display = 'none'; return; }
-
-  const bi = terrainBiomes[wy * WORLD_W + wx];
-  const biome = BIOME_LIST[bi];
-  const key = `${wx},${wy}`;
-  const owner = tileOwnerMap.get(key);
-  const building = tileBuildingMap.get(key);
-
-  let html = `<b>(${wx}, ${wy})</b> ${biome}`;
-  if (owner) {
-    const ag = agentById(owner);
-    if (ag) html += `<br>Owner: <span style="color:${FACTION_COLORS[ag.faction]}">${ag.name}</span>`;
-  }
-  if (building) {
-    html += `<br>Building: ${building.name || building.type}`;
-    if (!building.complete) html += ` (${Math.round((building.progress || 0) * 100)}%)`;
-  }
-  // Check for agent on tile
-  for (const a of state.agents) {
-    if (a.x === wx && a.y === wy) {
-      html += `<br>Agent: <span style="color:${FACTION_COLORS[a.faction]}">${a.name}</span> [${a.mood || 'idle'}]`;
-    }
-  }
-
-  tooltip.innerHTML = html;
-  tooltip.style.display = 'block';
-  tooltip.style.left = Math.min(mouseX + 12, canvasEl.width - 230) + 'px';
-  tooltip.style.top = Math.min(mouseY + 12, canvasEl.height - 80) + 'px';
-}
-
-// ============================================================
-// SECTION 6: UI Panel Updates
-// ============================================================
-function updateAgentList() {
-  const el = document.getElementById('agent-list');
-  const sorted = [...state.agents].sort((a, b) => (a.name || '').localeCompare(b.name || ''));
-  el.innerHTML = sorted.map(a => {
-    const fc = a.faction || 'human';
-    const icon = FACTION_ICONS[fc] || '';
-    const mood = MOOD_ICONS[a.mood] || '';
-    const res = a.resources || {};
-    const sel = selectedAgent && selectedAgent.id === a.id ? 'background:rgba(255,255,255,0.05);' : '';
-    return `<div class="agent-card" style="${sel}" onclick="selectAgent('${a.id}')">
-      <div class="name ${fc}">${icon} ${a.name}</div>
-      <div class="meta">${fc} / ${a.personality || '?'}</div>
-      <div class="mood">${mood} ${a.mood || 'idle'} ${a.current_action ? '(' + (a.current_action.type || '') + ')' : ''}</div>
-      <div class="resources">F:${(res.food||0).toFixed(0)} W:${(res.wood||0).toFixed(0)} S:${(res.stone||0).toFixed(0)} G:${(res.gold||0).toFixed(0)} | WORK:${(a.work_balance||0).toFixed(1)}</div>
-      ${a.message ? `<div class="msg">"${a.message}"</div>` : ''}
-    </div>`;
-  }).join('');
-}
-
-function selectAgent(id) {
-  const a = agentById(id);
-  selectedAgent = a || null;
-  if (a) {
-    // Pan to agent
-    vpX = canvasEl.width / (2 * zoom) - a.x * TILE_SIZE - TILE_SIZE / 2;
-    vpY = canvasEl.height / (2 * zoom) - a.y * TILE_SIZE - TILE_SIZE / 2;
-  }
-  updateAgentList();
-}
-window.selectAgent = selectAgent;
-
-function updateEventFeed() {
-  const el = document.getElementById('event-feed');
-  const evts = state.events.slice(-50).reverse();
-  el.innerHTML = evts.map(e => {
-    const cls = e.type || '';
-    return `<div class="event-item ${cls}"><span class="tick-num">T${e.tick || '?'}</span> ${e.message || e.type || '?'}</div>`;
-  }).join('');
-}
-
-function updateLeaderboard() {
-  const el = document.getElementById('leaderboard');
-  const lb = state.leaderboard || [];
-  el.innerHTML = lb.map((e, i) => {
-    const fc = e.faction || 'human';
-    return `<div class="lb-row">
-      <span class="rank">${i + 1}.</span>
-      <span class="lb-name" style="color:${FACTION_COLORS[fc]}">${e.name}</span>
-      <span class="lb-terr" title="Territory">${e.territory || 0}T</span>
-      <span class="lb-bld" title="Buildings">${e.buildings || 0}B</span>
-      <span class="lb-score">${(e.score || 0).toFixed(0)}</span>
-    </div>`;
-  }).join('');
-}
-
-function updateStatusBar() {
-  document.getElementById('conn-status').textContent = state.connected ? 'CONNECTED' : 'DISCONNECTED';
-  document.getElementById('conn-status').className = state.connected ? 'connected' : 'disconnected';
-  document.getElementById('tick-display').textContent = `Tick: ${state.tick}`;
-  document.getElementById('agent-count').textContent = `Agents: ${state.agents.length}`;
-  document.getElementById('tile-count').textContent = `Tiles: ${state.tiles.length}`;
-}
-
-function updateAllUI() {
-  updateMaps();
-  updateAgentList();
-  updateEventFeed();
-  updateLeaderboard();
-  updateStatusBar();
-}
-
-// ============================================================
-// SECTION 7: WebSocket
-// ============================================================
-let ws = null;
-let reconnectTimer = null;
-let reconnectDelay = 1000;
-
-function connectWS() {
-  const overlay = document.getElementById('conn-overlay');
-  overlay.style.display = 'block';
-  overlay.querySelector('h2').textContent = 'Connecting...';
-
-  try {
-    const proto = location.protocol === 'https:' ? 'wss:' : 'ws:';
-    ws = new WebSocket(`${proto}//${location.host}`);
-  } catch (e) {
-    scheduleReconnect();
-    return;
-  }
-
-  ws.onopen = () => {
-    state.connected = true;
-    reconnectDelay = 1000;
-    overlay.style.display = 'none';
-    updateStatusBar();
-  };
-
-  ws.onmessage = (evt) => {
-    let msg;
-    try { msg = JSON.parse(evt.data); } catch (e) { return; }
-    handleMessage(msg);
-  };
-
-  ws.onclose = () => {
-    state.connected = false;
-    updateStatusBar();
-    overlay.style.display = 'block';
-    overlay.querySelector('h2').textContent = 'Disconnected';
-    overlay.querySelector('p').textContent = `Reconnecting in ${reconnectDelay / 1000}s...`;
-    scheduleReconnect();
-  };
-
-  ws.onerror = () => { /* onclose will fire */ };
-}
-
-function scheduleReconnect() {
-  if (reconnectTimer) clearTimeout(reconnectTimer);
-  reconnectTimer = setTimeout(() => {
-    reconnectDelay = Math.min(reconnectDelay * 1.5, 15000);
-    connectWS();
-  }, reconnectDelay);
-}
-
-function handleMessage(msg) {
-  if (msg.type === 'pong') return;
-
-  if (msg.type === 'world_state' && msg.data) {
-    state.tick = msg.data.tick || 0;
-    state.agents = msg.data.agents || [];
-    state.tiles = msg.data.tiles || [];
-    state.buildings = msg.data.buildings || [];
-    state.events = msg.data.events || [];
-    state.leaderboard = msg.data.leaderboard || [];
-    updateAllUI();
-  }
-
-  if (msg.type === 'tick' && msg.data) {
-    state.tick = msg.data.tick || state.tick;
-    if (msg.data.agents) state.agents = msg.data.agents;
-    if (msg.data.tiles) state.tiles = msg.data.tiles;
-    if (msg.data.buildings) state.buildings = msg.data.buildings;
-    if (msg.data.events) {
-      state.events = state.events.concat(msg.data.events);
-      if (state.events.length > 200) state.events = state.events.slice(-100);
-    }
-    if (msg.data.leaderboard) state.leaderboard = msg.data.leaderboard;
-    updateAllUI();
-  }
-}
-
-// Ping to keep alive
-setInterval(() => {
-  if (ws && ws.readyState === WebSocket.OPEN) {
-    ws.send(JSON.stringify({ type: 'ping' }));
-  }
-}, 30000);
-
-// ============================================================
-// SECTION 8: Init
-// ============================================================
-window.addEventListener('resize', resizeCanvas);
-
-function init() {
-  resizeCanvas();
-  generateTerrain();
-  renderTerrainToBuffer();
-
-  // Center viewport
-  vpX = canvasEl.width / (2 * zoom) - (WORLD_W * TILE_SIZE) / 2;
-  vpY = canvasEl.height / (2 * zoom) - (WORLD_H * TILE_SIZE) / 2;
-
-  requestAnimationFrame(render);
-  connectWS();
-}
-
-init();
+function updateAgentList(){
+const el=document.getElementById('agent-list');
+el.innerHTML=[...S.agents].sort((a,b)=>(a.name||'').localeCompare(b.name||'')).map(a=>{
+const fc=a.faction||'human',emoji=MI[a.mood]||'\u23F8';
+return`<div class="agent-row" onclick="selAg('${a.id}')">
+<div class="agent-icon" style="background:${FC[fc]};color:#fff">${FI[fc]||'?'}</div>
+<div class="agent-info">
+<div class="agent-name" style="color:${FC[fc]}">${a.name} <span style="font-size:14px">${emoji}</span></div>
+<div class="agent-action">${getActionText(a)}</div>
+</div></div>`}).join('')}
+
+function selAg(id){const a=agentById(id);selAgent=a||null;if(a){vpX=canvasEl.width/(2*zoom)-a.x*TS-TS/2;vpY=canvasEl.height/(2*zoom)-a.y*TS-TS/2}updateAgentList()}
+window.selAg=selAg;
+
+function updateEvents(){
+const el=document.getElementById('event-feed');
+el.innerHTML=S.events.slice(-50).reverse().map(e=>`<div class="event-row ${e.type||''}"><span class="ev-time">${e.tick||'?'}</span> ${e.message||e.type||'?'}</div>`).join('')}
+
+function updateBottom(){
+let gold=0,wood=0,stone=0,food=0;
+for(const a of S.agents){const r=a.resources||{};gold+=(r.gold||0);wood+=(r.wood||0);stone+=(r.stone||0);food+=(r.food||0)}
+document.getElementById('r-gold').textContent=Math.round(gold).toLocaleString();
+document.getElementById('r-wood').textContent=Math.round(wood).toLocaleString();
+document.getElementById('r-stone').textContent=Math.round(stone).toLocaleString();
+document.getElementById('r-food').textContent=Math.round(food).toLocaleString();
+const last=S.events.length?S.events[S.events.length-1]:null;
+document.getElementById('last-event').textContent=last?`last: ${last.message||last.type||''}`:''}
+
+function updateHeader(){
+document.getElementById('h-agents').textContent=S.agents.length;
+document.getElementById('h-tick').textContent=S.tick.toLocaleString();
+const dot=document.getElementById('live-dot');
+const st=document.getElementById('h-status');
+if(S.connected){dot.className='on';st.textContent='LIVE';st.style.color='var(--green)'}
+else{dot.className='';st.textContent='OFFLINE';st.style.color='var(--red)'}}
+
+function updateAll(){updateMaps();updateAgentList();updateEvents();updateBottom();updateHeader()}
+
+// === WebSocket ===
+let ws=null,reconTimer=null,reconDelay=1000;
+function connectWS(){
+const ov=document.getElementById('conn-overlay');ov.style.display='block';
+try{const p=location.protocol==='https:'?'wss:':'ws:';ws=new WebSocket(`${p}//${location.host}`)}catch(e){schedRecon();return}
+ws.onopen=()=>{S.connected=true;reconDelay=1000;ov.style.display='none';updateHeader()};
+ws.onmessage=e=>{try{handleMsg(JSON.parse(e.data))}catch(ex){}};
+ws.onclose=()=>{S.connected=false;updateHeader();ov.style.display='block';ov.querySelector('h2').textContent='Disconnected';schedRecon()};
+ws.onerror=()=>{}}
+function schedRecon(){if(reconTimer)clearTimeout(reconTimer);reconTimer=setTimeout(()=>{reconDelay=Math.min(reconDelay*1.5,15000);connectWS()},reconDelay)}
+function handleMsg(msg){
+if(msg.type==='pong')return;
+if(msg.type==='world_state'&&msg.data){S.tick=msg.data.tick||0;S.agents=msg.data.agents||[];S.tiles=msg.data.tiles||[];S.buildings=msg.data.buildings||[];S.events=msg.data.events||[];S.leaderboard=msg.data.leaderboard||[];updateAll()}
+if(msg.type==='tick'&&msg.data){S.tick=msg.data.tick||S.tick;if(msg.data.agents)S.agents=msg.data.agents;if(msg.data.tiles)S.tiles=msg.data.tiles;if(msg.data.buildings)S.buildings=msg.data.buildings;if(msg.data.events){S.events=S.events.concat(msg.data.events);if(S.events.length>200)S.events=S.events.slice(-100)}if(msg.data.leaderboard)S.leaderboard=msg.data.leaderboard;updateAll()}}
+setInterval(()=>{if(ws&&ws.readyState===1)ws.send('{"type":"ping"}')},30000);
+
+// === Init ===
+window.addEventListener('resize',resize);
+resize();genTerrain();renderTBuf();
+vpX=canvasEl.width/(2*zoom)-(WW*TS)/2;vpY=canvasEl.height/(2*zoom)-(WH*TS)/2;
+requestAnimationFrame(render);connectWS();
 </script>
 </body>
 </html>
