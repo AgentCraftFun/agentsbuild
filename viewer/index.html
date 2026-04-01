@@ -346,10 +346,41 @@ function drawAgentPixelArt(c,ax,ay,agent,sel){
   c.font='10px serif';c.fillText(emoji,ax-4+tw/2+8,ay-20);
 }
 
+// === Agent Movement (client-side smooth interpolation) ===
+// Store visual positions separately from server positions
+const agentVisual=new Map(); // agentId -> {x,y,tx,ty}
+
+function updateAgentMovement(){
+  for(const a of S.agents){
+    let v=agentVisual.get(a.id);
+    if(!v){
+      // Initialize visual pos from server pos (normalized 0-1)
+      v={x:a.x/WW,y:a.y/WH,tx:a.x/WW,ty:a.y/WH};
+      agentVisual.set(a.id,v);
+    }
+    // Update target from server position
+    v.tx=a.x/WW;v.ty=a.y/WH;
+    // Skip lazy agents
+    if(a.personality==='lazy'){v.x=v.tx;v.y=v.ty;continue}
+    // With 0.5% chance, pick a random building as wander target
+    if(S.buildings.length>0&&Math.random()<0.005){
+      const b=S.buildings[Math.floor(Math.random()*S.buildings.length)];
+      v.tx=b.x/WW+(Math.random()-0.5)*0.08;
+      v.ty=b.y/WH+0.04+(Math.random()-0.5)*0.04;
+      v.tx=Math.max(0,Math.min(1,v.tx));
+      v.ty=Math.max(0,Math.min(1,v.ty));
+    }
+    // Lerp toward target
+    v.x+=(v.tx-v.x)*0.015;
+    v.y+=(v.ty-v.y)*0.015;
+  }
+}
+
 // === Render ===
 let frame=0;
 function render(){
 frame++;
+updateAgentMovement();
 const cw=canvasEl.width,ch=canvasEl.height;
 ctx.clearRect(0,0,cw,ch);ctx.save();ctx.scale(zoom,zoom);ctx.translate(vpX,vpY);
 const ts=TS;
@@ -413,10 +444,12 @@ for(const b of S.buildings){
   }
 }
 
-// Agents
+// Agents (using visual interpolated positions)
 for(const a of S.agents){
-  if(a.x<sx-1||a.x>=ex+1||a.y<sy-1||a.y>=ey+1)continue;
-  const ax=a.x*ts+ts/2,ay=a.y*ts+ts-4;// center-bottom of tile
+  const v=agentVisual.get(a.id);
+  const vx=v?v.x*WW:a.x,vy=v?v.y*WH:a.y;
+  if(vx<sx-1||vx>=ex+1||vy<sy-1||vy>=ey+1)continue;
+  const ax=vx*ts+ts/2,ay=vy*ts+ts-4;// center-bottom of tile
   const sel=selAgent&&selAgent.id===a.id;
   drawAgentPixelArt(ctx,ax,ay,a,sel);
 }
