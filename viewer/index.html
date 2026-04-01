@@ -51,7 +51,7 @@ canvas{display:block;image-rendering:pixelated;image-rendering:crisp-edges}
 .agent-progress-fill{height:100%;border-radius:2px;transition:width 0.3s}
 .event-milestone{background:rgba(170,255,170,0.06);border-left:2px solid #aaffaa!important}
 #last-event{flex:1;text-align:right;color:var(--dim);font-size:11px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-#tooltip{position:absolute;background:rgba(13,13,18,0.95);border:1px solid var(--border);padding:6px 10px;font-size:11px;pointer-events:none;display:none;z-index:100;max-width:220px;line-height:1.4;border-radius:3px}
+#tooltip{position:absolute;background:rgba(10,10,20,0.8);border:1px solid rgba(60,60,100,0.5);padding:3px 6px;font-size:9px;pointer-events:none;display:none;z-index:100;max-width:200px;line-height:1.3;border-radius:2px;color:#aaa}
 #conn-overlay{position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);background:var(--panel);border:1px solid var(--border);padding:20px 30px;text-align:center;border-radius:6px;z-index:200}
 #conn-overlay h2{font-size:14px;margin-bottom:8px;color:var(--accent)}
 #conn-overlay p{font-size:11px;color:var(--dim)}
@@ -2679,6 +2679,14 @@ if(S.connected&&liveEl){
 }
 
 updateTooltip();
+// Debug FPS counter (shift-only)
+if(shiftDown&&_frameTimes.length>10){
+  const avgMs=_frameTimes.reduce((a2,b2)=>a2+b2,0)/_frameTimes.length;
+  const fps=Math.round(1000/avgMs);
+  ctx.fillStyle='rgba(255,255,255,0.5)';ctx.font='8px Courier New';
+  ctx.textAlign='right';ctx.textBaseline='bottom';
+  ctx.fillText(`${fps} fps`,canvasEl.width-6,canvasEl.height-4);
+}
 }catch(e){console.error('Frame error:',e)}
 requestAnimationFrame(render)}
 
@@ -2831,7 +2839,7 @@ if(bld){h+=`<br>${bld.name||bld.type}`;if(!bld.complete)h+=` (${Math.round((bld.
 for(const a of S.agents)if(a.x===wx&&a.y===wy)h+=`<br><span style="color:${FC[a.faction]}">${a.name}</span> [${a.mood||'idle'}]`;
 const hasInteractable=!!(bld||S.agents.find(a=>a.x===wx&&a.y===wy));
 setCursor(hasInteractable?'hover':'normal');
-tt.innerHTML=h;tt.style.display='block';tt.style.left=Math.min(mx+12,canvasEl.width-230)+'px';tt.style.top=Math.min(my+12,canvasEl.height-80)+'px'}
+tt.innerHTML=h;tt.style.display='block';tt.style.left=Math.min(mx+15,canvasEl.width-210)+'px';tt.style.top=Math.min(my+10,canvasEl.height-60)+'px'}
 
 // === UI Updates ===
 function getActionText(a){
