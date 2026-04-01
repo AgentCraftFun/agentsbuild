@@ -283,34 +283,67 @@ function drawBuildingPixelArt(c,b,bx,by,bw,bh){
   if(!complete)c.globalAlpha=1;
 }
 
-function drawAgentPixelArt(c,ax,ay,fc,name,mood,sel){
-  const ts=TS;
-  const cx=ax+ts/2,cy=ay+ts/2;
-  // Shadow
-  c.fillStyle='rgba(0,0,0,0.3)';
-  c.fillRect(ax+4,ay+ts-3,ts-8,3);
-  // Legs
-  c.fillStyle='#2a2a3a';
-  c.fillRect(ax+7,ay+ts-6,3,4);c.fillRect(ax+ts-10,ay+ts-6,3,4);
-  // Body
-  c.fillStyle=fc;
-  c.fillRect(ax+5,ay+8,ts-10,ts-14);
-  // Body shading
-  c.fillStyle='rgba(0,0,0,0.15)';c.fillRect(ax+ts-9,ay+8,4,ts-14);
-  // Head (skin tone)
-  c.fillStyle='#e8c890';
-  c.fillRect(ax+6,ay+2,ts-12,8);
-  // Hair/helmet (faction color)
-  c.fillStyle=fc;
-  c.fillRect(ax+5,ay+1,ts-10,4);
-  // Eyes
+const TEAM_COL={human:'#3366ee',orc:'#cc3311',dwarf:'#cc8822',elf:'#22aa44'};
+const TEAM_LIGHT={human:'#88aaff',orc:'#ff8866',dwarf:'#ffcc88',elf:'#88ffaa'};
+const TEAM_SKIN={human:'#d4a870',orc:'#7a9a30',dwarf:'#c47a40',elf:'#d0c8a0'};
+const TEAM_HAT={human:'#1a3070',orc:'#3a0a00',dwarf:'#5a2800',elf:'#1a4a10'};
+
+function drawAgentPixelArt(c,ax,ay,agent,sel){
+  const t=agent.faction||'human';
+  const col=TEAM_COL[t]||TEAM_COL.human;
+  const light=TEAM_LIGHT[t]||TEAM_LIGHT.human;
+  const skin=TEAM_SKIN[t]||TEAM_SKIN.human;
+  const hat=TEAM_HAT[t]||TEAM_HAT.human;
+  const pers=agent.personality||'';
+  // 1. Shadow
+  c.fillStyle='rgba(0,0,0,0.22)';
+  c.beginPath();c.ellipse(ax+1,ay+14,9,4,0,0,Math.PI*2);c.fill();
+  // 2. Legs
+  const bootCol=(t==='dwarf')?'#442208':(t==='orc')?'#441100':'#224488';
+  c.fillStyle=bootCol;
+  c.fillRect(ax-5,ay+8,4,6);c.fillRect(ax+1,ay+8,4,6);
+  // 3. Body
+  c.fillStyle=col;
+  c.fillRect(ax-6,ay-2,12,11);
+  // 4. Chest highlight
+  c.fillStyle=light;
+  c.fillRect(ax-5,ay-1,4,5);
+  // 5. Head
+  c.fillStyle=skin;
+  c.fillRect(ax-4,ay-10,8,8);
+  // 6. Eyes
   c.fillStyle='#000';
-  c.fillRect(ax+8,ay+5,2,2);c.fillRect(ax+ts-10,ay+5,2,2);
-  // Arms
-  c.fillStyle=fc;
-  c.fillRect(ax+3,ay+9,3,6);c.fillRect(ax+ts-6,ay+9,3,6);
-  // Selection highlight
-  if(sel){c.strokeStyle='#ffcc44';c.lineWidth=2;c.strokeRect(ax+1,ay,ts-2,ts);c.lineWidth=1}
+  c.fillRect(ax-2,ay-8,2,2);c.fillRect(ax+1,ay-8,2,2);
+  // 7. Hat top
+  c.fillStyle=hat;
+  c.fillRect(ax-5,ay-14,10,5);
+  // 8. Hat brim
+  c.fillStyle=col;
+  c.fillRect(ax-6,ay-10,12,2);
+  // Team extras
+  if(t==='dwarf'){c.fillStyle='#9a7a3a';c.fillRect(ax-7,ay-2,2,10)}
+  if(t==='elf'){c.fillStyle=skin;c.fillRect(ax+3,ay-12,3,5)}
+  // Tool or zzz
+  if(pers==='lazy'){
+    c.fillStyle='#aaaaff';c.font='bold 10px Courier New';c.textAlign='center';
+    c.fillText('zzz',ax,ay-18);
+  }else{
+    c.fillStyle='#5a3010';c.fillRect(ax+6,ay-4,2,10);
+    c.fillStyle=light;c.fillRect(ax+5,ay-7,5,5);
+  }
+  // Selection
+  if(sel){c.strokeStyle='#ffcc44';c.lineWidth=2;c.strokeRect(ax-8,ay-16,16,32);c.lineWidth=1}
+  // Name label
+  const emoji=MI[agent.mood]||'';
+  const nameStr=agent.name;
+  c.font='bold 9px Courier New';
+  const tw=c.measureText(nameStr).width;
+  const lblW=tw+20;// extra for emoji
+  c.fillStyle='rgba(0,0,0,0.75)';
+  c.fillRect(ax-lblW/2,ay-26,lblW,13);
+  c.fillStyle=light;c.textAlign='center';c.textBaseline='middle';
+  c.fillText(nameStr,ax-4,ay-20);
+  c.font='10px serif';c.fillText(emoji,ax-4+tw/2+8,ay-20);
 }
 
 // === Render ===
@@ -383,19 +416,9 @@ for(const b of S.buildings){
 // Agents
 for(const a of S.agents){
   if(a.x<sx-1||a.x>=ex+1||a.y<sy-1||a.y>=ey+1)continue;
-  const ax=a.x*ts,ay=a.y*ts,fc=FC[a.faction]||'#888';
+  const ax=a.x*ts+ts/2,ay=a.y*ts+ts-4;// center-bottom of tile
   const sel=selAgent&&selAgent.id===a.id;
-  drawAgentPixelArt(ctx,ax,ay,fc,a.name,a.mood,sel);
-  // Name label with mood emoji
-  const emoji=MI[a.mood]||'';
-  const nameStr=a.name+' '+emoji;
-  ctx.font=`bold ${Math.max(9,ts*0.45)}px Courier New`;
-  const ntw=ctx.measureText(nameStr).width;
-  // Background for name
-  ctx.fillStyle='rgba(0,0,0,0.6)';
-  ctx.fillRect(ax+ts/2-ntw/2-3,ay-13,ntw+6,12);
-  ctx.fillStyle='#fff';ctx.textAlign='center';ctx.textBaseline='bottom';
-  ctx.fillText(nameStr,ax+ts/2,ay-2);
+  drawAgentPixelArt(ctx,ax,ay,a,sel);
 }
 
 ctx.restore();
