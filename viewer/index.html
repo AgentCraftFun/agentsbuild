@@ -616,6 +616,26 @@ function drawGoldDeposit(c,px,py,h,fr){
 
 function drawDetail(c,d,fr){
   const t=d.t;
+  const key=`${d.x},${d.y}`;
+  const anim=harvestAnim.get(key);
+
+  // Apply shake + scale for harvested objects
+  if(anim){
+    c.save();
+    const shakeX=anim.shakeTimer>0?Math.sin(fr*2)*3:0;
+    if(anim.shakeTimer>0)anim.shakeTimer--;
+    const scale=anim.type==='tree'?Math.max(0.3,1-anim.progress*0.7):1;
+    const lean=anim.type==='tree'?anim.progress*5:0;// degrees
+    c.translate(d.x+TS/2+shakeX,d.y+TS);
+    c.rotate(lean*Math.PI/180);
+    c.scale(scale,scale);
+    c.translate(-d.x-TS/2,-d.y-TS);
+    // Draw crack lines on rocks
+    if(anim.type==='rock'&&anim.progress>0.25){
+      // Will draw after the rock
+    }
+  }
+
   if(t==='deciduous')drawDeciduous(c,d.x,d.y,d.h);
   else if(t==='oak')drawOak(c,d.x,d.y,d.h);
   else if(t==='pine')drawPineTree(c,d.x,d.y,d.h,d.snow);
@@ -631,6 +651,25 @@ function drawDetail(c,d,fr){
   else if(t==='lgboulder')drawLargeBoulder(c,d.bdata);
   else if(t==='mdboulder')drawMediumRock(c,d.bdata);
   else if(t==='golddeposit')drawGoldDeposit(c,d.x,d.y,d.h,fr);
+
+  // Draw crack overlay for rocks being mined
+  if(anim&&anim.type==='rock'){
+    c.strokeStyle='#2a2a30';c.lineWidth=1;
+    if(anim.progress>0.25){c.beginPath();c.moveTo(d.x+4,d.y+6);c.lineTo(d.x+TS-4,d.y+TS-6);c.stroke()}
+    if(anim.progress>0.5){c.beginPath();c.moveTo(d.x+TS-4,d.y+4);c.lineTo(d.x+4,d.y+TS-4);c.stroke()}
+    if(anim.progress>0.75){
+      // Fragment gaps
+      c.fillStyle='rgba(0,0,0,0.3)';
+      c.fillRect(d.x+TS/2-1,d.y+2,2,TS-4);
+      c.fillRect(d.x+2,d.y+TS/2-1,TS-4,2);
+    }
+  }
+  // Tree cut mark
+  if(anim&&anim.type==='tree'&&anim.progress>0.5){
+    c.fillStyle='#c8b080';c.fillRect(d.x+TS/2-3,d.y+TS-8,6,3);
+  }
+
+  if(anim)c.restore();
 }
 
 // === State ===
@@ -1389,8 +1428,14 @@ function drawAgentPixelArt(c,ax,ay,agent,sel,fr,anim){
   // HELD ITEM with animation
   const toolSide=faceLeft?-1:1;
   const toolSwing=walking?(phase===0?1:-1):0;
-  const hammerPhase=building?Math.floor(fr/10)%2:-1;
-  const toolOy=hammerPhase===0?-4:hammerPhase===1?2:0;
+  // Detect chop/mine/build from agent state
+  const ast=agentState.get(agent.id||'');
+  const isChopping=ast&&ast.state==='chopping';
+  const isMining=ast&&(ast.state==='mining'||ast.state==='mining_gold');
+  const isActBuilding=building||(ast&&ast.state==='building');
+  const swingRate=isChopping?15:isMining?20:12;
+  const hammerPhase=(isChopping||isMining||isActBuilding)?Math.floor(fr/swingRate)%2:-1;
+  const toolOy=hammerPhase===0?-6:hammerPhase===1?3:0;
   if(pers==='lazy'){
     c.fillStyle='#aaaaff';c.font='bold 13px Courier New';c.textAlign='center';
     for(let zi=0;zi<3;zi++){
@@ -1461,6 +1506,12 @@ const TECH_TREE=[
 
 // Track harvestable details — key: "tx,ty" -> {type,hp}
 const harvestables=new Map();
+// Animation state for objects being harvested: key -> {progress:0-1, shakeTimer:0, type:'tree'|'rock'}
+const harvestAnim=new Map();
+// Stumps/rubble left behind: [{x,y,type,timer}]
+const stumps=[];
+// Impact text particles: [{x,y,text,color,life,maxLife}]
+const impactTexts=[];
 // Gold deposits placed on mountain cells
 let goldDeposits=[];
 
@@ -1660,24 +1711,66 @@ function updateAgentMovement(){
     }
     else if(st.state==='chopping'){
       st.timer-=(isLazy?0.5:1);
+      const maxT=hasLumberMill?50:100;
+      const chopProg=1-st.timer/maxT;
+      // Update harvest animation
+      if(st.target){
+        const key=`${st.target.x},${st.target.y}`;
+        harvestAnim.set(key,{progress:chopProg,shakeTimer:0,type:'tree'});
+        // Impact every 15 frames
+        if(frame%15===0){
+          harvestAnim.get(key).shakeTimer=5;
+          // Wood chips
+          for(let i=0;i<4;i++)spawnParticle(st.target.x+TS/2+(Math.random()-0.5)*10,st.target.y+TS*0.6,'debris');
+          impactTexts.push({x:st.target.x+TS/2,y:st.target.y+TS*0.3,text:'chop!',color:'#b09050',life:0,maxLife:18});
+        }
+      }
       if(st.timer<=0){
         G.wood+=5;
         gameEvent(`${a.name} chopped a tree (+5 wood)`,'build_complete');
-        if(st.target)harvestables.set(`${st.target.x},${st.target.y}`,true);
+        if(st.target){
+          const key2=`${st.target.x},${st.target.y}`;
+          harvestables.set(key2,true);harvestAnim.delete(key2);
+          // Leave stump
+          stumps.push({x:st.target.x,y:st.target.y,type:'stump',timer:1800});
+          // Tree fall particles
+          for(let i=0;i<6;i++)spawnParticle(st.target.x+TS/2+(Math.random()-0.5)*16,st.target.y+TS*0.4,'debris');
+        }
         st.state='idle';st.taskCooldown=15;
       }
     }
     else if(st.state==='mining'){
       st.timer-=(isLazy?0.5:1);
+      const maxT2=hasQuarry?70:140;
+      const mineProg=1-st.timer/maxT2;
+      if(st.target){
+        const key=`${st.target.x},${st.target.y}`;
+        harvestAnim.set(key,{progress:mineProg,shakeTimer:0,type:'rock'});
+        if(frame%20===0){
+          harvestAnim.get(key).shakeTimer=4;
+          spawnParticle(st.target.x+TS/2,st.target.y+TS/2,'gold');// bright spark
+          spawnParticle(st.target.x+TS/2+(Math.random()-0.5)*8,st.target.y+TS/2,'debris');
+          impactTexts.push({x:st.target.x+TS/2,y:st.target.y+TS*0.3,text:'clink!',color:'#aaa',life:0,maxLife:18});
+        }
+      }
       if(st.timer<=0){
         G.stone+=3;
         gameEvent(`${a.name} mined stone (+3 stone)`,'build_complete');
-        if(st.target)harvestables.set(`${st.target.x},${st.target.y}`,true);
+        if(st.target){
+          const key2=`${st.target.x},${st.target.y}`;
+          harvestables.set(key2,true);harvestAnim.delete(key2);
+          stumps.push({x:st.target.x,y:st.target.y,type:'rubble',timer:1200});
+          for(let i=0;i<5;i++)spawnParticle(st.target.x+TS/2+(Math.random()-0.5)*14,st.target.y+TS/2,'debris');
+        }
         st.state='idle';st.taskCooldown=15;
       }
     }
     else if(st.state==='mining_gold'){
       st.timer-=(isLazy?0.5:1);
+      if(st.target&&frame%20===0){
+        spawnParticle(st.target.x+TS/2,st.target.y+TS/2,'gold');
+        impactTexts.push({x:st.target.x+TS/2,y:st.target.y+TS*0.3,text:'clink!',color:'#ffd700',life:0,maxLife:18});
+      }
       if(st.timer<=0){
         G.gold+=1;
         gameEvent(`${a.name} found gold (+1 gold)`,'build_complete');
@@ -1688,7 +1781,15 @@ function updateAgentMovement(){
     else if(st.state==='building'){
       if(!st.target||st.target.complete){st.state='idle';st.taskCooldown=15;continue}
       if(!atTarget){v.tx=st.target.x/WW;v.ty=st.target.y/WH;continue}
-      st.target.progress=Math.min(1,st.target.progress+0.008);// 5x faster!
+      st.target.progress=Math.min(1,st.target.progress+0.008);
+      // Building impact effects
+      if(frame%12===0){
+        const bpx=st.target.x*TS+TS,bpy=st.target.y*TS+TS;
+        spawnParticle(bpx+(Math.random()-0.5)*10,bpy-5,'debris');
+        const txt=G.era<2?'tap!':'tink!';
+        const col2=G.era<1?'#b09050':'#aaa';
+        impactTexts.push({x:bpx,y:bpy-10,text:txt,color:col2,life:0,maxLife:15});
+      }
       if(st.target.progress>=1){
         st.target.complete=true;st.target.claimedBy=null;
         gameEvent(`${a.name} completed ${st.target.name}!`,'build_complete');
@@ -1961,6 +2062,33 @@ for(const item of renderItems){
       ctx.beginPath();ctx.arc(ax,ay-10,20,0,Math.PI*2);ctx.stroke();ctx.lineWidth=1;
     }
   }
+}
+
+// Stumps and rubble (left behind after harvesting)
+for(let si=stumps.length-1;si>=0;si--){
+  const s=stumps[si];s.timer--;
+  if(s.timer<=0){stumps.splice(si,1);continue}
+  const sa=Math.min(1,s.timer/60);// fade out last second
+  ctx.globalAlpha=sa;
+  if(s.type==='stump'){
+    ctx.fillStyle='#5a3a18';ctx.fillRect(s.x+TS/2-3,s.y+TS-5,6,4);
+    ctx.fillStyle='#4a2a10';ctx.beginPath();ctx.ellipse(s.x+TS/2,s.y+TS-5,4,2,0,0,Math.PI*2);ctx.fill();
+  }else{// rubble
+    ctx.fillStyle='#6a6872';
+    ctx.fillRect(s.x+4,s.y+TS-5,5,3);ctx.fillRect(s.x+10,s.y+TS-4,4,2);ctx.fillRect(s.x+16,s.y+TS-3,3,2);
+  }
+  ctx.globalAlpha=1;
+}
+
+// Impact text particles
+for(let ti=impactTexts.length-1;ti>=0;ti--){
+  const it=impactTexts[ti];it.life++;
+  if(it.life>=it.maxLife){impactTexts.splice(ti,1);continue}
+  const ta=1-it.life/it.maxLife;
+  ctx.globalAlpha=ta;ctx.fillStyle=it.color;
+  ctx.font='bold 7px Courier New';ctx.textAlign='center';ctx.textBaseline='bottom';
+  ctx.fillText(it.text,it.x,it.y-it.life*0.8);
+  ctx.globalAlpha=1;
 }
 
 // === Ambient Particles ===
