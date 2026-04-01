@@ -115,11 +115,71 @@ function renderTBuf(){
   tCanvas=document.createElement('canvas');tCanvas.width=WW*TS;tCanvas.height=WH*TS;
   const c=tCanvas.getContext('2d');
   const ts=TS;
+  // Pass 1: Base colors + ground texture
   for(let y=0;y<WH;y++)for(let x=0;x<WW;x++){
     const bi=tBiomes[y*WW+x],b=BL[bi],co=BC[b];
     const px=x*ts,py=y*ts,dark=(x+y)%2===1;
     c.fillStyle=dark?co[1]:co[0];
     c.fillRect(px,py,ts,ts);
+    // 1. GROUND TEXTURE: 2-3 tiny speckle rects for dithered look
+    const h=tileHash(x,y);
+    const baseCol=dark?co[1]:co[0];
+    // Parse base color to lighten/darken
+    const speckCount=2+((h>>8)%2);
+    for(let i=0;i<speckCount;i++){
+      const sx2=px+2+((h>>(i*5))%18);
+      const sy2=py+2+((h>>(i*5+2))%18);
+      const bright=((h>>(i*3))%2===0);
+      c.fillStyle=bright?'rgba(255,255,255,0.06)':'rgba(0,0,0,0.06)';
+      c.fillRect(sx2,sy2,2+(h>>(i*4))%2,2+(h>>(i*6))%2);
+    }
+  }
+  // Pass 2: Biome edge blending
+  for(let y=1;y<WH-1;y++)for(let x=1;x<WW-1;x++){
+    const bi=tBiomes[y*WW+x];
+    const px=x*ts,py=y*ts;
+    const neighbors=[[0,-1],[0,1],[-1,0],[1,0]];
+    for(const[dx,dy] of neighbors){
+      const nbi=tBiomes[(y+dy)*WW+(x+dx)];
+      if(nbi!==bi){
+        const nb=BL[nbi],nco=BC[nb];
+        const h2=tileHash(x*7+dx,y*13+dy);
+        c.fillStyle=nco[0];
+        // 3-4 random dots along the edge
+        const count=3+((h2>>4)%2);
+        for(let i=0;i<count;i++){
+          const ex2=dx===0?(px+3+((h2>>(i*4))%16)):(dx>0?px+ts-2-((h2>>(i*3))%4):px+((h2>>(i*3))%4));
+          const ey2=dy===0?(py+3+((h2>>(i*4+2))%16)):(dy>0?py+ts-2-((h2>>(i*3+1))%4):py+((h2>>(i*3+1))%4));
+          c.fillRect(ex2,ey2,2,2);
+        }
+      }
+    }
+  }
+  // Pass 3: Grass tufts on grass/forest cells
+  for(let y=0;y<WH;y++)for(let x=0;x<WW;x++){
+    const bi=tBiomes[y*WW+x],b=BL[bi];
+    if(b!=='grassland'&&b!=='forest'&&b!=='dense_forest')continue;
+    const h=detailHash(x,y);
+    if(h%100>=15)continue;// ~15% chance
+    const px=x*ts,py=y*ts;
+    const baseGreen=b==='grassland'?'#4aa838':b==='forest'?'#2a7a1a':'#1e6a12';
+    c.fillStyle=baseGreen;
+    // 3 tiny vertical lines clustered
+    const gx=px+4+(h%14),gy=py+8+(h>>4)%10;
+    const h1=4+((h>>6)%5),h2=5+((h>>8)%4),h3=3+((h>>10)%5);
+    c.fillRect(gx,gy-h1,1,h1);
+    c.fillRect(gx+2,gy-h2,2,h2);
+    c.fillRect(gx+4,gy-h3,1,h3);
+  }
+  // Pass 4: Ground shadows near where trees/details will be
+  for(let y=0;y<WH;y++)for(let x=0;x<WW;x++){
+    const bi=tBiomes[y*WW+x],b=BL[bi];
+    const h=detailHash(x,y),r=h%100;
+    if(((b==='forest'||b==='dense_forest')&&r<18)||(b==='grassland'&&r<4)){
+      const px=x*ts,py=y*ts;
+      c.fillStyle='rgba(0,0,0,0.15)';
+      c.beginPath();c.ellipse(px+ts/2+4,py+ts-2,10,4,0,0,Math.PI*2);c.fill();
+    }
   }
 }
 
@@ -616,13 +676,37 @@ const ex=Math.min(WW,Math.ceil((-vpX+cw/zoom)/ts+1)),ey=Math.min(WH,Math.ceil((-
 if(tCanvas)ctx.drawImage(tCanvas,sx*ts,sy*ts,(ex-sx)*ts,(ey-sy)*ts,sx*ts,sy*ts,(ex-sx)*ts,(ey-sy)*ts);
 
 // Water shimmer animation
-const shimAlpha=0.08+0.04*Math.sin(frame*0.05);
-ctx.fillStyle=`rgba(100,160,255,${shimAlpha})`;
 for(let y=sy;y<ey;y++){for(let x=sx;x<ex;x++){
   const bi=tBiomes[y*WW+x];
   if(bi===0||bi===1||bi===10){// deep_water, shallow_water, river
-    const off=(tileHash(x,y)+frame)%6;
-    if(off===0){ctx.fillRect(x*ts+2,y*ts+8+(frame%12),8,2)}
+    const px2=x*ts,py2=y*ts,h=tileHash(x,y);
+    // Lighter blue layer with sine-wave distortion
+    const waveOff=Math.sin(frame*0.02+x*0.3)*2;
+    ctx.fillStyle='rgba(60,130,220,0.08)';
+    ctx.fillRect(px2,py2+10+waveOff,ts,4);
+    // Shimmer line segments
+    const shimAlpha=0.08+0.04*Math.sin(frame*0.05);
+    const off=(h+frame)%6;
+    if(off===0){
+      ctx.fillStyle=`rgba(100,160,255,${shimAlpha})`;
+      ctx.fillRect(px2+2,py2+8+(frame%12),8,2);
+    }
+    // Caustic sparkle dots
+    const sparkle=((h*37+frame)%120);
+    if(sparkle<3){
+      ctx.fillStyle='rgba(136,204,255,0.5)';
+      const spx=px2+4+((h>>3)%14),spy=py2+4+((h>>6)%14);
+      ctx.fillRect(spx,spy,2,2);
+    }
+    // Circular ripple rings (very subtle, every few seconds per tile)
+    const ripplePhase=((h*13+frame)%300);
+    if(ripplePhase<60){
+      const rr=ripplePhase*0.5;
+      const ra=Math.max(0,0.12-ripplePhase*0.002);
+      ctx.strokeStyle=`rgba(150,200,255,${ra})`;
+      ctx.lineWidth=1;
+      ctx.beginPath();ctx.arc(px2+ts/2,py2+ts/2,rr,0,Math.PI*2);ctx.stroke();
+    }
   }
 }}
 
