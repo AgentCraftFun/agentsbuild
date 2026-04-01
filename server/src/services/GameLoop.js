@@ -1,0 +1,470 @@
+/**
+ * Core game loop. Runs a tick every 10 seconds.
+ * Manages agent AI, building progress, resource collection, and WORK emissions.
+ */
+
+const AgentBrain = require('./AgentBrain');
+const Economy = require('./Economy');
+const WorldGen = require('./WorldGen');
+const Building = require('../models/Building');
+const { broadcast } = require('../ws/broadcast');
+
+class GameLoop {
+  constructor(worldState, wsServer) {
+    this.world = worldState;
+    this.wss = wsServer;
+    this.intervalId = null;
+    this.tickRate = parseInt(process.env.TICK_RATE_MS, 10) || 10000;
+  }
+
+  start() {
+    console.log(`[GameLoop] Starting tick loop (${this.tickRate}ms interval)`);
+    this.intervalId = setInterval(() => this.tick(), this.tickRate);
+    // Run first tick immediately
+    this.tick();
+  }
+
+  stop() {
+    if (this.intervalId) {
+      clearInterval(this.intervalId);
+      this.intervalId = null;
+      console.log('[GameLoop] Stopped.');
+    }
+  }
+
+  tick() {
+    try {
+      // 1. Increment tick counter
+      this.world.tick = (this.world.tick || 0) + 1;
+      const tick = this.world.tick;
+      const events = [];
+
+      // 2. For each agent: evaluate state, pick action if idle
+      for (const agent of this.world.agents.values()) {
+        this._processAgent(agent, tick, events);
+      }
+
+      // 3. Advance building progress for all in-progress builds
+      for (const building of this.world.buildingsList) {
+        if (!building.isComplete()) {
+          const wasDone = building.isComplete();
+          building.advanceProgress(1);
+          if (building.isComplete() && !wasDone) {
+            // Building just completed
+            const owner = this.world.agents.get(building.owner);
+            const existingCount = this.world.buildingsList
+              .filter(b => b.type === building.type && b.isComplete()).length;
+            const reward = Economy.buildReward(building.type, existingCount);
+            if (owner) {
+              owner.earnWork(reward);
+              events.push({
+                tick,
+                type: 'build_complete',
+                agent: owner.name,
+                message: `${owner.name} completed a ${building.name}! (+${reward.toFixed(2)} WORK)`,
+              });
+            }
+          }
+        }
+      }
+
+      // 4. Collect resources from owned tiles
+      for (const agent of this.world.agents.values()) {
+        this._collectResources(agent, tick);
+      }
+
+      // 5. Calculate WORK emissions
+      for (const agent of this.world.agents.values()) {
+        const ownedTileObjects = agent.owned_tiles
+          .map(id => this.world.tiles.get(id))
+          .filter(Boolean);
+        const workEarned = Economy.calculateTickEmissions(ownedTileObjects);
+        if (workEarned > 0) {
+          agent.earnWork(workEarned);
+        }
+      }
+
+      // 6. Generate event feed entries (already collected above, add tick summary)
+      if (tick % 10 === 0) {
+        const agentCount = this.world.agents.size;
+        const buildingCount = this.world.buildingsList.length;
+        const claimedCount = [...this.world.tiles.values()].filter(t => t.owner).length;
+        events.push({
+          tick,
+          type: 'tick_summary',
+          message: `Tick ${tick}: ${agentCount} agents, ${buildingCount} buildings, ${claimedCount} claimed tiles.`,
+        });
+      }
+
+      // Store events
+      if (!this.world.events) this.world.events = [];
+      this.world.events.push(...events);
+      // Keep only last 500 events
+      if (this.world.events.length > 500) {
+        this.world.events = this.world.events.slice(-500);
+      }
+
+      // 7. Build world state diff
+      const diff = this._buildDiff(events);
+
+      // 8. Update leaderboard
+      this.world.leaderboard = this._buildLeaderboard();
+
+      // 9. Broadcast diff to all WS clients
+      if (this.wss) {
+        broadcast(this.wss, 'tick', diff);
+      }
+
+      // Log every 10th tick
+      if (tick % 10 === 0) {
+        console.log(`[GameLoop] Tick ${tick} complete. ${events.length} events.`);
+      }
+    } catch (err) {
+      console.error('[GameLoop] Tick error:', err);
+    }
+  }
+
+  _processAgent(agent, tick, events) {
+    // Check if agent has a queued action from the API
+    let decision;
+    if (agent.action_queue && agent.action_queue.length > 0) {
+      decision = agent.action_queue.shift();
+    } else {
+      // AI brain decides
+      const brain = new AgentBrain(agent, this.world);
+      decision = brain.decide();
+    }
+
+    if (!decision) {
+      agent.mood = 'idle';
+      agent.idle_ticks = (agent.idle_ticks || 0) + 1;
+      return;
+    }
+
+    // Execute the decision
+    switch (decision.type) {
+      case 'move':
+        this._executeMove(agent, decision, tick, events);
+        break;
+      case 'claim':
+        this._executeClaim(agent, decision, tick, events);
+        break;
+      case 'build':
+        this._executeBuild(agent, decision, tick, events);
+        break;
+      case 'raid':
+        this._executeRaid(agent, decision, tick, events);
+        break;
+      case 'message':
+        this._executeMessage(agent, decision, tick, events);
+        break;
+      case 'idle':
+      default:
+        agent.mood = 'idle';
+        agent.current_action = null;
+        agent.idle_ticks = (agent.idle_ticks || 0) + 1;
+        if (decision.message) {
+          agent.message = decision.message;
+          events.push({
+            tick,
+            type: 'agent_idle',
+            agent: agent.name,
+            message: `${agent.name}: ${decision.message}`,
+          });
+        }
+        break;
+    }
+
+    agent.last_action_tick = tick;
+  }
+
+  _executeMove(agent, decision, tick, events) {
+    const { dx = 0, dy = 0 } = decision.payload || {};
+    const clampedDx = Math.max(-2, Math.min(2, dx));
+    const clampedDy = Math.max(-2, Math.min(2, dy));
+    agent.move(clampedDx, clampedDy, this.world.width, this.world.height);
+    agent.mood = 'moving';
+    agent.current_action = { type: 'move', dx: clampedDx, dy: clampedDy };
+    agent.idle_ticks = 0;
+    if (decision.message) {
+      agent.message = decision.message;
+    }
+  }
+
+  _executeClaim(agent, decision, tick, events) {
+    const { x, y } = decision.payload || {};
+    const tileId = `${x},${y}`;
+    const tile = this.world.tiles.get(tileId);
+
+    if (!tile) {
+      events.push({ tick, type: 'action_failed', agent: agent.name, message: `${agent.name} tried to claim a tile that doesn't exist. Awkward.` });
+      return;
+    }
+    if (tile.owner) {
+      events.push({ tick, type: 'action_failed', agent: agent.name, message: `${agent.name} tried to claim ${tileId} but it's already owned. Nice try.` });
+      return;
+    }
+    if (!Economy.isClaimable(tile.biome)) {
+      events.push({ tick, type: 'action_failed', agent: agent.name, message: `${agent.name} tried to claim water. Fish said no.` });
+      return;
+    }
+
+    // Claim the tile
+    tile.owner = agent.id;
+    agent.addTile(tileId);
+    agent.mood = 'claiming';
+    agent.current_action = { type: 'claim', tileId };
+    agent.idle_ticks = 0;
+    agent.message = decision.message || '';
+
+    // Move agent to the claimed tile
+    agent.x = x;
+    agent.y = y;
+
+    events.push({
+      tick,
+      type: 'tile_claimed',
+      agent: agent.name,
+      tileId,
+      biome: tile.biome,
+      message: decision.message
+        ? `${agent.name}: ${decision.message}`
+        : `${agent.name} claimed a ${tile.biome} tile at (${x}, ${y}).`,
+    });
+  }
+
+  _executeBuild(agent, decision, tick, events) {
+    const { building: buildingType, x, y, resume } = decision.payload || {};
+
+    // Validate building type
+    const info = Building.CATALOG[buildingType];
+    if (!info) {
+      events.push({ tick, type: 'action_failed', agent: agent.name, message: `${agent.name} tried to build a "${buildingType}". That's not a thing.` });
+      return;
+    }
+
+    const tileId = `${x},${y}`;
+    const tile = this.world.tiles.get(tileId);
+
+    if (!tile) {
+      events.push({ tick, type: 'action_failed', agent: agent.name, message: `${agent.name} tried to build on a nonexistent tile. Physics says no.` });
+      return;
+    }
+
+    // If resuming an abandoned building, allow it
+    if (resume && tile.building && !tile.building.isComplete()) {
+      tile.building.owner = agent.id;
+      agent.mood = 'building';
+      agent.current_action = { type: 'build', building: buildingType, tileId };
+      agent.idle_ticks = 0;
+      agent.message = decision.message || '';
+      events.push({ tick, type: 'build_resumed', agent: agent.name, message: `${agent.name} is resuming a ${tile.building.name}!` });
+      return;
+    }
+
+    if (tile.building) {
+      events.push({ tick, type: 'action_failed', agent: agent.name, message: `${agent.name} tried to build on an occupied tile. There's already a ${tile.building.name} there!` });
+      return;
+    }
+
+    // Claim tile if not owned
+    if (!tile.owner) {
+      if (Economy.isClaimable(tile.biome)) {
+        tile.owner = agent.id;
+        agent.addTile(tileId);
+      } else {
+        events.push({ tick, type: 'action_failed', agent: agent.name, message: `${agent.name} can't build on ${tile.biome}. Water is not a foundation.` });
+        return;
+      }
+    }
+
+    // Create building (HQ buildings are free, others cost WORK)
+    const cost = Economy.buildCost(buildingType);
+    if (cost > 0 && !agent.canAfford(cost)) {
+      // Allow building anyway for demo purposes, but log it
+      events.push({ tick, type: 'build_started', agent: agent.name, message: `${agent.name} started a ${info.name} (on credit - ${cost} WORK owed).` });
+    } else if (cost > 0) {
+      agent.spendWork(cost);
+    }
+
+    const building = new Building({
+      type: buildingType,
+      x,
+      y,
+      owner: agent.id,
+      progress: 0,
+      startTick: tick,
+    });
+
+    tile.building = building;
+    agent.buildings.push(building);
+    this.world.buildingsList.push(building);
+
+    agent.mood = 'building';
+    agent.current_action = { type: 'build', building: buildingType, tileId };
+    agent.idle_ticks = 0;
+    agent.message = decision.message || '';
+
+    events.push({
+      tick,
+      type: 'build_started',
+      agent: agent.name,
+      building: buildingType,
+      tileId,
+      message: decision.message
+        ? `${agent.name}: ${decision.message}`
+        : `${agent.name} started building a ${info.name} at (${x}, ${y}).`,
+    });
+  }
+
+  _executeRaid(agent, decision, tick, events) {
+    const { x, y } = decision.payload || {};
+    const tileId = `${x},${y}`;
+    const tile = this.world.tiles.get(tileId);
+
+    if (!tile || !tile.owner || tile.owner === agent.id) {
+      events.push({ tick, type: 'action_failed', agent: agent.name, message: `${agent.name} tried to raid... nothing. Swing and a miss.` });
+      return;
+    }
+
+    // Raid success: 40% chance
+    const success = Math.random() < 0.4;
+    const defender = this.world.agents.get(tile.owner);
+    const defenderName = defender ? defender.name : 'Unknown';
+
+    if (success) {
+      // Steal the tile
+      if (defender) {
+        defender.removeTile(tileId);
+      }
+      tile.owner = agent.id;
+      agent.addTile(tileId);
+
+      // Steal some resources
+      if (defender) {
+        const stolen = Math.min(2, defender.resources.gold);
+        defender.resources.gold -= stolen;
+        agent.resources.gold += stolen;
+      }
+
+      agent.mood = 'raiding';
+      agent.current_action = { type: 'raid', tileId, success: true };
+      agent.idle_ticks = 0;
+      agent.message = decision.message || '';
+
+      events.push({
+        tick,
+        type: 'raid_success',
+        agent: agent.name,
+        defender: defenderName,
+        tileId,
+        message: decision.message
+          ? `${agent.name}: ${decision.message}`
+          : `${agent.name} raided ${defenderName}'s tile at (${x}, ${y}) and won!`,
+      });
+    } else {
+      agent.mood = 'defeated';
+      agent.current_action = { type: 'raid', tileId, success: false };
+      agent.idle_ticks = 0;
+
+      events.push({
+        tick,
+        type: 'raid_failed',
+        agent: agent.name,
+        defender: defenderName,
+        tileId,
+        message: `${agent.name} tried to raid ${defenderName} at (${x}, ${y}) but got repelled! Embarrassing.`,
+      });
+    }
+  }
+
+  _executeMessage(agent, decision, tick, events) {
+    agent.mood = 'chatting';
+    agent.current_action = { type: 'message' };
+    agent.message = decision.message || '';
+
+    events.push({
+      tick,
+      type: 'agent_message',
+      agent: agent.name,
+      message: `${agent.name}: ${decision.message}`,
+    });
+  }
+
+  _collectResources(agent, tick) {
+    // Collect resource yields from owned tiles' buildings
+    const agentBuildings = agent.buildings.filter(b => b.isComplete());
+    const yields = Economy.calculateBuildingYields(agentBuildings);
+
+    // Scale down to per-tick amounts
+    agent.resources.food += yields.food * 0.1;
+    agent.resources.wood += yields.wood * 0.1;
+    agent.resources.stone += yields.stone * 0.1;
+    agent.resources.gold += yields.gold * 0.1;
+
+    // Also get base tile yields
+    for (const tileId of agent.owned_tiles) {
+      const tile = this.world.tiles.get(tileId);
+      if (tile) {
+        const tileYields = WorldGen.getTileYield(tile.biome);
+        agent.resources.food += tileYields.food * 0.05;
+        agent.resources.wood += tileYields.wood * 0.05;
+        agent.resources.stone += tileYields.stone * 0.05;
+        agent.resources.gold += tileYields.gold * 0.05;
+      }
+    }
+  }
+
+  _buildDiff(events) {
+    const agents = [];
+    for (const agent of this.world.agents.values()) {
+      agents.push(agent.toPublicJSON ? agent.toPublicJSON() : agent.toJSON());
+    }
+
+    const changedTiles = [];
+    for (const tile of this.world.tiles.values()) {
+      if (tile.owner || tile.building) {
+        changedTiles.push({
+          x: tile.x,
+          y: tile.y,
+          tileId: tile.tileId,
+          biome: tile.biome,
+          owner: tile.owner,
+          building: tile.building ? tile.building.toJSON() : null,
+        });
+      }
+    }
+
+    return {
+      tick: this.world.tick,
+      agents,
+      tiles: changedTiles,
+      buildings: this.world.buildingsList.map(b => b.toJSON()),
+      events,
+      leaderboard: this.world.leaderboard || [],
+    };
+  }
+
+  _buildLeaderboard() {
+    const entries = [];
+    for (const agent of this.world.agents.values()) {
+      const completedBuildings = agent.buildings.filter(b => b.isComplete()).length;
+      const territory = agent.owned_tiles.length;
+      const score = territory * 10 + completedBuildings * 25 + agent.work_balance;
+      entries.push({
+        id: agent.id,
+        name: agent.name,
+        faction: agent.faction,
+        personality: agent.personality,
+        territory,
+        buildings: completedBuildings,
+        work_balance: parseFloat(agent.work_balance.toFixed(4)),
+        score: parseFloat(score.toFixed(2)),
+      });
+    }
+    entries.sort((a, b) => b.score - a.score);
+    return entries;
+  }
+}
+
+module.exports = GameLoop;
