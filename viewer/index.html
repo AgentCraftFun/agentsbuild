@@ -124,6 +124,7 @@ setTimeout(function(){var io=document.getElementById('intro-overlay');if(io)io.r
     <div id="header-stats">
       <span id="h-era-wrap" style="display:flex;align-items:center;gap:4px"><span id="h-era-icon">🪵</span> <span class="val" id="h-era">Wood Age</span></span>
       <span>Pop: <span class="val" id="h-agents">0</span></span>
+      <span>B: <span class="val" id="h-bldcount">0</span></span>
       <span id="h-time-wrap" style="display:flex;align-items:center;gap:3px"><span id="h-time-icon">☀️</span><span class="val" id="h-time-name">Morning</span></span>
       <span>🗓<span class="val" id="h-playtime">Day 1, 06:00</span></span>
       <span>🪙<span class="val" id="h-points">0</span></span>
@@ -3112,6 +3113,13 @@ for(let i=particles.length-1;i>=0;i--){if(!particles[i]||particles[i].life>=part
 for(let i=footprints.length-1;i>=0;i--){if(!footprints[i]||footprints[i].life<=0)footprints.splice(i,1)}
 // Filter corrupt building entries
 G.clientBuildings=G.clientBuildings.filter(b=>b&&typeof b.x==='number'&&isFinite(b.x)&&typeof b.y==='number'&&isFinite(b.y));
+// Deduplicate buildings: remove buildings of same type within 2 tiles of each other
+{const seen=[];G.clientBuildings=G.clientBuildings.filter(b=>{
+  const dup=seen.find(s=>s.type===b.type&&Math.abs(s.x-b.x)<2&&Math.abs(s.y-b.y)<2);
+  if(dup)return false;seen.push(b);return true;
+})}
+// Hard cap on buildings
+if(G.clientBuildings.length>100){console.warn('Building cap exceeded:',G.clientBuildings.length);G.clientBuildings.length=100}
 // Frame timing
 const _now=performance.now(),_dt=_now-_lastFrameTime;_lastFrameTime=_now;
 _slowMode=_dt>50;const _lowPerf=_dt>100;
@@ -4319,6 +4327,7 @@ if(frame%60===0){try{
   const mins=Math.floor((dayProgress*24-hours)*60);
   document.getElementById('h-playtime').textContent=`Day ${days+1}, ${String(hours).padStart(2,'0')}:${String(mins).padStart(2,'0')}`;
   document.getElementById('h-agents').textContent=S.agents.length;
+  document.getElementById('h-bldcount').textContent=G.clientBuildings.length;
   document.getElementById('h-era').textContent=G.eraNames[G.era];
   document.getElementById('h-era-icon').textContent=ERA_ICONS[G.era];
   document.getElementById('h-points').textContent=specPoints;
@@ -4599,12 +4608,18 @@ ws.onclose=()=>{S.connected=false;updateHeader();ov.style.display='block';ov.que
 ws.onerror=()=>{}}
 function schedRecon(){if(reconTimer)clearTimeout(reconTimer);reconTimer=setTimeout(()=>{reconDelay=Math.min(reconDelay*1.5,15000);connectWS()},reconDelay)}
 function syncServerBuildings(serverBlds){
-  // Merge server building state into client buildings, preserving client-side visual state
-  const existing=new Map(G.clientBuildings.map(b=>[`${b.x},${b.y}`,b]));
+  // Server buildings are authoritative for server-side state (S.buildings)
+  // but should NOT be blindly pushed into client buildings (G.clientBuildings)
+  // because client uses its own coordinate system and building lifecycle.
+  // Only update progress/completion on buildings that already exist client-side.
   for(const sb of serverBlds){
-    const key=`${sb.x},${sb.y}`;const cb=existing.get(key);
-    if(cb){cb.progress=sb.progress||cb.progress;cb.complete=sb.complete||cb.complete;cb.owner=sb.owner||cb.owner}
-    else{G.clientBuildings.push({...sb,building:!sb.complete})}
+    // Try to find matching client building by proximity (within 2 tiles)
+    const match=G.clientBuildings.find(cb=>cb.type===sb.type&&Math.abs(cb.x-sb.x)<3&&Math.abs(cb.y-sb.y)<3);
+    if(match){
+      if(sb.complete)match.complete=true;
+      if(sb.progress>match.progress)match.progress=sb.progress;
+    }
+    // Do NOT push new buildings — client manages its own building creation
   }
 }
 function handleMsg(msg){
