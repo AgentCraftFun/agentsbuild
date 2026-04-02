@@ -806,130 +806,110 @@ const ROOF_COL={human:'#2a3a5a',orc:'#4a1808',dwarf:'#4a2a10',elf:'#1a3a10',neut
 const ROOF_LIGHT={human:'#3a4a6a',orc:'#5a2818',dwarf:'#5a3a20',elf:'#2a4a20',neutral:'#5a5a5a'};
 
 function drawCompletedBuilding(c,b,bx,by,bw,bh,fr){
-  if(!isFinite(bw)||!isFinite(bh)||bw<=0||bh<=0||bw>300||bh>300)return;// safety cap
+  if(!isFinite(bw)||!isFinite(bh)||bw<=0||bh<=0||bw>300||bh>300)return;
   const fc=b.faction||'human',cols=BFC[fc]||BFC.human;
   const tall=b.tall||false;
   const roofC=ROOF_COL[fc]||ROOF_COL.neutral;
   const roofL=ROOF_LIGHT[fc]||ROOF_LIGHT.neutral;
   const h=tileHash(b.x||0,b.y||0);
+  const SD=6;// 3D side depth
 
-  // 1. BUILDING SHADOW (strong directional, bottom-right)
-  c.fillStyle='rgba(0,0,0,0.3)';
-  c.fillRect(bx+5,by+bh-5,bw,10);
+  // Shadow
+  c.fillStyle='rgba(0,0,0,0.25)';c.fillRect(bx+SD,by+bh,bw,8);
 
-  // 2. WALLS
+  // Foundation
+  c.fillStyle='#4a3a28';c.fillRect(bx-2,by+bh-3,bw+SD+4,5);
+  c.fillStyle='#3a2a18';c.fillRect(bx-2,by+bh+2,bw+SD+4,1);
+
+  // WALLS — front face
   const wallH=bh-Math.max(8,bh*0.25);
   const wallY=by+bh-wallH;
-  // Main wall
-  c.fillStyle=cols.color;
-  c.fillRect(bx,wallY,bw,wallH);
-  // Brick/stone pattern
+  c.fillStyle=cols.color;c.fillRect(bx,wallY,bw,wallH);
+  // Brick pattern
   c.fillStyle=cols.light;
-  for(let row=0;row<wallH;row+=8){
-    const offset=(Math.floor(row/8))%2===0?0:4;
-    for(let col=offset;col<bw-4;col+=8){
-      c.fillRect(bx+col+1,wallY+row+1,6,6);
-    }
+  const maxRows=Math.min(Math.floor(wallH/6),30);
+  for(let row=0;row<maxRows;row++){
+    const off=(row%2)*4;
+    for(let col=off;col<bw-2;col+=8)c.fillRect(bx+col+1,wallY+row*6+1,6,4);
   }
-  // Mortar gaps
-  c.fillStyle=cols.color;
-  for(let row=0;row<wallH;row+=8)c.fillRect(bx,wallY+row,bw,1);
-  for(let col=0;col<bw;col+=8)c.fillRect(bx+col,wallY,1,wallH);
-  // 3D depth strip (darker right side)
-  c.fillStyle='rgba(0,0,0,0.2)';
-  c.fillRect(bx+bw-4,wallY,4,wallH);
 
-  // 3. ROOF
-  const roofOH=4;// overhang
+  // 3D SIDE WALL — parallelogram on right
+  c.fillStyle='rgba(0,0,0,0.25)';
+  c.beginPath();c.moveTo(bx+bw,wallY);c.lineTo(bx+bw+SD,wallY-4);c.lineTo(bx+bw+SD,wallY+wallH-4);c.lineTo(bx+bw,wallY+wallH);c.closePath();c.fill();
+  // Side wall base color
+  const sideCol=cols.color;
+  c.fillStyle=sideCol;c.globalAlpha=0.6;
+  c.beginPath();c.moveTo(bx+bw,wallY);c.lineTo(bx+bw+SD,wallY-4);c.lineTo(bx+bw+SD,wallY+wallH-4);c.lineTo(bx+bw,wallY+wallH);c.closePath();c.fill();
+  c.globalAlpha=1;
+
+  // ROOF with depth
+  const roofOH=5;
   const roofH=Math.max(8,bh*0.25);
   if(tall){
-    // Pointed/triangular roof for tall buildings
     c.fillStyle=roofC;
-    c.beginPath();
-    c.moveTo(bx-roofOH,wallY);c.lineTo(bx+bw/2,wallY-roofH*1.3);c.lineTo(bx+bw+roofOH,wallY);
-    c.fill();
-    // Ridge highlight
-    c.strokeStyle=roofL;c.lineWidth=2;
-    c.beginPath();c.moveTo(bx+bw/2,wallY-roofH*1.3);c.lineTo(bx+bw+roofOH,wallY);c.stroke();
-    c.lineWidth=1;
+    c.beginPath();c.moveTo(bx-roofOH,wallY);c.lineTo(bx+bw/2,wallY-roofH*1.3);c.lineTo(bx+bw+roofOH,wallY);c.fill();
+    // Roof side depth
+    c.fillStyle=roofL;c.beginPath();c.moveTo(bx+bw+roofOH,wallY);c.lineTo(bx+bw/2,wallY-roofH*1.3);c.lineTo(bx+bw/2+SD,wallY-roofH*1.3-3);c.lineTo(bx+bw+roofOH+SD,wallY-4);c.closePath();c.fill();
   }else{
-    // Flat/sloped roof
-    c.fillStyle=roofC;
-    c.fillRect(bx-roofOH,wallY-roofH,bw+roofOH*2,roofH);
-    // Lighter ridge line
+    c.fillStyle=roofC;c.fillRect(bx-roofOH,wallY-roofH,bw+roofOH*2,roofH);
+    // Roof side depth
     c.fillStyle=roofL;
-    c.fillRect(bx-roofOH,wallY-roofH,bw+roofOH*2,3);
-    // Roof texture lines
-    for(let ry=wallY-roofH+6;ry<wallY;ry+=5){
-      c.fillStyle='rgba(0,0,0,0.08)';c.fillRect(bx-roofOH,ry,bw+roofOH*2,1);
-    }
+    c.beginPath();c.moveTo(bx+bw+roofOH,wallY-roofH);c.lineTo(bx+bw+roofOH+SD,wallY-roofH-3);c.lineTo(bx+bw+roofOH+SD,wallY-3);c.lineTo(bx+bw+roofOH,wallY);c.closePath();c.fill();
+    // Ridge highlight
+    c.fillStyle=roofL;c.fillRect(bx-roofOH,wallY-roofH,bw+roofOH*2,2);
+    // Roof underside (dark strip)
+    c.fillStyle='rgba(0,0,0,0.3)';c.fillRect(bx-roofOH,wallY-2,bw+roofOH*2,2);
   }
 
-  // 4. DOOR
-  c.fillStyle='#1a1a2a';
-  const dw=Math.min(8,bw*0.2),dh2=Math.min(12,wallH*0.5);
-  c.fillRect(bx+bw/2-dw/2,by+bh-dh2,dw,dh2);
-  // Door handle
-  c.fillStyle='#888866';
-  c.fillRect(bx+bw/2+dw/2-3,by+bh-dh2/2-1,2,2);
+  // DOOR with depth + porch
+  const dw=Math.min(10,bw*0.2),dh2=Math.min(14,wallH*0.5);
+  // Porch step
+  c.fillStyle='#7a6a50';c.fillRect(bx+bw/2-dw/2-2,by+bh-3,dw+4,3);
+  // Door recess
+  c.fillStyle='#0a0a14';c.fillRect(bx+bw/2-dw/2,by+bh-dh2,dw,dh2);
+  c.fillStyle='#1a1a2a';c.fillRect(bx+bw/2-dw/2+1,by+bh-dh2+1,dw-2,dh2-1);
+  // Handle
+  c.fillStyle='#aa9966';c.fillRect(bx+bw/2+dw/2-3,by+bh-dh2/2,1,1);
 
-  // 5. WINDOWS
+  // WINDOWS with depth
   if(bw>=24){
-    const winCount=bw>=48?2:1;
-    const positions=winCount===2?[bx+6,bx+bw-15]:[bx+bw*0.15];
-    for(let i=0;i<positions.length;i++){
-      const wx=positions[i],wy=wallY+Math.max(4,wallH*0.2);
-      // Window frame
-      c.fillStyle='#1a1a2a';c.fillRect(wx,wy,9,9);
-      // Glass — some glow warm yellow, others light blue
-      const warm=((h+i*37)%3===0);
-      c.fillStyle=warm?'#ffdd88':'#aaccff';
-      c.fillRect(wx+1,wy+1,7,7);
+    const winCnt=bw>=48?2:1;
+    const wPos=winCnt===2?[bx+6,bx+bw-16]:[bx+Math.floor(bw*0.15)];
+    for(let i=0;i<wPos.length;i++){
+      const wx2=wPos[i],wy2=wallY+Math.max(4,wallH*0.2);
+      // Inset shadow (recess)
+      c.fillStyle='#0a0a14';c.fillRect(wx2-1,wy2-1,11,11);
+      // Glass
+      const warm2=window._isNight||((h+i*37)%3===0);
+      c.fillStyle=warm2?'#ffdd88':'#aaccff';c.fillRect(wx2,wy2,9,9);
       // Cross divider
-      c.fillStyle='#ddd';
-      c.fillRect(wx+4,wy+1,1,7);c.fillRect(wx+1,wy+4,7,1);
+      c.fillStyle='#ddd';c.fillRect(wx2+4,wy2,1,9);c.fillRect(wx2,wy2+4,9,1);
+      // Window sill
+      c.fillStyle='#8a8a90';c.fillRect(wx2-1,wy2+9,11,2);
+      // Night glow bleed
+      if(window._isNight){c.fillStyle='rgba(255,220,100,0.1)';c.fillRect(wx2-2,wy2-2,13,13)}
     }
   }
 
-  // 6. DETAILS
-  // Chimney (on some buildings based on hash)
+  // CHIMNEY with 3D
   if(h%3===0&&!tall){
     const chx=bx+bw*0.7,chy=wallY-roofH;
     c.fillStyle='#3a3a3a';c.fillRect(chx,chy-8,6,8+roofH*0.3);
-    c.fillStyle='#4a4a4a';c.fillRect(chx,chy-8,6,2);
-    // Smoke particles
-    for(let i=0;i<2;i++){
-      const sx2=chx+3+Math.sin(fr*0.03+i*2)*3;
-      const sy2=chy-12-i*8-Math.abs(Math.sin(fr*0.02+i))*4;
-      const sa=0.15-i*0.05;
-      c.fillStyle=`rgba(160,160,170,${sa})`;
-      c.beginPath();c.arc(sx2,sy2,2+i,0,Math.PI*2);c.fill();
-    }
-  }
-  // Banner/sign in flag color
-  if(h%4<2){
-    const bfx=bx+3,bfy=wallY+4;
-    c.fillStyle=cols.flag;c.fillRect(bfx,bfy,3,8);
-    c.fillRect(bfx+3,bfy+1,5,6);
+    c.fillStyle='#2a2a2a';c.fillRect(chx+6,chy-7,2,8+roofH*0.3-2);// chimney side
+    c.fillStyle='#4a4a4a';c.fillRect(chx,chy-8,6,2);// cap
   }
 
-  // Flag on completed buildings
+  // Flag
   const fx=bx+bw-4,fy=wallY-roofH-(tall?roofH*0.6:4);
   c.fillStyle='#5a3010';c.fillRect(fx,fy,2,16);
   c.fillStyle=cols.flag;
-  c.beginPath();
-  const wave=Math.sin(fr*0.08)*2;
-  c.moveTo(fx+2,fy);c.lineTo(fx+12,fy+4+wave);c.lineTo(fx+2,fy+8);c.fill();
+  c.beginPath();c.moveTo(fx+2,fy);c.lineTo(fx+12,fy+4+Math.sin(fr*0.08)*2);c.lineTo(fx+2,fy+8);c.fill();
 
-  // Border + edge highlights (top-left light, bottom-right dark)
-  c.strokeStyle='rgba(0,0,0,0.5)';c.lineWidth=1;
-  c.strokeRect(bx+0.5,wallY+0.5,bw-1,wallH-1);
-  // Bright edge on top and left
-  c.strokeStyle='rgba(255,255,255,0.15)';
+  // Edge highlights
+  c.strokeStyle='rgba(255,255,255,0.12)';c.lineWidth=1;
   c.beginPath();c.moveTo(bx,wallY+wallH);c.lineTo(bx,wallY);c.lineTo(bx+bw,wallY);c.stroke();
-  // Dark edge on bottom and right
-  c.strokeStyle='rgba(0,0,0,0.2)';
-  c.beginPath();c.moveTo(bx+bw,wallY);c.lineTo(bx+bw,wallY+wallH);c.lineTo(bx,wallY+wallH);c.stroke();
+  c.strokeStyle='rgba(0,0,0,0.3)';
+  c.beginPath();c.moveTo(bx+bw,wallY);c.lineTo(bx+bw,wallY+wallH);c.stroke();
 }
 
 function drawBuildingPixelArt(c,b,bx,by,bw,bh,fr){
