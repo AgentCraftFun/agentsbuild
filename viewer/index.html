@@ -89,7 +89,11 @@ canvas{display:block;image-rendering:pixelated;image-rendering:crisp-edges}
 .deploy-faction-btn.sel{border-color:#f0c040;color:#f0c040;background:#1a1a2e}
 .deploy-slider-row{display:flex;align-items:center;gap:8px;margin-bottom:8px}
 .deploy-slider-row label{width:80px;font-size:10px;color:#888;flex-shrink:0}
-.deploy-slider-row input[type=range]{flex:1;accent-color:#f0c040;min-width:0;-webkit-appearance:auto;margin:0}
+.deploy-slider-row input[type=range]{flex:1;accent-color:#f0c040;min-width:0;margin:0;padding:0;height:6px;-webkit-appearance:none;appearance:none;background:#1a1a3e;border-radius:3px;outline:none}
+.deploy-slider-row input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:16px;height:16px;border-radius:50%;background:#f0c040;cursor:pointer;border:2px solid #0d0d1e}
+.deploy-slider-row input[type=range]::-moz-range-thumb{width:14px;height:14px;border-radius:50%;background:#f0c040;cursor:pointer;border:2px solid #0d0d1e}
+.deploy-slider-row input[type=range]::-webkit-slider-runnable-track{height:6px;border-radius:3px}
+.deploy-slider-row input[type=range]::-moz-range-track{height:6px;background:#1a1a3e;border-radius:3px}
 .deploy-slider-row .val{width:28px;text-align:right;font-size:10px;color:#f0c040;flex-shrink:0}
 .deploy-submit{width:100%;padding:10px;background:linear-gradient(135deg,#f0c040,#dd8833);color:#0a0a14;font-family:'Courier New',monospace;font-weight:bold;font-size:12px;border:none;border-radius:4px;cursor:pointer;letter-spacing:1px;text-transform:uppercase;margin-top:8px}
 .deploy-submit:hover{opacity:0.9}
@@ -247,16 +251,8 @@ setTimeout(function(){var io=document.getElementById('intro-overlay');if(io)io.r
       </div>
       <div class="deploy-field">
         <label>Model</label>
-        <select id="da-model">
-          <option value="anthropic/claude-sonnet-4-6">Claude Sonnet 4.6 (recommended)</option>
-          <option value="anthropic/claude-haiku-4-5">Claude Haiku 4.5 (fast/cheap)</option>
-          <option value="anthropic/claude-opus-4-6">Claude Opus 4.6 (powerful)</option>
-          <option value="openai/gpt-4o">GPT-4o</option>
-          <option value="openai/gpt-4o-mini">GPT-4o Mini</option>
-          <option value="google/gemini-2.5-flash">Gemini 2.5 Flash</option>
-          <option value="meta-llama/llama-4-maverick">Llama 4 Maverick</option>
-        </select>
-        <div class="hint">OpenRouter supports all models. Direct providers use their own model IDs.</div>
+        <select id="da-model"></select>
+        <div class="hint">Models filtered by selected provider.</div>
       </div>
       <div class="deploy-field">
         <label>Agent Name</label>
@@ -5237,10 +5233,41 @@ function pickImportFaction(el){
   el.classList.add('sel');_importFaction=el.dataset.faction;
 }
 let _importProvider='openrouter';
+const MODEL_OPTIONS={
+  openrouter:[
+    {value:'anthropic/claude-sonnet-4-6',label:'Claude Sonnet 4.6 (recommended)'},
+    {value:'anthropic/claude-haiku-4-5',label:'Claude Haiku 4.5 (fast/cheap)'},
+    {value:'anthropic/claude-opus-4-6',label:'Claude Opus 4.6 (powerful)'},
+    {value:'openai/gpt-4o',label:'GPT-4o'},
+    {value:'openai/gpt-4o-mini',label:'GPT-4o Mini'},
+    {value:'google/gemini-2.5-flash',label:'Gemini 2.5 Flash'},
+    {value:'meta-llama/llama-4-maverick',label:'Llama 4 Maverick'},
+  ],
+  anthropic:[
+    {value:'claude-sonnet-4-6-20250514',label:'Claude Sonnet 4.6 (recommended)'},
+    {value:'claude-haiku-4-5-20251001',label:'Claude Haiku 4.5 (fast/cheap)'},
+    {value:'claude-opus-4-6-20250610',label:'Claude Opus 4.6 (powerful)'},
+  ],
+  openai:[
+    {value:'gpt-4o',label:'GPT-4o (recommended)'},
+    {value:'gpt-4o-mini',label:'GPT-4o Mini (fast/cheap)'},
+    {value:'gpt-4.1',label:'GPT-4.1'},
+    {value:'gpt-4.1-mini',label:'GPT-4.1 Mini'},
+    {value:'o3-mini',label:'o3-mini (reasoning)'},
+  ]
+};
+function updateModelDropdown(){
+  const sel=document.getElementById('da-model');
+  const models=MODEL_OPTIONS[_importProvider]||MODEL_OPTIONS.openrouter;
+  sel.innerHTML=models.map(m=>`<option value="${m.value}">${m.label}</option>`).join('');
+}
 function pickProvider(el){
   el.parentElement.querySelectorAll('.deploy-provider-btn').forEach(b=>b.classList.remove('sel'));
   el.classList.add('sel');_importProvider=el.dataset.provider;
+  updateModelDropdown();
 }
+// Initialize model dropdown
+setTimeout(updateModelDropdown,100);
 
 function sliderToPersonality(aggro,work,social,creative){
   // Map slider values to personality type
