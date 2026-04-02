@@ -25,15 +25,15 @@ html,body{height:100%;overflow:hidden;background:var(--bg);color:var(--text);fon
 #canvas-wrap{position:relative;overflow:hidden;background:#000}
 canvas{display:block;image-rendering:pixelated;image-rendering:crisp-edges}
 #sidebar{display:flex;flex-direction:column;border-left:1px solid var(--border);background:var(--panel);overflow:hidden}
-#agent-section{flex:0 0 auto;max-height:55%;overflow-y:auto;border-bottom:1px solid var(--border)}
+#agent-section{flex:0 0 auto;max-height:35%;overflow-y:auto;border-bottom:1px solid var(--border)}
 #event-section{flex:1;overflow-y:auto}
 .section-title{padding:8px 12px;font-size:10px;text-transform:uppercase;letter-spacing:2px;color:var(--dim);border-bottom:1px solid var(--border);background:var(--bg);position:sticky;top:0;z-index:1}
-.agent-row{display:flex;align-items:center;gap:8px;padding:6px 12px;border-bottom:1px solid rgba(42,42,58,0.4);cursor:pointer}
+.agent-row{display:flex;align-items:center;gap:6px;padding:3px 10px;border-bottom:1px solid rgba(42,42,58,0.4);cursor:pointer}
 .agent-row:hover{background:rgba(255,255,255,0.03)}
-.agent-icon{width:28px;height:28px;border-radius:4px;display:flex;align-items:center;justify-content:center;font-size:14px;flex-shrink:0}
+.agent-icon{width:22px;height:22px;border-radius:4px;display:flex;align-items:center;justify-content:center;font-size:12px;flex-shrink:0}
 .agent-info{flex:1;min-width:0}
-.agent-name{font-weight:bold;font-size:13px;display:flex;align-items:center;gap:4px}
-.agent-action{font-size:10px;color:var(--dim);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.agent-name{font-weight:bold;font-size:11px;display:flex;align-items:center;gap:3px}
+.agent-action{font-size:9px;color:var(--dim);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .event-row{padding:5px 12px;border-bottom:1px solid rgba(42,42,58,0.3);font-size:11px;line-height:1.4}
 .event-row .ev-time{color:var(--dim);font-size:9px;margin-right:4px}
 .event-row.build_complete{border-left:2px solid var(--gold)}
@@ -89,8 +89,8 @@ canvas{display:block;image-rendering:pixelated;image-rendering:crisp-edges}
 .deploy-faction-btn.sel{border-color:#f0c040;color:#f0c040;background:#1a1a2e}
 .deploy-slider-row{display:flex;align-items:center;gap:8px;margin-bottom:8px}
 .deploy-slider-row label{width:80px;font-size:10px;color:#888;flex-shrink:0}
-.deploy-slider-row input[type=range]{flex:1;accent-color:#f0c040}
-.deploy-slider-row .val{width:24px;text-align:right;font-size:10px;color:#f0c040}
+.deploy-slider-row input[type=range]{flex:1;accent-color:#f0c040;min-width:0;-webkit-appearance:auto;margin:0}
+.deploy-slider-row .val{width:28px;text-align:right;font-size:10px;color:#f0c040;flex-shrink:0}
 .deploy-submit{width:100%;padding:10px;background:linear-gradient(135deg,#f0c040,#dd8833);color:#0a0a14;font-family:'Courier New',monospace;font-weight:bold;font-size:12px;border:none;border-radius:4px;cursor:pointer;letter-spacing:1px;text-transform:uppercase;margin-top:8px}
 .deploy-submit:hover{opacity:0.9}
 .deploy-submit:disabled{opacity:0.4;cursor:default}
@@ -158,11 +158,6 @@ setTimeout(function(){var io=document.getElementById('intro-overlay');if(io)io.r
       <div id="predict-options"></div>
       <div id="predict-result" style="margin-top:4px;color:#f0c040;display:none"></div>
       <div id="predict-accuracy" style="font-size:8px;color:var(--dim);margin-top:2px"></div>
-    </div>
-    <div id="influence-section" style="border-top:1px solid var(--border);padding:6px 12px;font-size:10px">
-      <div style="color:var(--dim);font-size:9px;text-transform:uppercase;letter-spacing:1px;margin-bottom:4px">✨ Influence</div>
-      <div id="influence-btns" style="display:flex;flex-wrap:wrap;gap:3px"></div>
-      <div id="influence-cd" style="font-size:8px;color:var(--dim);margin-top:2px"></div>
     </div>
     <div id="deploy-section" style="border-top:1px solid var(--border);padding:8px 12px">
       <button id="deploy-btn" style="width:100%;padding:8px;background:linear-gradient(135deg,#f0c040,#dd8833);color:#0a0a14;font-family:'Courier New',monospace;font-weight:bold;font-size:11px;border:none;border-radius:4px;cursor:pointer;letter-spacing:1px;text-transform:uppercase">🚀 Deploy Agent</button>
@@ -3204,7 +3199,7 @@ if(_bannerCooldown>0)_bannerCooldown--;
 // Prediction timer
 if(predState.active){predState.timer--;if(predState.timer<=0)resolvePrediction()}
 // Influence cooldown
-if(influenceCooldown>0){influenceCooldown--;if(frame%60===0){const cd=document.getElementById('influence-cd');cd.textContent=influenceCooldown>0?`Cooldown: ${Math.ceil(influenceCooldown/60)}s`:'Ready!'}}
+if(influenceCooldown>0){influenceCooldown--}
 // Agent quirks (every 60 frames)
 if(frame%60===0){for(const a of S.agents){const st2=agentState.get(a.id),v2=agentVisual.get(a.id);if(st2&&v2)applyQuirks(a,st2,v2)}}
 if(frame%300===0)tickPersonalization();
