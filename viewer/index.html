@@ -2967,25 +2967,63 @@ for(const s of settlements){
     }
   }
   ctx.globalAlpha=1;
-  // Palisade walls (after 5+ buildings)
+  // Walls (5+ buildings)
   if(s.buildings.length>=5){
-    const wallR=s.radius*ts+10;
-    ctx.strokeStyle='#5a3a18';ctx.lineWidth=3;ctx.setLineDash([]);
-    // Draw wall segments with posts
-    const posts=Math.min(24,Math.max(8,s.buildings.length*2));
-    const gateAngle=Math.atan2(scy-WH*ts/2,scx-WW*ts/2)+Math.PI;// gate faces center
-    for(let wi=0;wi<posts;wi++){
-      const a2=wi*(Math.PI*2/posts);
-      const a3=(wi+1)*(Math.PI*2/posts);
-      // Skip gate section
-      if(Math.abs(a2-gateAngle)<0.4)continue;
-      const x1=scx+Math.cos(a2)*wallR,y1=scy+Math.sin(a2)*wallR;
-      const x2=scx+Math.cos(a3)*wallR,y2=scy+Math.sin(a3)*wallR;
-      // Post
-      ctx.fillStyle='#5a3a18';ctx.fillRect(x1-2,y1-6,4,12);
-      // Connecting log
-      ctx.strokeStyle='#6a4a28';ctx.lineWidth=3;
-      ctx.beginPath();ctx.moveTo(x1,y1);ctx.lineTo(x2,y2);ctx.stroke();
+    const wallR=s.radius*ts+20;
+    const gateAngle=Math.atan2(scy-WH*ts/2,scx-WW*ts/2)+Math.PI;
+    const isStone=G.era>=2;
+    const logH=isStone?18:14,logW=isStone?8:5,spacing=isStone?8:6;
+    // Walk the perimeter and draw segments
+    const circumf=Math.PI*2*wallR;
+    const segCount=Math.floor(circumf/spacing);
+    for(let wi=0;wi<segCount;wi++){
+      const a2=wi*(Math.PI*2/segCount);
+      // Skip gate section (±0.3 radians)
+      const gDiff=Math.abs(((a2-gateAngle+Math.PI*3)%(Math.PI*2))-Math.PI);
+      if(gDiff<0.3)continue;
+      const wx2=scx+Math.cos(a2)*wallR,wy2=scy+Math.sin(a2)*wallR;
+      // Check if on water — skip
+      const wtx=Math.floor(wx2/ts),wty=Math.floor(wy2/ts);
+      if(wtx>=0&&wtx<WW&&wty>=0&&wty<WH){
+        const wbi=tBiomes[wty*WW+wtx];
+        if(wbi===0||wbi===1||wbi===10)continue;// skip water
+      }
+      if(isStone){
+        // Stone wall block
+        ctx.fillStyle='#7a7680';ctx.fillRect(wx2-logW/2,wy2-logH/2,logW,logH);
+        ctx.fillStyle='#9a9690';// mortar lines
+        ctx.fillRect(wx2-logW/2,wy2-logH/2+5,logW,1);
+        ctx.fillRect(wx2-logW/2,wy2-logH/2+10,logW,1);
+        // Crenellations (every other segment)
+        if(wi%2===0){ctx.fillStyle='#7a7680';ctx.fillRect(wx2-2,wy2-logH/2-3,4,3)}
+      }else{
+        // Wooden palisade log
+        ctx.fillStyle='#5a3a18';ctx.fillRect(wx2-logW/2,wy2-logH/2,logW,logH);
+        ctx.fillStyle='#3a2008';ctx.fillRect(wx2+logW/2-1,wy2-logH/2,1,logH);// dark right
+        ctx.fillStyle='#7a5a30';ctx.fillRect(wx2-logW/2,wy2-logH/2,1,logH);// light left
+        // Pointed top
+        ctx.fillStyle='#5a3a18';
+        ctx.beginPath();ctx.moveTo(wx2-logW/2,wy2-logH/2);ctx.lineTo(wx2,wy2-logH/2-4);ctx.lineTo(wx2+logW/2,wy2-logH/2);ctx.fill();
+      }
+    }
+    // Gate posts (larger)
+    const gx1=scx+Math.cos(gateAngle-0.25)*wallR,gy1=scy+Math.sin(gateAngle-0.25)*wallR;
+    const gx2=scx+Math.cos(gateAngle+0.25)*wallR,gy2=scy+Math.sin(gateAngle+0.25)*wallR;
+    const gPostW=isStone?10:8,gPostH=isStone?22:18;
+    ctx.fillStyle=isStone?'#6a6672':'#4a2a10';
+    ctx.fillRect(gx1-gPostW/2,gy1-gPostH/2,gPostW,gPostH);
+    ctx.fillRect(gx2-gPostW/2,gy2-gPostH/2,gPostW,gPostH);
+    // Crossbar at gate top
+    ctx.fillStyle=isStone?'#7a7680':'#6a4a28';
+    ctx.fillRect(Math.min(gx1,gx2),Math.min(gy1,gy2)-gPostH/2,Math.abs(gx2-gx1)||20,3);
+    // Stone: corner towers
+    if(isStone){
+      for(const ca of [0,Math.PI/2,Math.PI,Math.PI*1.5]){
+        const tcx=scx+Math.cos(ca)*wallR,tcy=scy+Math.sin(ca)*wallR;
+        ctx.fillStyle='#6a6672';ctx.fillRect(tcx-8,tcy-10,16,20);
+        ctx.fillStyle='#5a5662';ctx.fillRect(tcx-6,tcy-10,12,3);// roof
+        ctx.beginPath();ctx.moveTo(tcx-8,tcy-10);ctx.lineTo(tcx,tcy-16);ctx.lineTo(tcx+8,tcy-10);ctx.fill();
+      }
     }
     ctx.lineWidth=1;
   }
