@@ -3381,6 +3381,15 @@ for(const a of S.agents){
   renderItems.push({type:'agent',idx:agentRenderData.length-1,sortY:vy*ts+ts});
 }
 
+// World objects (ruins, craters, merchants) in Y-sort
+for(let wi2=worldObjects.length-1;wi2>=0;wi2--){
+  const wo=worldObjects[wi2];wo.life--;
+  if(wo.life<=0){worldObjects.splice(wi2,1);continue}
+  if(wo.type==='merchant'){wo.x+=wo.vx||0;if(wo.x<-2||wo.x>WW+2){worldObjects.splice(wi2,1);continue}}
+  if(wo.x>=sx-2&&wo.x<=ex+2&&wo.y>=sy-2&&wo.y<=ey+2){
+    renderItems.push({type:'worldobj',wo,sortY:wo.y*ts+ts});
+  }
+}
 // Wild animals in Y-sort
 for(const an of wildAnimals){
   if(an.wx<sx-2||an.wx>ex+2||an.wy<sy-2||an.wy>ey+2)continue;
@@ -3543,6 +3552,35 @@ for(const item of renderItems){
       ctx.fillStyle='#dd8822';ctx.fillRect(apx-1,apy+2,1,2);ctx.fillRect(apx+1,apy+2,1,2);
       // Peck animation
       if(frame%40<5){ctx.fillStyle='#dd8822';ctx.fillRect(apx+3,apy+1,1,1)}
+    }
+  }else if(item.type==='worldobj'){
+    const wo=item.wo,wpx=wo.x*ts,wpy=wo.y*ts;
+    if(wo.type==='ruins'){
+      // Crumbling stone walls
+      ctx.fillStyle='#6a6050';
+      ctx.fillRect(wpx,wpy-20,10,22);ctx.fillRect(wpx+14,wpy-14,8,16);ctx.fillRect(wpx+26,wpy-8,12,10);
+      ctx.fillRect(wpx+6,wpy-25,14,8);// lintel
+      // Rubble
+      ctx.fillStyle='#5a5040';
+      for(let ri2=0;ri2<5;ri2++)ctx.fillRect(wpx+ri2*7,wpy+2,4,3);
+      // Mysterious glow
+      const glA=0.04+0.04*Math.sin(frame*0.03);
+      ctx.fillStyle=`rgba(100,200,255,${glA})`;ctx.beginPath();ctx.arc(wpx+16,wpy-6,25,0,Math.PI*2);ctx.fill();
+    }else if(wo.type==='crater'){
+      // Dark crater circle
+      ctx.fillStyle='#3a3028';ctx.beginPath();ctx.arc(wpx,wpy,20,0,Math.PI*2);ctx.fill();
+      ctx.fillStyle='#2a2018';ctx.beginPath();ctx.arc(wpx,wpy,12,0,Math.PI*2);ctx.fill();
+      // Glowing meteorite at center
+      const mglA=0.3+0.2*Math.sin(frame*0.05);
+      ctx.fillStyle=`rgba(200,120,40,${mglA})`;ctx.beginPath();ctx.arc(wpx,wpy,5,0,Math.PI*2);ctx.fill();
+      ctx.fillStyle='#8a5020';ctx.beginPath();ctx.arc(wpx,wpy,3,0,Math.PI*2);ctx.fill();
+    }else if(wo.type==='merchant'){
+      // Purple-robed NPC
+      ctx.fillStyle='rgba(0,0,0,0.2)';ctx.beginPath();ctx.ellipse(wpx,wpy+3,8,3,0,0,Math.PI*2);ctx.fill();
+      ctx.fillStyle='#6a3a8a';ctx.fillRect(wpx-5,wpy-12,10,14);// robe
+      ctx.fillStyle='#d4a870';ctx.beginPath();ctx.arc(wpx,wpy-16,5,0,Math.PI*2);ctx.fill();// head
+      ctx.fillStyle='#5a3010';ctx.fillRect(wpx-7,wpy-6,4,8);// pack
+      ctx.fillStyle='#fff';ctx.fillRect(wpx-2,wpy-15,2,2);ctx.fillRect(wpx+1,wpy-15,2,2);// eyes
     }
   }
 }
@@ -3743,12 +3781,19 @@ if(frame%30===0){document.getElementById('h-time-name').textContent=phaseName;do
 window._shadowOffX=Math.sin(cyclePhase*Math.PI*2)*6;
 window._isNight=nightness>0.3;
 
-// WEATHER — Rain
+// WEATHER — Rain + lightning + dark overlay
 if(weatherState.type==='rain'){
+  // Dark overlay
+  ctx.fillStyle='rgba(0,0,20,0.1)';ctx.fillRect(0,0,cw2,ch2);
+  // Rain lines
   ctx.strokeStyle='rgba(150,180,220,0.15)';ctx.lineWidth=1;
   for(let i=0;i<40;i++){
     const rx=(tileHash(i,frame)%cw2),ry=((frame*3+i*47)%ch2);
     ctx.beginPath();ctx.moveTo(rx,ry);ctx.lineTo(rx-3,ry+8);ctx.stroke();
+  }
+  // Lightning flash (every 600 frames, lasts 3 frames)
+  if(weatherState.timer>60*10&&frame%600<3){
+    ctx.fillStyle='rgba(255,255,255,0.15)';ctx.fillRect(0,0,cw2,ch2);
   }
 }
 
@@ -4317,6 +4362,8 @@ function checkMilestones(){
 
 // Screen shake state
 let screenShake=0;
+// Persistent world objects from events (ruins, craters, merchants)
+const worldObjects=[];// {type:'ruins'|'crater'|'merchant',x,y,life,data}
 
 function updateWorldEvents(){
   weatherCooldown--;
@@ -4327,9 +4374,11 @@ function updateWorldEvents(){
     const roll=Math.random();
 
     if(rarity<0.60){// === COMMON ===
-      if(roll<0.25){// Wandering Merchant
+      if(roll<0.25){// Wandering Merchant — spawn visible NPC
         G.gold+=20;G.food+=10;
-        gameEvent('🐪 Merchant traded goods (+20 gold, +10 food)','build_complete');
+        const msx=Math.random()<0.5?1:WW-1,msy=Math.floor(WH*0.3+Math.random()*WH*0.4);
+        worldObjects.push({type:'merchant',x:msx,y:msy,life:3600,vx:msx<WW/2?0.03:-0.03});
+        gameEvent('🐪 Merchant arrived with goods (+20 gold, +10 food)','build_complete');
       }else if(roll<0.50){// Bountiful Harvest
         G.food+=40;
         gameEvent('🌾 The land provides abundantly (+40 food)','build_complete');
@@ -4379,20 +4428,25 @@ function updateWorldEvents(){
         }
       }
     }else if(rarity<0.95){// === RARE ===
-      if(roll<0.33){// Meteor Strike
-        screenShake=10;
+      if(roll<0.33){// Meteor Strike — visible crater
+        screenShake=15;
         const mx2=Math.floor(0.2*WW+Math.random()*0.6*WW),my2=Math.floor(0.2*WH+Math.random()*0.6*WH);
-        // Destroy trees in radius
-        for(let dy=-2;dy<=2;dy++)for(let dx=-2;dx<=2;dx++)harvestables.set(`${(mx2+dx)*TS},${(my2+dy)*TS}`,true);
+        for(let dy=-3;dy<=3;dy++)for(let dx=-3;dx<=3;dx++)harvestables.set(`${(mx2+dx)*TS},${(my2+dy)*TS}`,true);
         G.gold+=50;G.stone+=30;
+        worldObjects.push({type:'crater',x:mx2,y:my2,life:999999});// permanent
         for(let i=0;i<8;i++)spawnParticle(mx2*TS+Math.random()*40-20,my2*TS+Math.random()*40-20,'gold');
-        showDramaBanner('☄️ METEOR STRIKE! Something crashed!');
-        gameEvent('☄️ Meteor impact — 50 gold + 30 stone recovered!','build_complete');
+        showDramaBanner('☄️ METEOR STRIKE!');
+        gameEvent('☄️ Meteor impact — crater visible! +50 gold +30 stone','build_complete');
         addPoints(10);
-      }else if(roll<0.66){// Ancient Ruins
-        G.gold+=100;
-        showDramaBanner('🏛️ Ancient ruins emerge from the ground!');
-        gameEvent('🏛️ Ancient ruins discovered — 100 gold found!','build_complete');
+      }else if(roll<0.66){// Ancient Ruins — spawn visible structure
+        const rx2=Math.floor(0.15*WW+Math.random()*0.7*WW),ry2=Math.floor(0.15*WH+Math.random()*0.7*WH);
+        // Only place on land
+        if(tBiomes&&tBiomes[ry2*WW+rx2]!==0&&tBiomes[ry2*WW+rx2]!==1){
+          G.gold+=100;
+          worldObjects.push({type:'ruins',x:rx2,y:ry2,life:999999});// permanent
+          showDramaBanner('🏛️ Ancient ruins emerged!');
+          gameEvent('🏛️ Ancient ruins discovered — 100 gold found!','build_complete');
+        }else{G.gold+=50;gameEvent('🏛️ Buried treasure found (+50 gold)','build_complete')}
         addPoints(10);
       }else{// Plague of Locusts
         G.food=Math.max(0,G.food-30);
