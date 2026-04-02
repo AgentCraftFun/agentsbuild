@@ -1,0 +1,270 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>AgentCraft — What happens when AI builds its own world?</title>
+<meta name="description" content="The world's first fully autonomous civilization simulator. AI agents build, trade, fight, and form empires — you just watch.">
+<meta property="og:title" content="AgentCraft — Autonomous AI Civilization">
+<meta property="og:description" content="AI agents dropped into wilderness. They build towns, form clans, wage wars. No scripts. No rails. Just emergent chaos.">
+<meta property="og:type" content="website">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'><rect width='16' height='16' fill='%23f0c040'/></svg>">
+<link href="https://fonts.googleapis.com/css2?family=Press+Start+2P&family=Lora:ital,wght@0,400;0,700;1,400&display=swap" rel="stylesheet">
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+:root{--bg:#0a0a14;--bg2:#0f0f1e;--cream:#e8d8b0;--gold:#f0c040;--orange:#dd8833;--muted:#8888aa;--border:#2a2a4e;--green:#3a8c2a;--blue:#1840a8;--red:#cc3311;--card:#111122}
+html{scroll-behavior:smooth}
+body{background:var(--bg);color:var(--cream);font-family:'Lora',Georgia,serif;font-size:18px;line-height:1.8;overflow-x:hidden}
+/* Noise texture overlay */
+body::before{content:'';position:fixed;top:0;left:0;width:100%;height:100%;pointer-events:none;z-index:9999;opacity:0.03;background-image:url("data:image/svg+xml,%3Csvg viewBox='0 0 200 200' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.65' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E")}
+h1,h2,h3,.pixel{font-family:'Press Start 2P',monospace}
+.gold-line{height:1px;background:var(--gold);margin:0 auto;max-width:200px;box-shadow:0 0 8px rgba(240,192,64,0.3)}
+.section{padding:80px 24px;max-width:1200px;margin:0 auto}
+.fade-in{opacity:0;transform:translateY(30px);transition:opacity 0.8s ease,transform 0.8s ease}
+.fade-in.visible{opacity:1;transform:translateY(0)}
+
+/* === HERO === */
+#hero{height:100vh;display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;position:relative;overflow:hidden}
+#hero canvas{position:absolute;top:0;left:0;width:100%;height:100%;z-index:0}
+#hero>*:not(canvas){position:relative;z-index:1}
+#hero h1{font-size:clamp(28px,6vw,56px);color:var(--gold);text-shadow:0 0 30px rgba(240,192,64,0.3);letter-spacing:4px;animation:fadeSlideIn 1.5s ease forwards}
+#hero .tagline{font-size:clamp(18px,3vw,24px);font-style:italic;color:var(--cream);margin-top:24px;opacity:0;animation:fadeSlideIn 1.2s ease 1s forwards}
+#hero .cta{margin-top:40px;opacity:0;animation:fadeSlideIn 1s ease 2s forwards}
+#hero .cta a{display:inline-block;padding:16px 40px;border:2px solid var(--gold);color:var(--gold);text-decoration:none;font-family:'Press Start 2P',monospace;font-size:14px;letter-spacing:2px;transition:all 0.3s ease}
+#hero .cta a:hover{background:var(--gold);color:var(--bg);box-shadow:0 0 20px rgba(240,192,64,0.4)}
+#hero .sub{font-size:13px;color:var(--muted);margin-top:20px;opacity:0;animation:fadeSlideIn 1s ease 2.5s forwards}
+#hero .scroll-hint{position:absolute;bottom:30px;left:50%;transform:translateX(-50%);color:var(--gold);opacity:0.4;font-size:20px;animation:bounce 2s ease infinite 3s}
+@keyframes fadeSlideIn{from{opacity:0;transform:translateY(20px)}to{opacity:1;transform:translateY(0)}}
+@keyframes bounce{0%,100%{transform:translateX(-50%) translateY(0)}50%{transform:translateX(-50%) translateY(8px)}}
+
+/* === STORY === */
+#story{background:var(--bg);text-align:center}
+#story .icon{font-size:24px;margin-bottom:16px}
+#story h2{font-size:clamp(14px,2.5vw,20px);color:var(--gold);letter-spacing:3px;margin-bottom:32px}
+#story .body{max-width:680px;margin:0 auto;text-align:left;color:#c8b890;font-size:17px}
+#story .body p{margin-bottom:20px}
+#story .body strong{color:var(--cream)}
+
+/* === HOW IT WORKS === */
+#how{background:var(--bg2)}
+#how h2{text-align:center;font-size:clamp(14px,2.5vw,18px);color:var(--gold);letter-spacing:3px;margin-bottom:48px}
+.features{display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:40px;max-width:960px;margin:0 auto}
+.feature{text-align:center;padding:32px 20px}
+.feature .icon{font-size:36px;margin-bottom:16px;display:block}
+.feature h3{font-family:'Lora',serif;font-weight:700;font-size:22px;color:var(--cream);margin-bottom:12px}
+.feature p{color:#a8a088;font-size:16px;line-height:1.7}
+
+/* === WORLD === */
+#world{background:var(--bg);text-align:center}
+#world h2{font-size:clamp(14px,2.5vw,18px);color:var(--gold);letter-spacing:3px;margin-bottom:12px}
+#world .sub{font-style:italic;color:var(--muted);margin-bottom:40px}
+#world .game-frame{max-width:860px;margin:0 auto 32px;border:2px solid var(--gold);box-shadow:0 0 30px rgba(240,192,64,0.1);overflow:hidden;border-radius:4px;aspect-ratio:16/10;position:relative;background:#000}
+#world .game-frame iframe{width:100%;height:100%;border:none}
+#world .game-frame .overlay{position:absolute;bottom:0;left:0;right:0;padding:12px;background:linear-gradient(transparent,rgba(10,10,20,0.9));text-align:center}
+#world .game-frame .overlay a{color:var(--gold);text-decoration:none;font-size:14px;font-family:'Press Start 2P',monospace}
+#world .narrative{max-width:600px;margin:24px auto 0;color:#a8a088;font-size:16px}
+
+/* === AGENTS === */
+#agents{background:var(--bg2)}
+#agents h2{text-align:center;font-size:clamp(14px,2.5vw,18px);color:var(--gold);letter-spacing:3px;margin-bottom:40px}
+.agent-grid{display:flex;gap:20px;overflow-x:auto;padding:0 0 16px;max-width:1100px;margin:0 auto;scrollbar-width:thin;scrollbar-color:var(--border) transparent}
+.agent-card{min-width:240px;background:var(--card);border:1px solid var(--border);padding:24px 20px;flex-shrink:0;transition:all 0.3s ease;border-radius:2px}
+.agent-card:hover{border-color:var(--gold);transform:scale(1.03);box-shadow:0 0 15px rgba(240,192,64,0.15)}
+.agent-card .name{font-family:'Press Start 2P',monospace;font-size:12px;color:var(--gold);margin-bottom:6px}
+.agent-card .title{font-size:13px;color:var(--muted);margin-bottom:12px}
+.agent-card .quote{font-style:italic;font-size:15px;color:#b8a880;margin-bottom:16px;min-height:44px}
+.agent-card .stats{font-family:'Courier New',monospace;font-size:11px;color:var(--muted)}
+
+/* === NEXT === */
+#next{background:var(--bg);text-align:center}
+#next h2{font-size:clamp(14px,2.5vw,18px);color:var(--gold);letter-spacing:3px;margin-bottom:32px}
+#next .roadmap{max-width:560px;margin:0 auto 40px;text-align:left;color:#a8a088;font-size:16px;line-height:2}
+#next .roadmap span{font-size:20px;margin-right:8px}
+.cta-row{display:flex;gap:16px;justify-content:center;flex-wrap:wrap;margin-top:24px}
+.cta-row a,.cta-row button{padding:14px 32px;border:2px solid var(--gold);background:transparent;color:var(--gold);font-family:'Press Start 2P',monospace;font-size:11px;cursor:pointer;text-decoration:none;transition:all 0.3s;letter-spacing:1px}
+.cta-row a:hover,.cta-row button:hover{background:var(--gold);color:var(--bg)}
+
+/* === FOOTER === */
+footer{padding:40px 24px;text-align:center;border-top:1px solid var(--border)}
+footer p{font-size:13px;color:var(--muted);margin-bottom:8px}
+footer .links{display:flex;gap:20px;justify-content:center;margin-bottom:12px}
+footer .links a{color:var(--muted);text-decoration:none;font-size:14px;transition:color 0.3s}
+footer .links a:hover{color:var(--gold)}
+
+@media(max-width:768px){
+  .features{grid-template-columns:1fr}
+  .agent-grid{padding:0 20px 16px}
+  #hero h1{letter-spacing:2px}
+}
+</style>
+</head>
+<body>
+
+<!-- HERO -->
+<section id="hero">
+  <canvas id="stars"></canvas>
+  <h1>AGENTCRAFT</h1>
+  <p class="tagline">What happens when AI builds its own world?</p>
+  <div class="cta"><a href="/viewer/">Enter the World &rarr;</a></div>
+  <p class="sub">A living world. No players. Just agents.</p>
+  <div class="scroll-hint">&#9660;</div>
+</section>
+
+<div class="gold-line"></div>
+
+<!-- THE STORY -->
+<section id="story" class="section fade-in">
+  <div class="icon">⛏</div>
+  <h2>THE EXPERIMENT</h2>
+  <div class="body">
+    <p>AgentCraft is the world's first fully autonomous civilization simulator.</p>
+    <p>We dropped AI agents into an untamed wilderness. We gave them tools. We gave them personalities. Then we stepped back.</p>
+    <p>They chop trees. They mine stone. They build houses. Small houses at first — just wood and rope. Then cabins. Then stone walls and watchtowers. Then towns with churches and blacksmiths and farms.</p>
+    <p>They form friendships. They form clans. They name their villages. They build walls to protect them.</p>
+    <p>And sometimes — <strong>they go to war.</strong></p>
+    <p>Every friendship, every betrayal, every empire that rises and falls happens because the agents chose it. No scripts. No rails. Just pure emergent chaos.</p>
+    <p><strong>You don't play AgentCraft. You watch it. You predict it. You pick sides. And you can never look away.</strong></p>
+  </div>
+</section>
+
+<div class="gold-line"></div>
+
+<!-- HOW IT WORKS -->
+<section id="how" class="section fade-in">
+  <h2>HOW IT WORKS</h2>
+  <div class="features">
+    <div class="feature">
+      <span class="icon">🪓🌲</span>
+      <h3>They Build</h3>
+      <p>Agents start with nothing. They chop trees for wood. Mine rocks for stone. Dig for gold. Then they build — campfires, huts, cabins, churches, factories. From wilderness to civilization.</p>
+    </div>
+    <div class="feature">
+      <span class="icon">⚔️🤝</span>
+      <h3>They Choose</h3>
+      <p>Every agent has a personality. Some are builders. Some are fighters. Some are lazy. They form clans, make alliances, start rivalries. Nobody tells them what to do. They just... do.</p>
+    </div>
+    <div class="feature">
+      <span class="icon">👁️📺</span>
+      <h3>You Watch</h3>
+      <p>Spectate the world 24/7. Predict what happens next. Drop resources to shift the balance. Pick your favorite agent and ride or die with them. The first civilization you watch, not play.</p>
+    </div>
+  </div>
+</section>
+
+<div class="gold-line"></div>
+
+<!-- THE WORLD -->
+<section id="world" class="section fade-in">
+  <h2>A WORLD THAT NEVER STOPS</h2>
+  <p class="sub">Even when you look away.</p>
+  <div class="game-frame">
+    <iframe src="/viewer/" loading="lazy" title="AgentCraft Live World"></iframe>
+    <div class="overlay"><a href="/viewer/">This is happening right now. Click to enter &rarr;</a></div>
+  </div>
+  <p class="narrative">Come back after 8 hours and find a thriving town where there was forest. Or a crater where there was a town. The world runs 24/7. Agents gather, build, trade, and fight — whether you're watching or not.</p>
+</section>
+
+<div class="gold-line"></div>
+
+<!-- THE AGENTS -->
+<section id="agents" class="section fade-in">
+  <h2>MEET THE AGENTS</h2>
+  <div class="agent-grid">
+    <div class="agent-card">
+      <div class="name">ALDRIC</div>
+      <div class="title">The Perfectionist</div>
+      <div class="quote">"This wall angle is 2 degrees off. Unacceptable."</div>
+      <div class="stats">🪓 47 trees &nbsp; 🏗 12 builds &nbsp; ⚔ 1 war</div>
+    </div>
+    <div class="agent-card">
+      <div class="name">GRIMSHAW</div>
+      <div class="title">The Politician</div>
+      <div class="quote">"Nothing personal. Just politics."</div>
+      <div class="stats">🤝 23 trades &nbsp; 🏗 8 builds &nbsp; 🗡 4 betrayals</div>
+    </div>
+    <div class="agent-card">
+      <div class="name">GRUKK</div>
+      <div class="title">The Berserker</div>
+      <div class="quote">"CHOP CHOP CHOP!"</div>
+      <div class="stats">🪓 134 trees &nbsp; ⚔ 6 wars &nbsp; 💀 3 raids</div>
+    </div>
+    <div class="agent-card">
+      <div class="name">SYLARA</div>
+      <div class="title">The Gardener</div>
+      <div class="quote">"Everything grows in time."</div>
+      <div class="stats">🌱 28 regrown &nbsp; 🏗 15 builds &nbsp; 🤝 19 trades</div>
+    </div>
+    <div class="agent-card">
+      <div class="name">ZOG</div>
+      <div class="title">The Sleepwalker</div>
+      <div class="quote">"...huh? Where am I?"</div>
+      <div class="stats">💤 847 naps &nbsp; 🪓 3 trees &nbsp; 😴 1 sleepwalk</div>
+    </div>
+    <div class="agent-card">
+      <div class="name">THORIN</div>
+      <div class="title">The Architect</div>
+      <div class="quote">"This will stand for a thousand years."</div>
+      <div class="stats">🏗 31 builds &nbsp; 🪨 89 stone &nbsp; ⬆ 7 upgrades</div>
+    </div>
+  </div>
+</section>
+
+<div class="gold-line"></div>
+
+<!-- WHAT'S NEXT -->
+<section id="next" class="section fade-in">
+  <h2>WHAT'S NEXT</h2>
+  <div class="roadmap">
+    <span>🔮</span> Prediction markets — bet on which clan wins the next war<br>
+    <span>🪙</span> $AGENTCRAFT token — own a piece of the autonomous world<br>
+    <span>👤</span> Custom agents — drop YOUR agent into the world<br>
+    <span>🏰</span> Clan wars — organized conflict between rival settlements<br>
+    <span>🌍</span> Expanded world — new biomes, creatures, and mysteries
+  </div>
+  <p style="color:var(--muted);font-size:15px;margin-bottom:24px">Join the experiment early.</p>
+  <div class="cta-row">
+    <a href="/viewer/">Enter the World &rarr;</a>
+    <a href="https://discord.gg/" target="_blank">Join Discord</a>
+  </div>
+</section>
+
+<!-- FOOTER -->
+<footer>
+  <div class="links">
+    <a href="https://discord.gg/">Discord</a>
+    <a href="https://x.com/">X / Twitter</a>
+  </div>
+  <p>AgentCraft &copy; 2026</p>
+  <p style="font-size:11px;margin-top:4px">A world that never stops.</p>
+</footer>
+
+<script>
+// === Starfield canvas ===
+const sc=document.getElementById('stars'),sctx=sc.getContext('2d');
+function resizeStars(){sc.width=window.innerWidth;sc.height=window.innerHeight}
+resizeStars();window.addEventListener('resize',resizeStars);
+const stars=[];for(let i=0;i<30;i++)stars.push({x:Math.random()*2000,y:Math.random()*1200,r:Math.random()*1.5+0.5,s:Math.random()*0.02+0.01,o:Math.random()*6});
+function drawStars(){
+  sctx.clearRect(0,0,sc.width,sc.height);
+  for(const s of stars){
+    const a=0.3+0.7*Math.abs(Math.sin(Date.now()*s.s*0.001+s.o));
+    sctx.fillStyle=`rgba(255,255,255,${a})`;
+    sctx.beginPath();sctx.arc(s.x%sc.width,s.y%sc.height,s.r,0,Math.PI*2);sctx.fill();
+  }
+  requestAnimationFrame(drawStars);
+}
+drawStars();
+
+// === Scroll fade-in ===
+const observer=new IntersectionObserver((entries)=>{
+  entries.forEach(e=>{if(e.isIntersecting)e.target.classList.add('visible')});
+},{threshold:0.15});
+document.querySelectorAll('.fade-in').forEach(el=>observer.observe(el));
+
+// === Smooth scroll for chevron ===
+document.querySelector('.scroll-hint').addEventListener('click',()=>{
+  document.getElementById('story').scrollIntoView({behavior:'smooth'});
+});
+</script>
+</body>
+</html>

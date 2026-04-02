@@ -49,9 +49,13 @@ const app = express();
 app.use(cors());
 app.use(express.json());
 
-// Serve static viewer files
+// Serve landing page at root
+const landingPath = path.resolve(__dirname, '..', '..', 'landing');
+app.use(express.static(landingPath));
+
+// Serve game viewer files under /viewer/
 const viewerPath = path.resolve(__dirname, '..', '..', 'viewer');
-app.use(express.static(viewerPath));
+app.use('/viewer', express.static(viewerPath));
 
 // Health check
 app.get('/api/health', (req, res) => {
@@ -68,10 +72,16 @@ app.get('/api/health', (req, res) => {
 app.use('/api/agents', createAgentRouter(worldState));
 app.use('/api/world', createWorldRouter(worldState));
 
-// Fallback: serve viewer index for SPA routing
+// Fallback: landing page for root, viewer for /viewer/*
 app.get('*', (req, res) => {
-  const indexPath = path.join(viewerPath, 'index.html');
   const fs = require('fs');
+  if (req.path.startsWith('/viewer')) {
+    const vIdx = path.join(viewerPath, 'index.html');
+    if (fs.existsSync(vIdx)) return res.sendFile(vIdx);
+  }
+  const landingIdx = path.join(landingPath, 'index.html');
+  if (fs.existsSync(landingIdx)) return res.sendFile(landingIdx);
+  const indexPath = path.join(viewerPath, 'index.html');
   if (fs.existsSync(indexPath)) {
     res.sendFile(indexPath);
   } else {
