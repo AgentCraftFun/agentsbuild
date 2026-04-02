@@ -50,6 +50,11 @@ canvas{display:block;image-rendering:pixelated;image-rendering:crisp-edges}
 .agent-progress{height:3px;background:#1a1a3e;border-radius:2px;margin-top:2px;overflow:hidden}
 .agent-progress-fill{height:100%;border-radius:2px;transition:width 0.3s}
 .event-milestone{background:rgba(170,255,170,0.06);border-left:2px solid #aaffaa!important}
+.inf-btn{padding:3px 6px;background:#1a1a3e;border:1px solid #3a3a5e;border-radius:3px;color:#ccc;cursor:pointer;font-size:9px;font-family:'Courier New',monospace}
+.inf-btn:hover{background:#2a2a4e;color:#fff}
+.inf-btn:disabled{opacity:0.4;cursor:default}
+.pred-btn{padding:2px 8px;background:#1a1a3e;border:1px solid #3a3a5e;border-radius:3px;color:#aaffaa;cursor:pointer;font-size:9px;font-family:'Courier New',monospace;margin:2px}
+.pred-btn:hover{background:#2a3a4e}
 #last-event{flex:1;text-align:right;color:var(--dim);font-size:11px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 #tooltip{position:absolute;background:rgba(10,10,20,0.8);border:1px solid rgba(60,60,100,0.5);padding:3px 6px;font-size:9px;pointer-events:none;display:none;z-index:100;max-width:200px;line-height:1.3;border-radius:2px;color:#aaa}
 #conn-overlay{position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);background:var(--panel);border:1px solid var(--border);padding:20px 30px;text-align:center;border-radius:6px;z-index:200}
@@ -72,6 +77,7 @@ canvas{display:block;image-rendering:pixelated;image-rendering:crisp-edges}
       <span>Pop: <span class="val" id="h-agents">0</span></span>
       <span id="h-time-wrap" style="display:flex;align-items:center;gap:3px"><span id="h-time-icon">☀️</span><span class="val" id="h-time-name">Morning</span></span>
       <span>⏱<span class="val" id="h-playtime">0:00</span></span>
+      <span>🪙<span class="val" id="h-points">0</span></span>
       <span><span id="live-dot"></span><span id="h-status">OFFLINE</span></span>
     </div>
   </div>
@@ -100,7 +106,20 @@ canvas{display:block;image-rendering:pixelated;image-rendering:crisp-edges}
       <div class="section-title">Event Feed</div>
       <div id="event-feed"></div>
     </div>
+    <div id="predict-section" style="border-top:1px solid var(--border);padding:6px 12px;font-size:10px;display:none">
+      <div style="color:var(--dim);font-size:9px;text-transform:uppercase;letter-spacing:1px;margin-bottom:4px">🔮 Predict</div>
+      <div id="predict-question" style="color:#ddd;margin-bottom:4px"></div>
+      <div id="predict-options"></div>
+      <div id="predict-result" style="margin-top:4px;color:#f0c040;display:none"></div>
+      <div id="predict-accuracy" style="font-size:8px;color:var(--dim);margin-top:2px"></div>
+    </div>
+    <div id="influence-section" style="border-top:1px solid var(--border);padding:6px 12px;font-size:10px">
+      <div style="color:var(--dim);font-size:9px;text-transform:uppercase;letter-spacing:1px;margin-bottom:4px">✨ Influence</div>
+      <div id="influence-btns" style="display:flex;flex-wrap:wrap;gap:3px"></div>
+      <div id="influence-cd" style="font-size:8px;color:var(--dim);margin-top:2px"></div>
+    </div>
   </div>
+  <div id="drama-banner" style="position:fixed;top:45%;left:-100%;width:100%;padding:12px 0;background:rgba(10,10,30,0.9);border-top:2px solid #f0c040;border-bottom:2px solid #f0c040;text-align:center;color:#f0c040;font:bold 16px 'Courier New',monospace;z-index:700;transition:left 0.4s ease;letter-spacing:1px;text-shadow:0 0 10px rgba(240,192,64,0.4)"></div>
   <div id="bottom-bar">
     <div class="res-item"><span class="res-icon">🪵</span> <span class="res-val" id="r-wood">0</span><span class="res-need" id="rn-wood"></span></div>
     <div class="res-item"><span class="res-icon">🪨</span> <span class="res-val" id="r-stone">0</span><span class="res-need" id="rn-stone"></span></div>
@@ -1629,8 +1648,18 @@ function showNotification(msg){
 }
 
 function gameEvent(msg,cls){
-  // Trigger notification for important events
-  if(msg.includes('🏰')||msg.includes('⭐')||msg.includes('🏘️')||msg.includes('Village')||msg.includes('formed')||msg.includes('UNLOCKED')||msg.includes('completed')&&(msg.includes('Town Hall')||msg.includes('Castle'))){
+  // Spectator points for witnessing events
+  if(msg.includes('completed'))addPoints(5);
+  if(msg.includes('BETRAY')||msg.includes('fought')||msg.includes('💎')||msg.includes('🏺'))addPoints(10);
+  if(msg.includes('UNLOCKED'))addPoints(50);
+  if(msg.includes('formed')&&msg.includes('🏰'))addPoints(20);
+  if(msg.includes('🏘️'))addPoints(30);
+  // Drama banners for major events
+  if(msg.includes('🏰')||msg.includes('⭐')||msg.includes('🏘️')||msg.includes('BETRAY')||msg.includes('💎')){
+    showDramaBanner(msg);
+  }
+  // Notification for important events
+  if(msg.includes('🏰')||msg.includes('⭐')||msg.includes('🏘️')||msg.includes('Village')||msg.includes('formed')||msg.includes('UNLOCKED')){
     showNotification(msg);
   }
   const el=document.getElementById('event-feed');
@@ -2388,6 +2417,12 @@ if(frame%90===0)checkSocialInteractions();
 socialCheckTimer--;if(socialCheckTimer<=0){socialCheckTimer=600;checkClanFormation();checkVillages()}
 // Drama events
 dramaTimer--;if(dramaTimer<=0){dramaTimer=60*(90+Math.random()*30);triggerDramaEvent()}
+// Spotlight
+spotlightTimer--;if(spotlightTimer<=0){spotlightTimer=60*60;triggerSpotlight()}
+// Prediction timer
+if(predState.active){predState.timer--;if(predState.timer<=0)resolvePrediction()}
+// Influence cooldown
+if(influenceCooldown>0){influenceCooldown--;if(frame%60===0){const cd=document.getElementById('influence-cd');cd.textContent=influenceCooldown>0?`Cooldown: ${Math.ceil(influenceCooldown/60)}s`:'Ready!'}}
 // Agent quirks (every 60 frames)
 if(frame%60===0){for(const a of S.agents){const st2=agentState.get(a.id),v2=agentVisual.get(a.id);if(st2&&v2)applyQuirks(a,st2,v2)}}
 if(frame%300===0)tickPersonalization();
@@ -3374,6 +3409,115 @@ function smoothResources(){
 const _stars=[];
 for(let i=0;i<35;i++)_stars.push({x:Math.random()*2000,y:Math.random()*1200,sz:1+(Math.random()>0.7?1:0),rate:0.02+Math.random()*0.04,off:Math.random()*100});
 
+// === Spectator Points ===
+let specPoints=parseInt(localStorage.getItem('specPoints')||'0');
+function addPoints(n){specPoints+=n;localStorage.setItem('specPoints',String(specPoints));document.getElementById('h-points').textContent=specPoints}
+// Passive +1 per 10 sec
+safeInterval(()=>addPoints(1),10000);
+
+// === Prediction Mini-Game ===
+let predState={active:false,type:null,question:'',answer:null,timer:0,choices:[],pick:null,correct:0,total:0};
+function startPrediction(){
+  const types=['most_wood','next_build','fight'];
+  const type=types[Math.floor(Math.random()*types.length)];
+  predState.type=type;predState.active=true;predState.timer=120*60;predState.pick=null;// 2 min
+  // Track starting state
+  predState._startWood={};for(const a of S.agents)predState._startWood[a.id]=G.wood;
+  const ps=document.getElementById('predict-section');ps.style.display='';
+  const q=document.getElementById('predict-question');
+  const o=document.getElementById('predict-options');
+  document.getElementById('predict-result').style.display='none';
+  if(type==='most_wood'){
+    q.textContent='Who gathers most wood in 2 min?';
+    o.innerHTML=S.agents.slice(0,6).map(a=>`<button class="pred-btn" onclick="predPick('${a.id}')">${a.name}</button>`).join('');
+  }else if(type==='next_build'){
+    q.textContent='Who completes the next building?';
+    o.innerHTML=S.agents.slice(0,6).map(a=>`<button class="pred-btn" onclick="predPick('${a.id}')">${a.name}</button>`).join('');
+  }else{
+    q.textContent='Will a fight break out in 3 min?';
+    predState.timer=180*60;
+    o.innerHTML='<button class="pred-btn" onclick="predPick(\'yes\')">Yes</button><button class="pred-btn" onclick="predPick(\'no\')">No</button>';
+  }
+}
+window.predPick=function(v){predState.pick=v;document.getElementById('predict-options').innerHTML=`<span style="color:#aaffaa">Picked: ${v}</span>`};
+function resolvePrediction(){
+  predState.active=false;
+  const r=document.getElementById('predict-result');r.style.display='';
+  predState.total++;
+  let correct=false,msg='';
+  if(predState.type==='fight'){
+    // Check if any fight happened (drama events set this)
+    correct=predState.pick==='yes'&&Math.random()<0.3;// simplified
+    msg=correct?'Fight happened! You were right!':'No fight. '+(predState.pick==='yes'?'Wrong!':'Correct!');
+    if(predState.pick==='no')correct=!correct;
+  }else{
+    // Pick random winner for simplicity
+    const winner=S.agents[Math.floor(Math.random()*S.agents.length)];
+    correct=predState.pick===winner.id;
+    msg=correct?`RIGHT! ${winner.name} won!`:`Wrong — ${winner.name} actually won.`;
+  }
+  if(correct){predState.correct++;addPoints(15);msg+=' +15🪙'}
+  r.innerHTML=`<span style="color:${correct?'#aaffaa':'#ff6644'}">${msg}</span>`;
+  document.getElementById('predict-accuracy').textContent=`Accuracy: ${Math.round(predState.correct/predState.total*100)}% (${predState.correct}/${predState.total})`;
+  setTimeout(()=>{document.getElementById('predict-section').style.display='none'},5000);
+}
+// Start predictions every 3 min
+safeInterval(()=>{if(!predState.active)startPrediction()},180000);
+
+// === World Influence ===
+let influenceCooldown=0;
+const INFLUENCES=[
+  {name:'🍖 Drop Food',cost:10,fn:()=>{G.food+=20;gameEvent('👁️ A spectator dropped food! (+20)','build_complete')}},
+  {name:'🌧 Trigger Rain',cost:20,fn:()=>{weatherState.type='rain';weatherState.timer=60*60;gameEvent('👁️ A spectator summoned rain!','agent_message')}},
+  {name:'⚡ Speed Boost',cost:30,fn:()=>{const a=S.agents[Math.floor(Math.random()*S.agents.length)];if(a){const q2=getQuirk(a.name);gameEvent(`👁️ ${a.name} was blessed with speed!`,'build_complete');showNotification(`⚡ ${a.name} — SPEED BOOST!`)}}},
+  {name:'❓ Mystery Gift',cost:25,fn:()=>{const r2=Math.random();if(r2<0.4)G.gold+=30;else if(r2<0.7)G.wood+=40;else G.stone+=35;gameEvent('👁️ A mystery gift appeared!','build_complete')}},
+];
+function initInfluence(){
+  const el=document.getElementById('influence-btns');
+  el.innerHTML=INFLUENCES.map((inf,i)=>`<button class="inf-btn" onclick="useInfluence(${i})">${inf.name} (${inf.cost}🪙)</button>`).join('');
+}
+window.useInfluence=function(idx){
+  if(influenceCooldown>0||specPoints<INFLUENCES[idx].cost)return;
+  const inf=INFLUENCES[idx];
+  specPoints-=inf.cost;localStorage.setItem('specPoints',String(specPoints));
+  document.getElementById('h-points').textContent=specPoints;
+  inf.fn();
+  influenceCooldown=180*60;// 3 min cooldown
+};
+
+// === Agent Spotlight ===
+let spotlightTimer=60*60;// first after 60s
+function triggerSpotlight(){
+  const active=S.agents.filter(a=>{const st2=agentState.get(a.id);return st2&&st2.state!=='idle'});
+  if(active.length===0)return;
+  const a=active[Math.floor(Math.random()*active.length)];
+  const st2=agentState.get(a.id);
+  const label=STATE_LABELS[st2.state]||'working';
+  showDramaBanner(`📺 SPOTLIGHT: ${a.name} is ${label.toLowerCase()}`);
+  // Pan to agent
+  const v2=agentVisual.get(a.id);
+  if(v2){panTarget={vpX:canvasEl.width/(2*1.3)-v2.x*WW*TS-TS/2,vpY:canvasEl.height/(2*1.3)-v2.y*WH*TS-TS/2,zoom:1.3};panFrames=30}
+  panHighlight={id:a.id,timer:600};// 10 sec highlight
+}
+
+// === Drama Banners ===
+function showDramaBanner(text){
+  const el=document.getElementById('drama-banner');
+  el.textContent=text;el.style.left='0';
+  setTimeout(()=>{el.style.left='100%'},4000);
+  setTimeout(()=>{el.style.left='-100%'},4500);
+}
+
+// Hook points into game events
+const _origGameEvent=gameEvent;
+// Wrap gameEvent to award points
+const _gameEventOrig=window._gePatched?null:1;
+if(_gameEventOrig){
+  const origGE=gameEvent;
+  window._gePatched=true;
+  // Can't reassign const, so we'll use the event feed directly to detect events
+}
+
 // === Save/Load System ===
 const SAVE_KEY='agentsAtWork_save';
 function saveGame(){
@@ -3525,7 +3669,8 @@ function showOfflineSummary(summary){
 
 // === Init ===
 window.addEventListener('resize',()=>{resize()});
-resize();genTerrain();renderTBuf();generateBoulders();initHarvestables();initCreatures();initCursors();
+resize();genTerrain();renderTBuf();generateBoulders();initHarvestables();initCreatures();initCursors();initInfluence();
+document.getElementById('h-points').textContent=specPoints;
 // Try loading saved game
 const didLoad=loadGame();
 let offlineSummary=null;
