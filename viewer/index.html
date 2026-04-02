@@ -2220,9 +2220,11 @@ function createSettlement(agentId,tx,ty){
   const a=S.agents.find(a2=>a2.id===agentId);
   const soc=getAgentSocial(agentId);
   const name=TERRAIN_WORDS[Math.floor(Math.random()*TERRAIN_WORDS.length)]+' '+SUFFIX_WORDS[Math.floor(Math.random()*SUFFIX_WORDS.length)];
-  const s={name,clan:soc.clan||null,faction:a?a.faction:'human',cx:tx,cy:ty,buildings:[],radius:6};
+  const s={name,clan:soc.clan||null,faction:a?a.faction:'human',cx:tx,cy:ty,buildings:[],radius:6,clearRadius:3};
   settlements.push(s);
   villages.push({name:s.name,cx:tx,cy:ty,faction:s.faction,buildings:s.buildings});
+  // Clear initial settlement zone
+  clearSettlementZone(tx,ty,3);
   gameEvent(`🏘️ Settlement "${name}" founded!`,'build_complete');
   return s;
 }
@@ -2331,6 +2333,28 @@ function clearDetailsAtBuilding(tx,ty,pw2,ph2){
     for(let dx=-margin;dx<=twid+margin;dx++){
       harvestables.set(`${(tx+dx)*TS},${(ty+dy)*TS}`,true);
     }
+  }
+}
+
+// Clear trees/rocks in a circular zone around a settlement center
+function clearSettlementZone(cx,cy,radius){
+  for(let dy=-radius;dy<=radius;dy++){
+    for(let dx=-radius;dx<=radius;dx++){
+      if(dx*dx+dy*dy>radius*radius)continue;// circular
+      harvestables.set(`${(cx+dx)*TS},${(cy+dy)*TS}`,true);
+    }
+  }
+}
+
+// Expand settlement clearing when buildings are added
+function expandSettlementClearing(settlementName){
+  const s=settlements.find(s2=>s2.name===settlementName);
+  if(!s)return;
+  const bldCount=G.clientBuildings.filter(b=>b.settlement===settlementName).length;
+  const newRadius=Math.min(Math.ceil(60/TS)+bldCount,Math.ceil(200/TS));
+  if(newRadius>s.clearRadius){
+    s.clearRadius=newRadius;
+    clearSettlementZone(s.cx,s.cy,newRadius);
   }
 }
 
@@ -2617,6 +2641,7 @@ function updateAgentMovement(){
         st.target.complete=true;st.target.claimedBy=null;
         // Clear trees from building footprint on completion
         clearDetailsAtBuilding(st.target.x,st.target.y,st.target.pw||TS*2,st.target.ph||TS*2);
+        if(st.target.settlement)expandSettlementClearing(st.target.settlement);
         st.target.owner=a.id;st.target.ownerName=a.name;
         st.target.ownedSince=frame;st.target.personalized=false;
         const soc=getAgentSocial(a.id);soc.builtCount++;soc.morale=Math.min(100,soc.morale+10);
@@ -2920,7 +2945,12 @@ for(const clan of clans){
 for(const s of settlements){
   if(s.buildings.length<2)continue;
   const scx=s.cx*ts+ts/2,scy=s.cy*ts+ts/2;
-  // Settlement ground tint (packed earth)
+  // Settlement ground: progressive dirt transformation
+  // Inner zone (near buildings): packed dirt
+  const innerR=Math.min(s.radius*ts*0.5,60);
+  ctx.fillStyle='rgba(130,110,80,0.15)';
+  ctx.beginPath();ctx.arc(scx,scy,innerR,0,Math.PI*2);ctx.fill();
+  // Middle zone: trampled grass mix
   ctx.fillStyle='rgba(140,120,90,0.08)';
   ctx.beginPath();ctx.arc(scx,scy,s.radius*ts,0,Math.PI*2);ctx.fill();
   // Dirt paths from each building to center
@@ -4532,6 +4562,8 @@ try{
     console.log('Restored saved game');
     // Clear trees from all existing building footprints
     for(const b of G.clientBuildings){if(b.complete)clearDetailsAtBuilding(b.x,b.y,b.pw||TS*2,b.ph||TS*2)}
+    // Re-clear settlement zones on load
+    for(const s of settlements){if(s.clearRadius)clearSettlementZone(s.cx,s.cy,s.clearRadius)}
     try{offlineSummary=runOfflineSim();if(offlineSummary)saveGame()}catch(e){console.warn('Offline sim failed:',e)}
   }
   // Center camera
