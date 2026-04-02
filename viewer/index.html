@@ -176,6 +176,7 @@ for(let x=0;x<WW;x++){const ry=Math.floor(WH*0.55+Math.sin(x*0.06)*5);for(let dy
 function renderTBuf(){
   tCanvas=document.createElement('canvas');tCanvas.width=WW*TS;tCanvas.height=WH*TS;
   const c=tCanvas.getContext('2d');
+  if(!c){console.error('Failed to create terrain canvas context! Size:',WW*TS,'x',WH*TS);return}
   const ts=TS;
 
   // Pass 1: Base colors with per-cell noise variation + grass variety
@@ -2690,6 +2691,9 @@ smoothResources();
 S.buildings=G.clientBuildings.map(b=>({type:b.type,name:b.name,x:b.x,y:b.y,progress:b.progress,
   complete:b.complete,faction:b.faction,width:b.width,height:b.height,pw:b.pw,ph:b.ph,tall:b.tall,
   owner:b.owner,ownerName:b.ownerName,isHome:b.isHome,personalized:b.personalized,personalFaction:b.personalFaction}));
+// Safety: ensure zoom is valid
+if(!isFinite(zoom)||zoom<=0)zoom=1;
+if(!isFinite(vpX))vpX=0;if(!isFinite(vpY))vpY=0;
 // Clamp camera to world bounds
 const worldPxW=WW*TS,worldPxH=WH*TS;
 const viewW=canvasEl.width/zoom,viewH=canvasEl.height/zoom;
@@ -2705,7 +2709,10 @@ const sx=Math.max(0,Math.floor(-vpX/ts-1)),sy=Math.max(0,Math.floor(-vpY/ts-1));
 const ex=Math.min(WW,Math.ceil((-vpX+cw/zoom)/ts+1)),ey=Math.min(WH,Math.ceil((-vpY+ch/zoom)/ts+1));
 
 // Terrain
-if(tCanvas)ctx.drawImage(tCanvas,sx*ts,sy*ts,(ex-sx)*ts,(ey-sy)*ts,sx*ts,sy*ts,(ex-sx)*ts,(ey-sy)*ts);
+if(tCanvas&&ex>sx&&ey>sy&&isFinite(sx)&&isFinite(sy)){
+  try{ctx.drawImage(tCanvas,sx*ts,sy*ts,Math.max(1,(ex-sx)*ts),Math.max(1,(ey-sy)*ts),sx*ts,sy*ts,Math.max(1,(ex-sx)*ts),Math.max(1,(ey-sy)*ts))}
+  catch(te){console.warn('Terrain draw error:',te,{sx,sy,ex,ey,ts})}
+}else if(!tCanvas){console.warn('tCanvas is null — terrain not generated')}
 
 // Clan territory borders + war zones
 for(const clan of clans){
