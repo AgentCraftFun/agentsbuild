@@ -743,9 +743,9 @@ const FI={human:'\u2694',orc:'\u2620',dwarf:'\u26CF',elf:'\u2727'};
 const MI={idle:'\u23F8',moving:'\u27A1',claiming:'\u2691',building:'\uD83D\uDD28',raiding:'\u2694',chatting:'\uD83D\uDCAC',defeated:'\uD83D\uDC80'};
 // Build label lookups from TECH_TREE + legacy types
 const BLabels={town_hall:'TH',farmstead:'FM',lumber_mill:'LM',watchtower:'WT',chapel:'CH',castle:'CA',great_hall:'GH',pig_farm:'PF',war_pit:'WP',spike_tower:'ST',blood_forge:'BF',skull_throne:'SK',mountain_hold:'MH',mine_shaft:'MS',brewery:'BR',stone_wall:'SW',runeforge:'RF',deep_citadel:'DC',tree_palace:'TP',moonwell:'MW',grove:'GR',sentinel_tree:'SN',starforge:'SF',world_tree:'WT',
-  campfire:'CF',wood_hut:'WH',log_cabin:'LC',stone_house:'SH',quarry:'QR',blacksmith:'BS',barracks:'BK',church:'CH',market:'MK',brick_house:'BH',apartment:'AP',office:'OF',factory:'FY',farm:'FA',well:'WL',library:'LB',monument:'MN'};
+  campfire:'CF',wood_hut:'WH',log_cabin:'LC',stone_house:'SH',quarry:'QR',blacksmith:'BS',barracks:'BK',church:'CH',market:'MK',brick_house:'BH',apartment:'AP',office:'OF',factory:'FY',farm:'FA',well:'WL',library:'LB',monument:'MN',garden:'GD',fence:'FN',fountain:'FT',statue:'SU'};
 const BNames={town_hall:'Town Hall',farmstead:'Farmstead',lumber_mill:'Lumber Mill',watchtower:'Watchtower',chapel:'Chapel',castle:'Castle',great_hall:'Great Hall',pig_farm:'Pig Farm',war_pit:'War Pit',spike_tower:'Spike Tower',blood_forge:'Blood Forge',skull_throne:'Skull Throne',mountain_hold:'Mtn Hold',mine_shaft:'Mine Shaft',brewery:'Brewery',stone_wall:'Stone Wall',runeforge:'Runeforge',deep_citadel:'Deep Citadel',tree_palace:'Tree Palace',moonwell:'Moonwell',grove:'Grove',sentinel_tree:'Sentinel',starforge:'Starforge',world_tree:'World Tree',
-  campfire:'Campfire',wood_hut:'Wood Hut',log_cabin:'Log Cabin',stone_house:'Stone House',quarry:'Quarry',blacksmith:'Blacksmith',barracks:'Barracks',church:'Church',market:'Market',brick_house:'Brick House',apartment:'Apartment',office:'Office',factory:'Factory',farm:'Farm',well:'Well',library:'Library',monument:'Monument'};
+  campfire:'Campfire',wood_hut:'Wood Hut',log_cabin:'Log Cabin',stone_house:'Stone House',quarry:'Quarry',blacksmith:'Blacksmith',barracks:'Barracks',church:'Church',market:'Market',brick_house:'Brick House',apartment:'Apartment',office:'Office',factory:'Factory',farm:'Farm',well:'Well',library:'Library',monument:'Monument',garden:'Garden',fence:'Fence',fountain:'Fountain',statue:'Statue'};
 
 // === Canvas ===
 const canvasEl=document.getElementById('world'),ctx=canvasEl.getContext('2d'),wrap=document.getElementById('canvas-wrap');
@@ -1611,6 +1611,11 @@ const TECH_TREE=[
   {type:'office',name:'Office',abbr:'OF',w:3,h:5,pw:70,ph:120,tall:true,cost:{wood:15,stone:60,gold:25},era:3,faction:'elf'},
   {type:'factory',name:'Factory',abbr:'FY',w:5,h:3,pw:110,ph:65,tall:false,cost:{wood:30,stone:80,gold:10},era:3,faction:'orc'},
   {type:'monument',name:'Monument',abbr:'MN',w:2,h:3,pw:40,ph:70,tall:true,cost:{wood:10,stone:40,gold:30},era:3,faction:'neutral'},
+  // Decorative (always available after era 0)
+  {type:'garden',name:'Garden',abbr:'GD',w:2,h:1,pw:36,ph:24,tall:false,cost:{wood:3,stone:0,gold:0},era:0,faction:'neutral',decorative:true},
+  {type:'fence',name:'Fence',abbr:'FN',w:2,h:1,pw:40,ph:16,tall:false,cost:{wood:5,stone:0,gold:0},era:0,faction:'neutral',decorative:true},
+  {type:'fountain',name:'Fountain',abbr:'FT',w:2,h:2,pw:36,ph:36,tall:false,cost:{wood:0,stone:15,gold:5},era:1,faction:'neutral',decorative:true},
+  {type:'statue',name:'Statue',abbr:'SU',w:1,h:2,pw:24,ph:50,tall:true,cost:{wood:0,stone:20,gold:10},era:2,faction:'neutral',decorative:true},
 ];
 
 // Track harvestable details — key: "tx,ty" -> {type,hp}
@@ -1644,33 +1649,36 @@ function initHarvestables(){
 
 function getNextBuilding(){
   const builtTypes=new Set(G.clientBuildings.map(b=>b.type));
-  const builtComplete=G.clientBuildings.filter(b=>b.complete);
   // Check era advancement
   if(G.era<3){
-    const eraBuildings=TECH_TREE.filter(b=>b.era===G.era);
+    const eraBuildings=TECH_TREE.filter(b=>b.era===G.era&&!b.decorative);
     const allBuilt=eraBuildings.every(b=>builtTypes.has(b.type));
     if(allBuilt){G.era++;document.getElementById('h-era').textContent=G.eraNames[G.era]}
   }
-  // Priority 1: unbuilt types in current era (cheapest first)
-  const unbuilt=TECH_TREE.filter(b=>b.era<=G.era&&!builtTypes.has(b.type))
+  // Priority 1: unbuilt non-decorative types in current era (cheapest first)
+  const unbuilt=TECH_TREE.filter(b=>b.era<=G.era&&!b.decorative&&!builtTypes.has(b.type))
     .sort((a2,b2)=>(a2.cost.wood+a2.cost.stone+a2.cost.gold)-(b2.cost.wood+b2.cost.stone+b2.cost.gold));
   if(unbuilt.length>0)return unbuilt[0];
-  // Priority 2: build duplicates of useful buildings (homes, resource, farms)
-  const dupTargets=['wood_hut','log_cabin','stone_house','lumber_mill','quarry','campfire','farm','well'];
+  // Priority 2: duplicates of homes/resource buildings (max 3 each)
+  const dupTargets=['wood_hut','log_cabin','stone_house','lumber_mill','quarry','campfire','farm'];
   for(const dt of dupTargets){
     const def=TECH_TREE.find(t2=>t2.type===dt);
-    if(def&&def.era<=G.era&&G.clientBuildings.filter(b=>b.type===dt).length<4)return def;
+    if(def&&def.era<=G.era&&G.clientBuildings.filter(b=>b.type===dt).length<3)return def;
   }
-  // Priority 3: monuments and decorative (endgame variety)
-  const decorative=['monument','well','library','church','market'];
-  for(const dt of decorative){
+  // Priority 3: decorative buildings (max 2 each)
+  const decoTypes=TECH_TREE.filter(b=>b.decorative&&b.era<=G.era);
+  for(const def of decoTypes){
+    if(G.clientBuildings.filter(b=>b.type===def.type).length<2)return def;
+  }
+  // Priority 4: more duplicates (max 5 each for expansion)
+  const expansionTargets=['wood_hut','stone_house','brick_house','farm','well','log_cabin'];
+  for(const dt of expansionTargets){
     const def=TECH_TREE.find(t2=>t2.type===dt);
-    if(def&&def.era<=G.era&&G.clientBuildings.filter(b=>b.type===dt).length<2)return def;
+    if(def&&def.era<=G.era&&G.clientBuildings.filter(b=>b.type===dt).length<5)return def;
   }
-  // Priority 4: any building from current era (expand settlements)
-  const anyEra=TECH_TREE.filter(b=>b.era<=G.era);
-  if(anyEra.length>0)return anyEra[Math.floor(Math.random()*anyEra.length)];
-  return null;
+  // Priority 5: ALWAYS return something — random building for infinite expansion
+  const available=TECH_TREE.filter(b=>b.era<=G.era);
+  return available[Math.floor(Math.random()*available.length)];
 }
 
 function canAfford(cost){return G.wood>=cost.wood&&G.stone>=cost.stone&&G.gold>=cost.gold}
@@ -2520,7 +2528,29 @@ function updateGameUI(){
       const builderTxt=builder?`<span style="color:var(--dim)"> 🔨${builder.name}</span>`:'';
       return`<div style="margin-bottom:3px"><b style="color:#ddd">${b.name}</b>${badge}${progTxt}${builderTxt}<br><span style="font-size:9px">🪵<span style="color:${G.wood>=c.wood?'#aaffaa':'#ff6644'}">${c.wood}</span> 🪨<span style="color:${G.stone>=c.stone?'#aaffaa':'#ff6644'}">${c.stone}</span> 🪙<span style="color:${G.gold>=c.gold?'#aaffaa':'#ff6644'}">${c.gold}</span></span></div>`;
     }).join('');
-  }else{bp.innerHTML='<span style="color:#aaffaa">All era buildings complete!</span>'}
+  }else{
+    // Show upgrades + decoratives + expansion options
+    let opts=[];
+    // Upgrades
+    for(const b of G.clientBuildings){
+      if(!b.complete)continue;
+      const up=UPGRADES[b.type];
+      if(up){
+        const c2=up.cost,aff2=canAfford(c2);
+        opts.push(`<div style="margin-bottom:3px">⬆️ <b style="color:#ddd">${BNames[b.type]||b.type} → ${BNames[up.to]||up.to}</b>${aff2?' <span style="color:#aaffaa">✓</span>':''}<br><span style="font-size:9px">🪵${c2.wood} 🪨${c2.stone} 🪙${c2.gold}</span></div>`);
+      }
+    }
+    // Decoratives
+    const decoT=TECH_TREE.filter(t2=>t2.decorative&&t2.era<=G.era);
+    for(const d of decoT.slice(0,2)){
+      const c2=d.cost;
+      opts.push(`<div style="margin-bottom:3px">🎨 <b style="color:#ddd">${d.name}</b><br><span style="font-size:9px">🪵${c2.wood} 🪨${c2.stone} 🪙${c2.gold}</span></div>`);
+    }
+    // Expansion
+    const next2=getNextBuilding();
+    if(next2)opts.push(`<div style="margin-bottom:3px">🏗 <b style="color:#ddd">Expand: ${next2.name}</b></div>`);
+    bp.innerHTML=opts.length>0?opts.slice(0,4).join(''):'<span style="color:#aaffaa">Thriving settlement!</span>';
+  }
   // Village list
   const vs=document.getElementById('village-section');
   const vl2=document.getElementById('village-list');
