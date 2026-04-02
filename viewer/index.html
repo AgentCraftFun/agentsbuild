@@ -5309,12 +5309,11 @@ function strategyToWeights(strategy){
   return w;
 }
 
-function deployCreateAgent(){
+async function deployCreateAgent(){
   const name=document.getElementById('da-name').value.trim();
   const statusEl=document.getElementById('create-status');
   if(!name){statusEl.className='deploy-status err';statusEl.textContent='Please enter a name';return}
   if(name.length<2){statusEl.className='deploy-status err';statusEl.textContent='Name must be at least 2 characters';return}
-  // Check duplicate
   if(S.agents.some(a=>a.name.toLowerCase()===name.toLowerCase())){
     statusEl.className='deploy-status err';statusEl.textContent='Name already taken!';return}
 
@@ -5325,160 +5324,43 @@ function deployCreateAgent(){
   const catchphrase=document.getElementById('da-catchphrase').value.trim();
   const strategy=document.getElementById('da-strategy').value;
   const personality=sliderToPersonality(aggro,work,social,creative);
-  const weights=strategyToWeights(strategy);
 
-  // Find spawn location (near a settlement if possible)
-  let spawnX=Math.floor(0.2*WW+Math.random()*0.6*WW);
-  let spawnY=Math.floor(0.2*WH+Math.random()*0.6*WH);
-  if(settlements.length>0){
-    const s=settlements[Math.floor(Math.random()*settlements.length)];
-    spawnX=Math.max(2,Math.min(WW-2,Math.round(s.cx+(Math.random()-0.5)*10)));
-    spawnY=Math.max(2,Math.min(WH-2,Math.round(s.cy+(Math.random()-0.5)*10)));
+  statusEl.className='deploy-status';statusEl.textContent='Deploying autonomous AI...';
+
+  try{
+    // Deploy via server — agent gets a REAL LLM brain (Haiku)
+    const resp=await fetch('/api/agents/deploy',{method:'POST',headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({
+        mode:'create',name,faction:_createFaction,personality,
+        aggression:aggro,workEthic:work,sociability:social,creativity:creative,
+        strategy,catchphrase
+      })});
+    const data=await resp.json();
+    if(!resp.ok){statusEl.className='deploy-status err';statusEl.textContent=data.error||'Deploy failed';return}
+
+    // Add to local agent list immediately (server will also broadcast via WS)
+    S.agents.push({id:data.agent_id,name,faction:_createFaction,personality,
+      x:data.x,y:data.y,mood:'idle',current_action:null,message:'',
+      resources:{food:0,wood:0,stone:0,gold:0},work_balance:0,owned_tiles:0});
+
+    showDramaBanner(`🤖 ${name} the ${_createFaction} is now ALIVE! (autonomous AI)`);
+    gameEvent(`🤖 ${name} deployed as autonomous AI — powered by LLM, not scripts`,'build_complete');
+
+    statusEl.className='deploy-status';statusEl.textContent=`${name} is alive! Real AI making decisions every 8 seconds.`;
+    setTimeout(()=>{document.getElementById('deploy-modal').classList.remove('open');statusEl.textContent=''},2500);
+  }catch(e){
+    statusEl.className='deploy-status err';statusEl.textContent='Network error — try again';
   }
-
-  const agentId='user_'+Date.now();
-  const agent={id:agentId,name,faction:_createFaction,personality,
-    x:spawnX,y:spawnY,mood:'idle',current_action:null,message:'',
-    resources:{food:0,wood:0,stone:0,gold:0},work_balance:0,owned_tiles:0};
-  S.agents.push(agent);
-
-  // Store custom agent data
-  const customData={catchphrase,weights,aggro,work,social,creative,strategy,isCustom:true};
-  if(!window._customAgents)window._customAgents=new Map();
-  window._customAgents.set(agentId,customData);
-
-  // Register with server too
-  fetch('/api/agents/register',{method:'POST',headers:{'Content-Type':'application/json'},
-    body:JSON.stringify({name,faction:_createFaction,personality})}).catch(()=>{});
-
-  showDramaBanner(`🚀 ${name} the ${_createFaction} has entered the world!`);
-  gameEvent(`🚀 ${name} deployed by spectator! Personality: ${personality}`,'build_complete');
-
-  statusEl.className='deploy-status';statusEl.textContent=`${name} deployed! Watch them in the world.`;
-  // Close after 2 seconds
-  setTimeout(()=>{document.getElementById('deploy-modal').classList.remove('open');statusEl.textContent=''},2000);
 }
 
 // === LLM-Powered Agent System ===
-const LLM_AGENTS=new Map();// agentId -> {apiKey,provider,model,sysPrompt,lastDecision,decisionTimer}
-const LLM_ENDPOINTS={
-  openrouter:'https://openrouter.ai/api/v1/chat/completions',
-  anthropic:'https://api.anthropic.com/v1/messages',
-  openai:'https://api.openai.com/v1/chat/completions'
-};
+// All LLM decision-making runs SERVER-SIDE via /api/agents/deploy
+// Server uses @anthropic-ai/sdk for hosted agents (Haiku) and proxies BYOK calls
+// See: server/src/services/LLMBrain.js for the autonomous AI brain
 
-function buildWorldContext(agentId){
-  const v=agentVisual.get(agentId);
-  const vx=v?Math.floor(v.x*WW):0,vy=v?Math.floor(v.y*WH):0;
-  const soc=getAgentSocial(agentId);
-  const nearbyAgents=S.agents.filter(a2=>{
-    const v2=agentVisual.get(a2.id);
-    if(!v2||a2.id===agentId)return false;
-    return Math.abs(v2.x*WW-vx)+Math.abs(v2.y*WH-vy)<20;
-  }).map(a2=>({name:a2.name,faction:a2.faction,personality:a2.personality}));
-  const nearbyBuildings=G.clientBuildings.filter(b=>{
-    return Math.abs(b.x-vx)+Math.abs(b.y-vy)<15;
-  }).slice(0,10).map(b=>({type:b.type,complete:b.complete,x:b.x,y:b.y}));
-  const mySett=settlements.find(s2=>s2.buildings&&s2.buildings.some(b2=>b2.settlement===s2.name));
-  return{
-    position:{x:vx,y:vy},
-    resources:{wood:G.wood,stone:G.stone,gold:G.gold,food:G.food},
-    era:G.eraNames[G.era],
-    totalBuildings:G.clientBuildings.length,
-    nearbyAgents,nearbyBuildings,
-    settlement:mySett?mySett.name:null,
-    morale:soc.morale,energy:soc.energy,hunger:soc.hunger,
-    clan:soc.clan||null,
-    availableActions:['chop (gather wood)','mine (gather stone)','gold (mine gold)','build (construct next building)','explore (roam the map)','rest (recover energy)','trade (socialize with nearby agents)']
-  };
-}
+// (Client-side LLM calls removed — all AI runs server-side via LLMBrain.js)
 
-async function queryLLMDecision(agentId){
-  const config=LLM_AGENTS.get(agentId);
-  if(!config)return null;
-  const ctx=buildWorldContext(agentId);
-  const agent=S.agents.find(a=>a.id===agentId);
-  const agentName=agent?agent.name:'Agent';
-  const userMsg=`You are ${agentName} in a survival world. Here is your current state:\n${JSON.stringify(ctx,null,1)}\n\nChoose ONE action: chop, mine, gold, build, explore, rest, trade\nRespond with ONLY the action word, nothing else.`;
-
-  try{
-    let body,headers;
-    if(config.provider==='anthropic'){
-      headers={'x-api-key':config.apiKey,'content-type':'application/json','anthropic-version':'2023-06-01','anthropic-dangerous-direct-browser-access':'true'};
-      body=JSON.stringify({model:config.model.replace('anthropic/',''),max_tokens:20,
-        system:config.sysPrompt||'You are an AI agent in a civilization-building game. Choose actions wisely.',
-        messages:[{role:'user',content:userMsg}]});
-    }else{
-      // OpenRouter or OpenAI format
-      headers={'Authorization':'Bearer '+config.apiKey,'Content-Type':'application/json'};
-      if(config.provider==='openrouter')headers['HTTP-Referer']=window.location.origin;
-      body=JSON.stringify({model:config.model,max_tokens:20,
-        messages:[
-          {role:'system',content:config.sysPrompt||'You are an AI agent in a civilization-building game. Choose actions wisely.'},
-          {role:'user',content:userMsg}
-        ]});
-    }
-    const endpoint=config.provider==='anthropic'?LLM_ENDPOINTS.anthropic:
-      config.provider==='openrouter'?LLM_ENDPOINTS.openrouter:LLM_ENDPOINTS.openai;
-    const resp=await fetch(endpoint,{method:'POST',headers,body});
-    if(!resp.ok){console.warn('LLM API error:',resp.status);return null}
-    const data=await resp.json();
-    // Extract response text
-    let text='';
-    if(config.provider==='anthropic'){
-      text=(data.content&&data.content[0]&&data.content[0].text)||'';
-    }else{
-      text=(data.choices&&data.choices[0]&&data.choices[0].message&&data.choices[0].message.content)||'';
-    }
-    text=text.trim().toLowerCase().replace(/[^a-z]/g,'');
-    const valid=['chop','mine','gold','build','explore','rest','trade'];
-    return valid.includes(text)?text:'chop';
-  }catch(e){console.warn('LLM query failed:',e);return null}
-}
-
-// Run LLM decisions every 10 seconds for imported agents
-safeInterval(async()=>{
-  for(const[agentId,config] of LLM_AGENTS){
-    const agent=S.agents.find(a=>a.id===agentId);
-    if(!agent)continue;
-    const decision=await queryLLMDecision(agentId);
-    if(!decision)continue;
-    // Map decision to agent state
-    const st=agentState.get(agentId);
-    if(!st)continue;
-    const v=agentVisual.get(agentId);
-    if(!v)continue;
-    // Force the agent into the chosen action
-    st.state='idle';st.taskCooldown=0;
-    if(decision==='chop'){
-      const tree=findNearestDetail(v.x,v.y,['deciduous','oak','pine','birch']);
-      if(tree){st.state='walking_to_tree';st.target=tree;v.tx=tree.x/WW/TS+0.01;v.ty=tree.y/WH/TS+0.01}
-    }else if(decision==='mine'){
-      const rock=findNearestDetail(v.x,v.y,['rock','lgboulder','mdboulder']);
-      if(rock){st.state='walking_to_rock';st.target=rock;v.tx=rock.x/WW/TS+0.01;v.ty=rock.y/WH/TS+0.01}
-    }else if(decision==='gold'){
-      const dep=goldDeposits.find(g=>g.alive);
-      if(dep){st.state='walking_to_gold';st.target=dep;v.tx=dep.x/WW/TS+0.01;v.ty=dep.y/WH/TS+0.01}
-    }else if(decision==='build'){
-      // Let the normal AI build logic handle it next tick
-      st.taskCooldown=1;
-    }else if(decision==='explore'){
-      v.tx=0.1+Math.random()*0.8;v.ty=0.1+Math.random()*0.8;st.taskCooldown=300;
-    }else if(decision==='rest'){
-      const soc=getAgentSocial(agentId);soc.energy=Math.min(100,soc.energy+30);st.taskCooldown=120;
-    }else if(decision==='trade'){
-      if(settlements.length>0){
-        const s2=settlements[Math.floor(Math.random()*settlements.length)];
-        v.tx=s2.cx/WW;v.ty=s2.cy/WH;st.taskCooldown=180;
-      }
-    }
-    config.lastDecision=decision;
-    // Show decision as bubble
-    addBubble(agent,decision+'...');
-  }
-},10000);
-
-function deployImportAgent(){
+async function deployImportAgent(){
   const name=document.getElementById('da-import-name').value.trim();
   const apiKey=document.getElementById('da-apikey').value.trim();
   const model=document.getElementById('da-model').value;
@@ -5490,62 +5372,35 @@ function deployImportAgent(){
   if(S.agents.some(a=>a.name.toLowerCase()===name.toLowerCase())){
     statusEl.className='deploy-status err';statusEl.textContent='Name already taken!';return}
 
-  // Spawn the agent
-  let spawnX=Math.floor(0.2*WW+Math.random()*0.6*WW);
-  let spawnY=Math.floor(0.2*WH+Math.random()*0.6*WH);
-  if(settlements.length>0){
-    const s=settlements[Math.floor(Math.random()*settlements.length)];
-    spawnX=Math.max(2,Math.min(WW-2,Math.round(s.cx+(Math.random()-0.5)*10)));
-    spawnY=Math.max(2,Math.min(WH-2,Math.round(s.cy+(Math.random()-0.5)*10)));
-  }
+  statusEl.className='deploy-status';statusEl.textContent='Connecting AI brain...';
 
-  const agentId='llm_'+Date.now();
-  const agent={id:agentId,name,faction:_importFaction,personality:'analyst',
-    x:spawnX,y:spawnY,mood:'idle',current_action:null,message:'',
-    resources:{food:0,wood:0,stone:0,gold:0},work_balance:0,owned_tiles:0};
-  S.agents.push(agent);
-
-  // Register LLM config (stored locally only — key never leaves browser)
-  LLM_AGENTS.set(agentId,{
-    apiKey,provider:_importProvider,
-    model:_importProvider!=='openrouter'?model.split('/').pop():model,
-    sysPrompt:sysPrompt||'You are an AI agent in a survival civilization game. Make strategic decisions to help your settlement thrive.',
-    lastDecision:null,decisionTimer:0
-  });
-
-  // Save config to localStorage (encrypted key would be ideal but simple for now)
   try{
-    const saved=JSON.parse(localStorage.getItem('agentcraft_llm_agents')||'[]');
-    saved.push({agentId,name,faction:_importFaction,provider:_importProvider,model,sysPrompt,apiKey});
-    localStorage.setItem('agentcraft_llm_agents',JSON.stringify(saved));
-  }catch(e){}
+    // Deploy via server — agent gets its own LLM brain with user's key
+    const resp=await fetch('/api/agents/deploy',{method:'POST',headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({
+        mode:'import',name,faction:_importFaction,personality:'analyst',
+        apiKey,model,provider:_importProvider,
+        systemPrompt:sysPrompt||'You are an autonomous AI agent in a survival civilization game. Make strategic decisions.'
+      })});
+    const data=await resp.json();
+    if(!resp.ok){statusEl.className='deploy-status err';statusEl.textContent=data.error||'Deploy failed';return}
 
-  // Register with server
-  fetch('/api/agents/register',{method:'POST',headers:{'Content-Type':'application/json'},
-    body:JSON.stringify({name,faction:_importFaction,personality:'analyst'})}).catch(()=>{});
+    // Add to local agent list
+    S.agents.push({id:data.agent_id,name,faction:_importFaction,personality:'analyst',
+      x:data.x,y:data.y,mood:'idle',current_action:null,message:'',
+      resources:{food:0,wood:0,stone:0,gold:0},work_balance:0,owned_tiles:0});
 
-  showDramaBanner(`🤖 ${name} connected! AI-powered agent is now live.`);
-  gameEvent(`🤖 ${name} (AI-powered) deployed! Provider: ${_importProvider}`,'build_complete');
+    showDramaBanner(`🤖 ${name} connected! Custom AI brain via ${_importProvider}`);
+    gameEvent(`🤖 ${name} deployed with custom LLM (${model}) — fully autonomous`,'build_complete');
 
-  statusEl.className='deploy-status';statusEl.textContent=`${name} connected! AI making decisions every 10s.`;
-  setTimeout(()=>{document.getElementById('deploy-modal').classList.remove('open');statusEl.textContent=''},2500);
+    statusEl.className='deploy-status';statusEl.textContent=`${name} connected! AI deciding every 8s via ${_importProvider}.`;
+    setTimeout(()=>{document.getElementById('deploy-modal').classList.remove('open');statusEl.textContent=''},2500);
+  }catch(e){
+    statusEl.className='deploy-status err';statusEl.textContent='Network error — try again';
+  }
 }
 
-// Restore LLM agents from localStorage on load
-try{
-  const saved=JSON.parse(localStorage.getItem('agentcraft_llm_agents')||'[]');
-  for(const cfg of saved){
-    // Don't re-spawn if agent already exists
-    if(!S.agents.find(a=>a.name===cfg.name)){
-      S.agents.push({id:cfg.agentId,name:cfg.name,faction:cfg.faction,personality:'analyst',
-        x:Math.floor(WW/2),y:Math.floor(WH/2),mood:'idle',current_action:null,message:'',
-        resources:{food:0,wood:0,stone:0,gold:0},work_balance:0,owned_tiles:0});
-    }
-    LLM_AGENTS.set(cfg.agentId,{apiKey:cfg.apiKey,provider:cfg.provider,
-      model:cfg.provider!=='openrouter'?cfg.model.split('/').pop():cfg.model,
-      sysPrompt:cfg.sysPrompt,lastDecision:null,decisionTimer:0});
-  }
-}catch(e){}
+// LLM agents persist server-side — no localStorage needed
 
 // === Save/Load System ===
 const SAVE_KEY='agentsAtWork_save';

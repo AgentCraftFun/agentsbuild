@@ -12,6 +12,7 @@ const { WebSocketServer } = require('ws');
 
 const WorldGen = require('./services/WorldGen');
 const GameLoop = require('./services/GameLoop');
+const LLMBrain = require('./services/LLMBrain');
 const { seedAgents } = require('./seed');
 const { sendWorldState } = require('./ws/broadcast');
 const createAgentRouter = require('./routes/agents');
@@ -68,9 +69,112 @@ app.get('/api/health', (req, res) => {
   });
 });
 
+// ─── LLM Brain (autonomous AI for deployed agents) ───
+const llmBrain = new LLMBrain(worldState);
+worldState.llmBrain = llmBrain; // expose to GameLoop
+
 // Mount API routes
 app.use('/api/agents', createAgentRouter(worldState));
 app.use('/api/world', createWorldRouter(worldState));
+
+// ─── Deploy Agent Endpoint ───
+
+/**
+ * POST /api/agents/deploy
+ * Deploy a new autonomous AI agent into the world.
+ *
+ * For "create" mode: personality config → system prompt → hosted LLM (Haiku)
+ * For "import" mode: user's API key + model → BYOK LLM
+ */
+app.post('/api/agents/deploy', (req, res) => {
+  try {
+    const { mode, name, faction, personality } = req.body;
+    const Agent = require('./models/Agent');
+
+    if (!name || !faction) {
+      return res.status(400).json({ error: 'name and faction are required' });
+    }
+    if (!Agent.FACTIONS.includes(faction)) {
+      return res.status(400).json({ error: `Invalid faction. Must be: ${Agent.FACTIONS.join(', ')}` });
+    }
+
+    // Check duplicate name
+    for (const a of worldState.agents.values()) {
+      if (a.name.toLowerCase() === name.toLowerCase()) {
+        return res.status(409).json({ error: `Name "${name}" is taken` });
+      }
+    }
+
+    // Find spawn location on grassland
+    let startX = Math.floor(Math.random() * worldState.width);
+    let startY = Math.floor(Math.random() * worldState.height);
+    for (let i = 0; i < 100; i++) {
+      const tx = Math.floor(Math.random() * worldState.width);
+      const ty = Math.floor(Math.random() * worldState.height);
+      const tile = worldState.tiles.get(`${tx},${ty}`);
+      if (tile && tile.biome === 'grassland' && !tile.owner) {
+        startX = tx; startY = ty; break;
+      }
+    }
+
+    const chosenPersonality = personality || 'analyst';
+    const agent = new Agent({ name, faction, personality: chosenPersonality, x: startX, y: startY });
+    worldState.agents.set(agent.id, agent);
+
+    if (mode === 'create') {
+      // Hosted AI: compile personality config into system prompt
+      const { aggression, workEthic, sociability, creativity, strategy, catchphrase } = req.body;
+      llmBrain.registerHosted(agent.id, {
+        name, faction,
+        aggression: aggression || 50,
+        workEthic: workEthic || 70,
+        sociability: sociability || 50,
+        creativity: creativity || 50,
+        strategy: strategy || 'balanced',
+        catchphrase: catchphrase || '',
+      });
+    } else if (mode === 'import') {
+      // BYOK: user provides their own AI
+      const { apiKey, model, provider, systemPrompt } = req.body;
+      if (!apiKey) {
+        return res.status(400).json({ error: 'apiKey is required for import mode' });
+      }
+      llmBrain.registerBYOK(agent.id, {
+        name, apiKey, model: model || 'claude-haiku-4-5-20251001',
+        provider: provider || 'anthropic',
+        systemPrompt: systemPrompt || '',
+      });
+    }
+
+    worldState.events.push({
+      tick: worldState.tick,
+      type: 'agent_deployed',
+      agent: name,
+      message: `🤖 ${name} deployed as autonomous AI (${mode === 'import' ? 'custom LLM' : 'hosted AI'})`,
+    });
+
+    res.status(201).json({
+      agent_id: agent.id,
+      name: agent.name,
+      faction: agent.faction,
+      mode: mode || 'create',
+      llm_powered: true,
+      x: startX,
+      y: startY,
+    });
+  } catch (err) {
+    console.error('[deploy] Error:', err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+/**
+ * GET /api/agents/llm-status
+ * Show all LLM-powered agents and their status.
+ */
+app.get('/api/agents/llm-status', (req, res) => {
+  res.json({ agents: llmBrain.getRegisteredAgents() });
+});
 
 // Fallback: landing page for root, viewer for /viewer/*
 app.get('*', (req, res) => {

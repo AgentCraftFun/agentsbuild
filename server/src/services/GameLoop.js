@@ -32,7 +32,7 @@ class GameLoop {
     }
   }
 
-  tick() {
+  async tick() {
     try {
       // 1. Increment tick counter
       this.world.tick = (this.world.tick || 0) + 1;
@@ -40,9 +40,12 @@ class GameLoop {
       const events = [];
 
       // 2. For each agent: evaluate state, pick action if idle
+      // Process agents — LLM agents may be async
+      const agentPromises = [];
       for (const agent of this.world.agents.values()) {
-        this._processAgent(agent, tick, events);
+        agentPromises.push(this._processAgent(agent, tick, events));
       }
+      await Promise.all(agentPromises);
 
       // 3. Advance building progress for all in-progress builds
       for (const building of this.world.buildingsList) {
@@ -124,13 +127,59 @@ class GameLoop {
     }
   }
 
-  _processAgent(agent, tick, events) {
+  async _processAgent(agent, tick, events) {
     // Check if agent has a queued action from the API
     let decision;
     if (agent.action_queue && agent.action_queue.length > 0) {
       decision = agent.action_queue.shift();
+    } else if (this.world.llmBrain && this.world.llmBrain.isLLMAgent(agent.id)) {
+      // LLM-powered autonomous AI — real intelligence, not a script
+      decision = await this.world.llmBrain.getDecision(agent.id);
+      if (decision) {
+        // Map LLM actions to game actions
+        const llmAction = decision.type;
+        const llmMessage = decision.message || '';
+        if (llmAction === 'chop' || llmAction === 'mine' || llmAction === 'gold') {
+          decision = { type: 'move', payload: { dx: Math.floor(Math.random()*3)-1, dy: Math.floor(Math.random()*3)-1 }, message: llmMessage };
+        } else if (llmAction === 'build') {
+          const brain = new AgentBrain(agent, this.world);
+          const buildDecision = brain._pickBuildingForFaction();
+          if (buildDecision) {
+            const tile = brain._findOwnedTileWithoutBuilding();
+            if (tile) {
+              decision = { type: 'build', payload: { building: buildDecision, x: tile.x, y: tile.y }, message: llmMessage };
+            } else {
+              decision = { type: 'claim', payload: brain._findNearbyUnclaimed(8) || { x: agent.x+1, y: agent.y }, message: llmMessage };
+            }
+          } else {
+            decision = { type: 'idle', payload: {}, message: llmMessage };
+          }
+        } else if (llmAction === 'explore') {
+          decision = { type: 'move', payload: { dx: Math.floor(Math.random()*5)-2, dy: Math.floor(Math.random()*5)-2 }, message: llmMessage };
+        } else if (llmAction === 'trade') {
+          // Move toward nearest other agent
+          const others = [...this.world.agents.values()].filter(a => a.id !== agent.id);
+          if (others.length > 0) {
+            const target = others[Math.floor(Math.random()*others.length)];
+            decision = { type: 'move', payload: { dx: Math.sign(target.x-agent.x), dy: Math.sign(target.y-agent.y) }, message: llmMessage };
+          } else {
+            decision = { type: 'idle', payload: {}, message: llmMessage };
+          }
+        } else {
+          decision = { type: 'idle', payload: {}, message: llmMessage || 'Resting...' };
+        }
+        // Broadcast the LLM's speech as an event
+        if (llmMessage) {
+          events.push({ tick, type: 'agent_message', agent: agent.name, message: `🤖 ${agent.name}: ${llmMessage}` });
+        }
+      }
+      // If LLM returned null (rate limited), fall through to default brain
+      if (!decision) {
+        const brain = new AgentBrain(agent, this.world);
+        decision = brain.decide();
+      }
     } else {
-      // AI brain decides
+      // Default hardcoded AI brain
       const brain = new AgentBrain(agent, this.world);
       decision = brain.decide();
     }
