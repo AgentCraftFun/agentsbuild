@@ -1831,7 +1831,35 @@ function tickNeeds(){
     }
     // Force brief rest if exhausted (but quick recovery)
     if(s.energy<10&&st&&st.state!=='idle'){
-      st.state='idle';st.taskCooldown=60;s.energy+=20;// quick forced rest
+      st.state='idle';st.taskCooldown=60;s.energy+=20;
+    }
+    // PROXIMITY BONDING: agents with homes near each other bond slowly
+    if(s.home){
+      for(const a2 of S.agents){
+        if(a2.id===a.id)continue;
+        const s2=getAgentSocial(a2.id);
+        if(!s2.home)continue;
+        const homeDist=Math.abs(s.home.x-s2.home.x)/WW+Math.abs(s.home.y-s2.home.y)/WH;
+        if(homeDist<0.06){// neighbors
+          s.relationships[a2.id]=Math.min(100,(s.relationships[a2.id]||0)+0.3);// +0.3 per tick (~1/min)
+          // One-time neighbor announcement
+          if(!a._neighborOf){a._neighborOf=new Set()}
+          if(!a._neighborOf.has(a2.id)&&(s.relationships[a2.id]||0)>15){
+            a._neighborOf.add(a2.id);
+            gameEvent(`${a.name} and ${a2.name} became neighbors`,'agent_message');
+          }
+        }
+      }
+    }
+  }
+  // RIVALRY FROM PROXIMITY: clans with nearby settlements get tension
+  for(let i=0;i<settlements.length;i++){
+    for(let j=i+1;j<settlements.length;j++){
+      const si=settlements[i],sj=settlements[j];
+      if(si.clan&&sj.clan&&si.clan!==sj.clan){
+        const sDist=Math.abs(si.cx-sj.cx)/WW+Math.abs(si.cy-sj.cy)/WH;
+        if(sDist<0.15)modTension(si.clan,sj.clan,0.5);// slow proximity tension
+      }
     }
   }
 }
@@ -2022,29 +2050,37 @@ function checkClanFormation(){
     const a1=S.agents[i],s1=getAgentSocial(a1.id);
     for(let j=i+1;j<S.agents.length;j++){
       const a2=S.agents[j],s2=getAgentSocial(a2.id);
-      if(a1.faction!==a2.faction)continue;
-      const rel=(s1.relationships[a2.id]||0);
-      // Form new clan
-      if(rel>60&&!s1.clan&&!s2.clan){
+      const rel1=(s1.relationships[a2.id]||0);
+      const rel2=(s2.relationships[a1.id]||0);
+      const mutualRel=Math.min(rel1,rel2);// MUTUAL relationship required
+      // Proximity check
+      const v1=agentVisual.get(a1.id),v2=agentVisual.get(a2.id);
+      const nearby=v1&&v2&&Math.abs(v1.x-v2.x)+Math.abs(v1.y-v2.y)<0.1;
+      // Form new clan: mutual rel >40 + proximity (organic bonding gets them there)
+      if(mutualRel>40&&nearby&&!s1.clan&&!s2.clan){
         const name=CLAN_COLORS[Math.floor(Math.random()*CLAN_COLORS.length)]+' '+CLAN_ANIMALS[Math.floor(Math.random()*CLAN_ANIMALS.length)];
         const clan={name,members:[a1.id,a2.id],faction:a1.faction};
         clans.push(clan);
         s1.clan=name;s2.clan=name;
         gameEvent(`🏰 ${a1.name} and ${a2.name} formed the ${name}!`,'build_complete');
       }
-      // Join existing clan
-      if(!s1.clan&&s2.clan&&rel>40){
-        const clan=clans.find(c=>c.name===s2.clan);
+      // Join existing clan (rel>30 + proximity)
+      if(!s1.clan&&s2.clan&&rel1>30&&nearby){
+        const clan=clans.find(c2=>c2.name===s2.clan);
         if(clan&&!clan.members.includes(a1.id)){
           clan.members.push(a1.id);s1.clan=s2.clan;
+          if(s1.stats)s1.stats.clanHistory.push(s2.clan);
           gameEvent(`${a1.name} joined the ${s2.clan}`,'tile_claimed');
+          showNotification(`${a1.name} → ${s2.clan}`);
         }
       }
-      if(!s2.clan&&s1.clan&&rel>40){
-        const clan=clans.find(c=>c.name===s1.clan);
+      if(!s2.clan&&s1.clan&&rel2>30&&nearby){
+        const clan=clans.find(c2=>c2.name===s1.clan);
         if(clan&&!clan.members.includes(a2.id)){
           clan.members.push(a2.id);s2.clan=s1.clan;
+          if(s2.stats)s2.stats.clanHistory.push(s1.clan);
           gameEvent(`${a2.name} joined the ${s1.clan}`,'tile_claimed');
+          showNotification(`${a2.name} → ${s1.clan}`);
         }
       }
     }
