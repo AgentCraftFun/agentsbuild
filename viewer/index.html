@@ -76,7 +76,7 @@ canvas{display:block;image-rendering:pixelated;image-rendering:crisp-edges}
       <span id="h-era-wrap" style="display:flex;align-items:center;gap:4px"><span id="h-era-icon">🪵</span> <span class="val" id="h-era">Wood Age</span></span>
       <span>Pop: <span class="val" id="h-agents">0</span></span>
       <span id="h-time-wrap" style="display:flex;align-items:center;gap:3px"><span id="h-time-icon">☀️</span><span class="val" id="h-time-name">Morning</span></span>
-      <span>⏱<span class="val" id="h-playtime">0:00</span></span>
+      <span>🗓<span class="val" id="h-playtime">Day 1, 06:00</span></span>
       <span>🪙<span class="val" id="h-points">0</span></span>
       <span><span id="live-dot"></span><span id="h-status">OFFLINE</span></span>
     </div>
@@ -741,10 +741,23 @@ const BNames={town_hall:'Town Hall',farmstead:'Farmstead',lumber_mill:'Lumber Mi
 const canvasEl=document.getElementById('world'),ctx=canvasEl.getContext('2d'),wrap=document.getElementById('canvas-wrap');
 let vpX=0,vpY=0,zoom=1,dragging=false,dsx=0,dsy=0,dvx=0,dvy=0,mx=-1,my=-1,selAgent=null;
 function resize(){canvasEl.width=wrap.clientWidth;canvasEl.height=wrap.clientHeight}
-wrap.addEventListener('mousedown',e=>{if(e.button===0){dragging=true;dsx=e.clientX;dsy=e.clientY;dvx=vpX;dvy=vpY;if(cursorGrab)setCursor('grab')}});
+wrap.addEventListener('mousedown',e=>{lastInputFrame=frame;if(tvMode)tvMode=false;if(e.button===0){dragging=true;dsx=e.clientX;dsy=e.clientY;dvx=vpX;dvy=vpY;if(cursorGrab)setCursor('grab')}});
 window.addEventListener('mousemove',e=>{if(dragging){vpX=dvx+(e.clientX-dsx)/zoom;vpY=dvy+(e.clientY-dsy)/zoom}const r=canvasEl.getBoundingClientRect();mx=e.clientX-r.left;my=e.clientY-r.top});
 window.addEventListener('mouseup',()=>{dragging=false;setCursor('normal')});
-wrap.addEventListener('wheel',e=>{e.preventDefault();const oz=zoom;zoom*=e.deltaY<0?1.15:1/1.15;zoom=Math.max(0.3,Math.min(5,zoom));const r=canvasEl.getBoundingClientRect(),px=e.clientX-r.left,py=e.clientY-r.top;vpX+=px/zoom-px/oz;vpY+=py/zoom-py/oz},{passive:false});
+let targetZoom=1;
+wrap.addEventListener('wheel',e=>{e.preventDefault();lastInputFrame=frame;if(tvMode)tvMode=false;
+  targetZoom*=e.deltaY<0?1.15:1/1.15;targetZoom=Math.max(0.5,Math.min(3,targetZoom));
+  const r=canvasEl.getBoundingClientRect(),px2=e.clientX-r.left,py2=e.clientY-r.top;
+  const oz=zoom;zoom+=(targetZoom-zoom)*0.3;
+  vpX+=px2/zoom-px2/oz;vpY+=py2/zoom-py2/oz;
+},{passive:false});
+// Double-click to zoom in/out
+wrap.addEventListener('dblclick',e=>{lastInputFrame=frame;if(tvMode)tvMode=false;
+  const r=canvasEl.getBoundingClientRect();
+  const wx2=Math.floor(((e.clientX-r.left)/zoom-vpX)/TS);
+  const wy2=Math.floor(((e.clientY-r.top)/zoom-vpY)/TS);
+  if(zoom<1.3){panToWorld(wx2,wy2,2,20)}else{panToWorld(WW/2,WH/2,0.8,20)}
+});
 
 // === Maps ===
 const ownerMap=new Map(),bldMap=new Map();
@@ -2522,6 +2535,26 @@ if(panTarget&&panFrames>0){
   zoom+=(panTarget.zoom-zoom)*0.12;
   panFrames--;if(panFrames<=0)panTarget=null;
 }
+// Smooth zoom lerp
+if(Math.abs(zoom-targetZoom)>0.01)zoom+=(targetZoom-zoom)*0.08;
+// Follow agent mode
+if(followAgent&&!panTarget){
+  const fv=agentVisual.get(followAgent);
+  if(fv){vpX+=(canvasEl.width/(2*zoom)-fv.x*WW*TS-TS/2-vpX)*0.03;vpY+=(canvasEl.height/(2*zoom)-fv.y*WH*TS-TS/2-vpY)*0.03}
+}
+// TV Mode: auto-camera when idle
+if(frame-lastInputFrame>TV_IDLE_THRESHOLD&&!tvMode&&!panTarget){tvMode=true;tvModeTimer=0}
+if(tvMode){
+  tvModeTimer++;
+  if(tvModeTimer%300===0){// every 5 sec, pan to something interesting
+    const active=S.agents.filter(a2=>{const st2=agentState.get(a2.id);return st2&&st2.state!=='idle'});
+    if(active.length>0){
+      const a2=active[Math.floor(Math.random()*active.length)];
+      const v2=agentVisual.get(a2.id);
+      if(v2){panToWorld(v2.x*WW,v2.y*WH,1.2+Math.random()*0.6,45)}
+    }
+  }
+}
 if(panHighlight&&panHighlight.timer>0)panHighlight.timer--;
 updateAgentMovement();
 // Agent watchdog: force idle agents to act (every 30 frames)
@@ -3005,13 +3038,35 @@ for(const bf of ambientButterflies){
 }
 }// end slow mode skip
 
-// 6. PULSE LIVE INDICATOR
+// 6. PULSE LIVE INDICATOR + TV MODE + WORLD CLOCK
 const liveEl=document.getElementById('h-status');
 const liveDot=document.getElementById('live-dot');
 if(S.connected&&liveEl){
   const pulseA=0.5+0.5*Math.sin(frame*0.05);
   liveEl.style.opacity=0.5+0.5*pulseA;
   liveDot.style.opacity=0.5+0.5*pulseA;
+}
+// TV Mode indicator
+if(tvMode){
+  ctx.fillStyle='rgba(0,0,0,0.6)';ctx.fillRect(cw2-90,8,82,20);
+  ctx.fillStyle='#f0c040';ctx.font='bold 10px Courier New';ctx.textAlign='right';ctx.textBaseline='top';
+  ctx.fillText('\uD83D\uDCFA TV MODE',cw2-12,12);
+}
+// World clock overlay (top-left of canvas)
+if(frame%30===0){
+  const totalSec=Math.floor(frame/60);
+  const days=Math.floor(totalSec/300);// 5 min = 1 day
+  const dayProgress=(totalSec%300)/300;
+  const hours=Math.floor(dayProgress*24);
+  const mins=Math.floor((dayProgress*24-hours)*60);
+  document.getElementById('h-playtime').textContent=`Day ${days+1}, ${String(hours).padStart(2,'0')}:${String(mins).padStart(2,'0')}`;
+}
+
+// Ambient audio indicators (visual cues in world space — need to draw before restore)
+// These are drawn in screen space as subtle corner indicators
+if(!_slowMode&&frame%120<60){
+  // Near trees hint
+  ctx.fillStyle='rgba(255,255,255,0.3)';ctx.font='8px serif';ctx.textAlign='left';ctx.textBaseline='top';
 }
 
 updateTooltip();
@@ -3215,19 +3270,25 @@ return`<div class="agent-row" onclick="selAg('${a.id}')">
 ${progBar}
 </div></div>`}).join('')}
 
-// Smooth pan animation
+// === Smooth Camera System ===
 let panTarget=null,panFrames=0,panHighlight=null;
+let followAgent=null;// agent to auto-follow
+let tvMode=false,tvModeTimer=0,lastInputFrame=0;
+const TV_IDLE_THRESHOLD=60*30;// 30 sec no input → TV mode
+
+function panToWorld(wx,wy,targetZoom,frames){
+  panTarget={vpX:canvasEl.width/(2*targetZoom)-wx*TS-TS/2,vpY:canvasEl.height/(2*targetZoom)-wy*TS-TS/2,zoom:targetZoom};
+  panFrames=frames||30;
+}
+
 function selAg(id){
-  const a=agentById(id);selAgent=a||null;
+  const a=agentById(id);selAgent=a||null;lastInputFrame=frame;
+  if(tvMode){tvMode=false}
   if(a){
-    // Set up smooth pan over 30 frames
     const v=agentVisual.get(a.id);
     const tx=v?v.x*WW:a.x,ty=v?v.y*WH:a.y;
-    const targetVpX=canvasEl.width/(2*1.5)-tx*TS-TS/2;// zoom to 1.5x
-    const targetVpY=canvasEl.height/(2*1.5)-ty*TS-TS/2;
-    panTarget={vpX:targetVpX,vpY:targetVpY,zoom:1.5};
-    panFrames=30;
-    panHighlight={id:a.id,timer:120};// highlight for 2 seconds
+    panToWorld(tx,ty,1.5,30);
+    panHighlight={id:a.id,timer:120};
     addBubble(a,getActionText(a));
   }
   updateAgentList();
