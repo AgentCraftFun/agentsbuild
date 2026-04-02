@@ -88,7 +88,7 @@ setTimeout(function(){var io=document.getElementById('intro-overlay');if(io)io.r
   <div id="canvas-wrap">
     <canvas id="world"></canvas>
     <div id="tooltip"></div>
-    <div id="drama-banner" style="position:absolute;top:45%;left:-100%;width:100%;padding:10px 0;background:rgba(10,10,30,0.9);border-top:2px solid #f0c040;border-bottom:2px solid #f0c040;text-align:center;color:#f0c040;font:bold 14px 'Courier New',monospace;z-index:300;transition:left 0.4s ease;letter-spacing:1px;text-shadow:0 0 10px rgba(240,192,64,0.4);pointer-events:none"></div>
+    <div id="drama-banner" onclick="this.style.left='-100%'" style="position:absolute;top:45%;left:-100%;width:100%;padding:10px 0;background:rgba(10,10,30,0.9);border-top:2px solid #f0c040;border-bottom:2px solid #f0c040;text-align:center;color:#f0c040;font:bold 14px 'Courier New',monospace;z-index:300;transition:left 0.4s ease;letter-spacing:1px;text-shadow:0 0 10px rgba(240,192,64,0.4);cursor:pointer"></div>
     <div id="tracking-indicator" style="position:absolute;top:8px;left:8px;background:rgba(10,10,30,0.7);padding:3px 8px;border-radius:3px;color:#f0c040;font:bold 10px 'Courier New',monospace;display:none;z-index:200"></div>
     <div id="conn-overlay"><h2>Connecting...</h2><p>Waiting for game server...</p></div>
   </div>
@@ -268,6 +268,13 @@ function renderTBuf(){
       if(h%12===0){c.fillStyle='#d0d8f0';c.fillRect(px+4+(h>>4)%12,py+6+(h>>6)%10,2,2)}
     }
     else if(b==='shallow_water'||b==='deep_water'||b==='river'){
+      // Shore tint: lighter blue if adjacent to land
+      let nearLand=false;
+      for(const[dx2,dy2] of [[0,-1],[0,1],[-1,0],[1,0]]){
+        const nx3=x+dx2,ny3=y+dy2;
+        if(nx3>=0&&nx3<WW&&ny3>=0&&ny3<WH){const nbi3=tBiomes[ny3*WW+nx3];if(nbi3!==0&&nbi3!==1&&nbi3!==10)nearLand=true}
+      }
+      if(nearLand){c.fillStyle='rgba(48,96,192,0.15)';c.fillRect(px,py,ts,ts)}
       // Subtle depth variation
       c.fillStyle='rgba(0,0,40,0.04)';
       for(let i=0;i<2;i++){
@@ -320,6 +327,12 @@ function renderTBuf(){
           else if(dy>0)for(let wx=0;wx<ts;wx+=3)c.fillRect(px+wx,py+ts-1,2,1);
           else if(dx<0)for(let wy=0;wy<ts;wy+=3)c.fillRect(px,py+wy,1,2);
           else for(let wy=0;wy<ts;wy+=3)c.fillRect(px+ts-1,py+wy,1,2);
+          // Foam dots along shore
+          c.fillStyle='rgba(255,255,255,0.3)';
+          const fh=tileHash(x*3+dx,y*5+dy);
+          for(let fi=0;fi<3;fi++){
+            c.fillRect(px+((fh>>(fi*4))%20),py+((fh>>(fi*4+2))%20),1,1);
+          }
           break;
         }
       }
@@ -2596,9 +2609,15 @@ function updateMinimap(){
     mx2.fillStyle=BFC[b.faction]?BFC[b.faction].flag:'#888';
     mx2.fillRect(b.x*sx2-1,b.y*sy2-1,3,3);
   }
-  // Gold deposits
+  // Resource indicators: gold deposits + mountain stone areas
   mx2.fillStyle='#ffd700';
   for(const g of goldDeposits){if(g.alive)mx2.fillRect(g.x/TS*sx2,g.y/TS*sy2,2,2)}
+  // Stone-rich mountain dots (sample every 10 cells)
+  mx2.fillStyle='rgba(160,160,170,0.4)';
+  for(let y2=0;y2<WH;y2+=10)for(let x2=0;x2<WW;x2+=10){
+    const bi2=tBiomes[y2*WW+x2];
+    if(BL[bi2]==='mountain'||BL[bi2]==='hills')mx2.fillRect(x2*sx2,y2*sy2,1,1);
+  }
   // Agents
   for(const a of S.agents){
     const v=agentVisual.get(a.id);
