@@ -809,7 +809,11 @@ wrap.addEventListener('mousedown',e=>{lastInputFrame=frame;if(tvMode)tvMode=fals
   if(followAgent&&!tvMode){followAgent=null;const ti3=document.getElementById('tracking-indicator');if(ti3)ti3.style.display='none'}// release tracking on click
   if(e.button===0){dragging=true;dsx=e.clientX;dsy=e.clientY;dvx=vpX;dvy=vpY;if(cursorGrab)setCursor('grab')}});
 window.addEventListener('mousemove',e=>{if(dragging){vpX=dvx+(e.clientX-dsx)/zoom;vpY=dvy+(e.clientY-dsy)/zoom}const r=canvasEl.getBoundingClientRect();mx=e.clientX-r.left;my=e.clientY-r.top});
-window.addEventListener('mouseup',()=>{dragging=false;setCursor('normal')});
+let panVelX=0,panVelY=0,lastDragX=0,lastDragY=0;
+window.addEventListener('mouseup',()=>{
+  if(dragging){panVelX=(vpX-dvx)*0.3;panVelY=(vpY-dvy)*0.3}// capture momentum
+  dragging=false;setCursor('normal');
+});
 let targetZoom=1;
 wrap.addEventListener('wheel',e=>{e.preventDefault();lastInputFrame=frame;if(tvMode)tvMode=false;
   const r=canvasEl.getBoundingClientRect(),mx3=e.clientX-r.left,my3=e.clientY-r.top;
@@ -2240,7 +2244,9 @@ function getSettlementForAgent(agentId){
 function createSettlement(agentId,tx,ty){
   const a=S.agents.find(a2=>a2.id===agentId);
   const soc=getAgentSocial(agentId);
-  const name=TERRAIN_WORDS[Math.floor(Math.random()*TERRAIN_WORDS.length)]+' '+SUFFIX_WORDS[Math.floor(Math.random()*SUFFIX_WORDS.length)];
+  let name=TERRAIN_WORDS[Math.floor(Math.random()*TERRAIN_WORDS.length)]+' '+SUFFIX_WORDS[Math.floor(Math.random()*SUFFIX_WORDS.length)];
+  // Ensure unique name
+  let suffix=2;while(settlements.find(s2=>s2.name===name)){name=name.replace(/ [IVX]+$/,'')+' '+['II','III','IV','V'][suffix-2];suffix++}
   const s={name,clan:soc.clan||null,faction:a?a.faction:'human',cx:tx,cy:ty,buildings:[],radius:6,clearRadius:3};
   settlements.push(s);
   villages.push({name:s.name,cx:tx,cy:ty,faction:s.faction,buildings:s.buildings});
@@ -2903,6 +2909,10 @@ if(panTarget&&panFrames>0){
   zoom+=(panTarget.zoom-zoom)*0.12;
   panFrames--;if(panFrames<=0)panTarget=null;
 }
+// Pan momentum (decaying drift after mouse release)
+if(!dragging&&(Math.abs(panVelX)>0.1||Math.abs(panVelY)>0.1)){
+  vpX+=panVelX;vpY+=panVelY;panVelX*=0.92;panVelY*=0.92;
+}
 // Smooth zoom lerp
 if(Math.abs(zoom-targetZoom)>0.01)zoom+=(targetZoom-zoom)*0.08;
 // Follow agent mode — smooth lock onto tracked agent
@@ -3111,7 +3121,10 @@ for(const s of settlements){
     const gateAngle=Math.atan2(scy-WH*ts/2,scx-WW*ts/2)+Math.PI;
     for(const off2 of [-0.2,0.2]){
       const gx3=scx+Math.cos(gateAngle+off2)*wallR,gy3=scy+Math.sin(gateAngle+off2)*wallR;
-      ctx.fillStyle='#5a3a18';ctx.fillRect(gx3-3,gy3-8,6,16);
+      const gtx=Math.floor(gx3/ts),gty=Math.floor(gy3/ts);
+      if(gtx>=0&&gtx<WW&&gty>=0&&gty<WH&&tBiomes[gty*WW+gtx]!==0&&tBiomes[gty*WW+gtx]!==1){
+        ctx.fillStyle='#5a3a18';ctx.fillRect(gx3-3,gy3-8,6,16);
+      }
     }
   }
   // Central plaza (3+ buildings)
@@ -3411,8 +3424,10 @@ for(const item of renderItems){
       ctx.fillStyle='#333';ctx.fillRect(bx,by-6,bw,3);
       ctx.fillStyle='#44cc66';ctx.fillRect(bx,by-6,bw*p,3);
     }
-    // Building label: ONLY at zoom > 1.5x (let art speak at normal zoom)
-    if(p>0.5&&zoom>1.5){
+    // Building label: zoom-dependent
+    // <1.0: no labels, 1.0-1.5: settlement names only, 1.5-2.0: near cursor, >2.0: all
+    const showLabel=p>0.5&&(zoom>2.0||(zoom>1.5&&mx>=0&&Math.abs(bx+bw/2-(mx/zoom-vpX))<80&&Math.abs(by+bh/2-(my/zoom-vpY))<80));
+    if(showLabel){
       const nm=BNames[b.type]||b.type;
       ctx.font='8px Courier New';ctx.globalAlpha=0.6;
       ctx.fillStyle='#bbb';ctx.textAlign='center';ctx.textBaseline='top';
