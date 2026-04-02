@@ -2136,34 +2136,59 @@ function updateConflicts(){
   }
 }
 
-// === Village Detection ===
-const villages=[];
+// === Settlement System ===
+const villages=[];// reuse name for compatibility
+const settlements=[];
 const TERRAIN_WORDS=['Riverside','Oakwood','Stoneridge','Pinewood','Meadow','Hillcrest','Sunlit','Frostpeak','Greenfield','Deepwater'];
 const SUFFIX_WORDS=['Hollow','Glen','Keep','Village','Settlement','Camp','Haven','Crossing','Dell','Rest'];
-function checkVillages(){
-  // Group nearby buildings by clan/faction
-  const groups=new Map();
-  for(const b of G.clientBuildings){
-    if(!b.complete||!b.owner)continue;
-    const soc=agentSocial.get(b.owner);
-    const key=soc&&soc.clan?soc.clan:b.faction;
-    if(!groups.has(key))groups.set(key,[]);
-    groups.get(key).push(b);
+
+// Building ring categories
+const RING1_TYPES=new Set(['town_hall','blacksmith','church','market','library']);
+const RING2_TYPES=new Set(['wood_hut','log_cabin','stone_house','brick_house','apartment','campfire']);
+const RING3_TYPES=new Set(['quarry','lumber_mill','farm','factory','office']);
+const RING4_TYPES=new Set(['watchtower','monument','fence','statue']);
+
+function getSettlementForAgent(agentId){
+  const soc=getAgentSocial(agentId);
+  // Find existing settlement for this agent's clan/faction
+  for(const s of settlements){
+    if(soc.clan&&s.clan===soc.clan)return s;
+    if(!soc.clan&&s.faction===S.agents.find(a=>a.id===agentId)?.faction)return s;
   }
-  // Check each group for clusters of 3+
-  for(const[key,blds] of groups){
-    if(blds.length<3)continue;
-    // Find cluster center
-    let cx2=0,cy2=0;for(const b of blds){cx2+=b.x;cy2+=b.y}
-    cx2/=blds.length;cy2/=blds.length;
-    // Check if all within 0.12 normalized of center
-    const allNear=blds.every(b=>Math.abs(b.x/WW-cx2/WW)+Math.abs(b.y/WH-cy2/WH)<0.12);
-    if(!allNear)continue;
-    // Already a village here?
-    if(villages.find(v2=>Math.abs(v2.cx-cx2)+Math.abs(v2.cy-cy2)<10))continue;
-    const vname=TERRAIN_WORDS[Math.floor(Math.random()*TERRAIN_WORDS.length)]+' '+SUFFIX_WORDS[Math.floor(Math.random()*SUFFIX_WORDS.length)];
-    villages.push({name:vname,cx:cx2,cy:cy2,faction:blds[0].faction,buildings:blds});
-    gameEvent(`🏘️ Village "${vname}" has formed!`,'build_complete');
+  return null;
+}
+
+function createSettlement(agentId,tx,ty){
+  const a=S.agents.find(a2=>a2.id===agentId);
+  const soc=getAgentSocial(agentId);
+  const name=TERRAIN_WORDS[Math.floor(Math.random()*TERRAIN_WORDS.length)]+' '+SUFFIX_WORDS[Math.floor(Math.random()*SUFFIX_WORDS.length)];
+  const s={name,clan:soc.clan||null,faction:a?a.faction:'human',cx:tx,cy:ty,buildings:[],radius:6};
+  settlements.push(s);
+  villages.push({name:s.name,cx:tx,cy:ty,faction:s.faction,buildings:s.buildings});
+  gameEvent(`🏘️ Settlement "${name}" founded!`,'build_complete');
+  return s;
+}
+
+function getSettlementRing(buildingType){
+  if(RING1_TYPES.has(buildingType))return{min:2,max:4};// close to center
+  if(RING2_TYPES.has(buildingType))return{min:4,max:7};// homes
+  if(RING3_TYPES.has(buildingType))return{min:7,max:10};// industry
+  return{min:10,max:14};// defense/decorative
+}
+
+function checkVillages(){
+  // Update settlement centers and sync villages
+  for(const s of settlements){
+    const blds=G.clientBuildings.filter(b=>b.settlement===s.name);
+    if(blds.length>0){
+      let cx2=0,cy2=0;for(const b of blds){cx2+=b.x;cy2+=b.y}
+      s.cx=cx2/blds.length;s.cy=cy2/blds.length;
+      s.radius=Math.max(6,blds.length*2);
+      s.buildings=blds;
+    }
+    // Sync to villages array
+    const vl=villages.find(v2=>v2.name===s.name);
+    if(vl){vl.cx=s.cx;vl.cy=s.cy;vl.buildings=s.buildings}
   }
 }
 
@@ -2254,28 +2279,43 @@ function clearDetailsAtBuilding(tx,ty,pw2,ph2){
 function pickBuildSite(bdef,agentId){
   const rng3=new SeededRNG(frame+G.clientBuildings.length*7);
   const pw2=bdef.pw||bdef.w*TS,ph2=bdef.ph||bdef.h*TS;
-  const owned=G.clientBuildings.filter(b=>b.owner===agentId&&b.complete);
 
-  // Try grid-based placement near existing buildings first
-  if(owned.length>0){
-    // Find settlement center
-    let scx=0,scy=0;for(const ob of owned){scx+=ob.x;scy+=ob.y}
-    scx/=owned.length;scy/=owned.length;
-    // Try grid offsets around center
-    const gridW=Math.ceil(pw2/TS)+3,gridH=Math.ceil(ph2/TS)+3;
-    for(let gi=0;gi<20;gi++){
-      const gx2=Math.round(scx)+((gi%5)-2)*gridW+(Math.round(rng3.next()*2)-1);
-      const gy2=Math.round(scy)+(Math.floor(gi/5)-2)*gridH+(Math.round(rng3.next()*2)-1);
-      const tx=Math.max(1,Math.min(WW-3,gx2)),ty=Math.max(1,Math.min(WH-3,gy2));
-      if(canPlaceAt(tx,ty,pw2,ph2)){clearDetailsAtBuilding(tx,ty,pw2,ph2);return{x:tx,y:ty}}
+  // Find or create settlement for this agent
+  let sett=getSettlementForAgent(agentId);
+  if(!sett){
+    // Pick a good location for new settlement (grass, not water, near center-ish)
+    for(let i=0;i<30;i++){
+      const sx2=Math.floor(0.15*WW+rng3.next()*0.7*WW),sy2=Math.floor(0.15*WH+rng3.next()*0.7*WH);
+      const bi=tBiomes[sy2*WW+sx2];
+      if(bi!==0&&bi!==1&&bi!==10){sett=createSettlement(agentId,sx2,sy2);break}
+    }
+    if(!sett)return null;
+  }
+
+  // Place using CONCENTRIC RINGS around settlement center
+  const ring=getSettlementRing(bdef.type);
+  const settBlds=G.clientBuildings.filter(b=>b.settlement===sett.name);
+  const ringBlds=settBlds.length;
+
+  for(let attempt=0;attempt<25;attempt++){
+    // Pick angle: spread evenly + jitter
+    const angle=(ringBlds+attempt)*(Math.PI*2/8)+rng3.next()*0.6-0.3;
+    const r=ring.min+rng3.next()*(ring.max-ring.min);
+    const tx=Math.max(2,Math.min(WW-3,Math.round(sett.cx+Math.cos(angle)*r)));
+    const ty=Math.max(2,Math.min(WH-3,Math.round(sett.cy+Math.sin(angle)*r)));
+    if(canPlaceAt(tx,ty,pw2,ph2)){
+      clearDetailsAtBuilding(tx,ty,pw2,ph2);
+      return{x:tx,y:ty,settlement:sett.name};
     }
   }
-  // Fallback: random placement
-  for(let i=0;i<30;i++){
-    const bx2=0.1+rng3.next()*0.8,by2=0.1+rng3.next()*0.8;
-    const tx=Math.max(1,Math.min(WW-3,Math.floor(bx2*WW)));
-    const ty=Math.max(1,Math.min(WH-3,Math.floor(by2*WH)));
-    if(canPlaceAt(tx,ty,pw2,ph2)){clearDetailsAtBuilding(tx,ty,pw2,ph2);return{x:tx,y:ty}}
+  // Fallback: random near settlement
+  for(let i=0;i<15;i++){
+    const tx=Math.max(2,Math.min(WW-3,Math.round(sett.cx+(rng3.next()-0.5)*20)));
+    const ty=Math.max(2,Math.min(WH-3,Math.round(sett.cy+(rng3.next()-0.5)*16)));
+    if(canPlaceAt(tx,ty,pw2,ph2)){
+      clearDetailsAtBuilding(tx,ty,pw2,ph2);
+      return{x:tx,y:ty,settlement:sett.name};
+    }
   }
   return null;
 }
@@ -2370,7 +2410,7 @@ function updateAgentMovement(){
             const site=pickBuildSite(next,a.id);
             if(site){
               const cb={type:next.type,name:next.name,abbr:next.abbr,x:site.x,y:site.y,
-                progress:0,complete:false,faction:next.faction,width:next.w,height:next.h,pw:next.pw,ph:next.ph,tall:next.tall,claimedBy:a.id};
+                progress:0,complete:false,faction:next.faction,width:next.w,height:next.h,pw:next.pw,ph:next.ph,tall:next.tall,claimedBy:a.id,settlement:site.settlement||null};
               if(G.clientBuildings.length>=40){action='chop';continue}// building cap
               G.clientBuildings.push(cb);
               G.wood-=next.cost.wood;G.stone-=next.cost.stone;G.gold-=next.cost.gold;
@@ -2784,6 +2824,60 @@ for(const clan of clans){
       ctx.fillStyle=`rgba(255,0,0,${0.03+0.02*Math.sin(frame*0.05)})`;
       ctx.beginPath();ctx.arc(cx2*ts+ts/2,cy2*ts+ts/2,radius,0,Math.PI*2);ctx.fill();
     }
+  }
+}
+
+// Settlement dirt paths + palisade walls
+for(const s of settlements){
+  if(s.buildings.length<2)continue;
+  const scx=s.cx*ts+ts/2,scy=s.cy*ts+ts/2;
+  // Settlement ground tint (packed earth)
+  ctx.fillStyle='rgba(140,120,90,0.08)';
+  ctx.beginPath();ctx.arc(scx,scy,s.radius*ts,0,Math.PI*2);ctx.fill();
+  // Dirt paths from each building to center
+  ctx.fillStyle='#8a7a58';ctx.globalAlpha=0.25;
+  for(const b of G.clientBuildings){
+    if(b.settlement!==s.name||!b.complete)continue;
+    const bpx=b.x*ts+ts,bpy=b.y*ts+ts;
+    const steps=Math.floor(Math.sqrt((bpx-scx)**2+(bpy-scy)**2)/6);
+    for(let pi=0;pi<steps;pi++){
+      const pt=pi/steps;
+      const ppx=scx+(bpx-scx)*pt+Math.sin(pt*6)*3;// slight curve
+      const ppy=scy+(bpy-scy)*pt+Math.cos(pt*5)*2;
+      ctx.fillRect(ppx-2,ppy-1,4,2);
+    }
+  }
+  ctx.globalAlpha=1;
+  // Palisade walls (after 5+ buildings)
+  if(s.buildings.length>=5){
+    const wallR=s.radius*ts+10;
+    ctx.strokeStyle='#5a3a18';ctx.lineWidth=3;ctx.setLineDash([]);
+    // Draw wall segments with posts
+    const posts=Math.min(24,Math.max(8,s.buildings.length*2));
+    const gateAngle=Math.atan2(scy-WH*ts/2,scx-WW*ts/2)+Math.PI;// gate faces center
+    for(let wi=0;wi<posts;wi++){
+      const a2=wi*(Math.PI*2/posts);
+      const a3=(wi+1)*(Math.PI*2/posts);
+      // Skip gate section
+      if(Math.abs(a2-gateAngle)<0.4)continue;
+      const x1=scx+Math.cos(a2)*wallR,y1=scy+Math.sin(a2)*wallR;
+      const x2=scx+Math.cos(a3)*wallR,y2=scy+Math.sin(a3)*wallR;
+      // Post
+      ctx.fillStyle='#5a3a18';ctx.fillRect(x1-2,y1-6,4,12);
+      // Connecting log
+      ctx.strokeStyle='#6a4a28';ctx.lineWidth=3;
+      ctx.beginPath();ctx.moveTo(x1,y1);ctx.lineTo(x2,y2);ctx.stroke();
+    }
+    ctx.lineWidth=1;
+  }
+  // Village sign at gate
+  if(s.buildings.length>=3){
+    const gateA=Math.atan2(scy-WH*ts/2,scx-WW*ts/2)+Math.PI;
+    const signX=scx+Math.cos(gateA)*(s.radius*ts+20),signY=scy+Math.sin(gateA)*(s.radius*ts+20);
+    ctx.fillStyle='#5a3a18';ctx.fillRect(signX-1,signY-16,3,16);// pole
+    ctx.fillStyle='#7a5a30';ctx.fillRect(signX-15,signY-14,30,8);// plank
+    ctx.fillStyle='#ddd';ctx.font='7px Courier New';ctx.textAlign='center';ctx.textBaseline='middle';
+    ctx.fillText(s.name,signX,signY-10);
   }
 }
 
