@@ -4341,13 +4341,32 @@ function initWildlife(){
     }
   }
 }
+// Check if a tile position is walkable for animals
+function animalCanMove(nx,ny){
+  const tx3=Math.floor(nx),ty3=Math.floor(ny);
+  if(tx3<1||tx3>=WW-1||ty3<1||ty3>=WH-1)return false;
+  const bi3=tBiomes[ty3*WW+tx3];
+  // Avoid water and deep water
+  if(bi3===0||bi3===1||bi3===10)return false;
+  // Avoid buildings (tile check)
+  for(const b3 of G.clientBuildings){
+    const bw3=Math.ceil((b3.pw||(b3.width||1)*TS)/TS)+1;
+    const bh3=Math.ceil((b3.ph||(b3.height||1)*TS)/TS)+1;
+    if(nx>=b3.x-1&&nx<=b3.x+bw3&&ny>=b3.y-1&&ny<=b3.y+bh3)return false;
+  }
+  return true;
+}
+
 function updateWildlife(){
   for(const an of wildAnimals){
     if(an.type==='deer'){
-      // Wander slowly, flee from nearby agents
-      if(an.fleeing>0){an.fleeing--;an.wx+=an.vx*3;an.wy+=an.vy*3}
-      else{an.wx+=an.vx;an.wy+=an.vy}
+      let nx2=an.wx,ny2=an.wy;
+      if(an.fleeing>0){an.fleeing--;nx2+=an.vx*3;ny2+=an.vy*3}
+      else{nx2+=an.vx;ny2+=an.vy}
       if(frame%300===Math.floor(an.phase*30)%300){an.vx=(Math.random()-0.5)*0.02;an.vy=(Math.random()-0.5)*0.01}
+      // Apply with collision check
+      if(animalCanMove(nx2,ny2)){an.wx=nx2;an.wy=ny2}
+      else{an.vx=-an.vx+(Math.random()-0.5)*0.01;an.vy=-an.vy+(Math.random()-0.5)*0.01}// bounce
       // Flee from agents
       for(const a of S.agents){const v=agentVisual.get(a.id);if(!v)continue;
         if(Math.abs(v.x*WW-an.wx)+Math.abs(v.y*WH-an.wy)<2){
@@ -4355,23 +4374,28 @@ function updateWildlife(){
       }}
     }else if(an.type==='rabbit'){
       an.hopTimer--;
-      if(an.hopTimer<=0){an.wx+=(Math.random()-0.5)*0.6;an.wy+=(Math.random()-0.5)*0.4;an.hopTimer=40+Math.floor(Math.random()*40)}
-      // Flee faster
+      if(an.hopTimer<=0){
+        const rnx=an.wx+(Math.random()-0.5)*0.6,rny=an.wy+(Math.random()-0.5)*0.4;
+        if(animalCanMove(rnx,rny)){an.wx=rnx;an.wy=rny}
+        an.hopTimer=40+Math.floor(Math.random()*40);
+      }
       for(const a of S.agents){const v=agentVisual.get(a.id);if(!v)continue;
-        if(Math.abs(v.x*WW-an.wx)+Math.abs(v.y*WH-an.wy)<3){an.wx+=(an.wx>v.x*WW?0.5:-0.5);an.wy+=(an.wy>v.y*WH?0.3:-0.3);break}}
+        if(Math.abs(v.x*WW-an.wx)+Math.abs(v.y*WH-an.wy)<3){
+          const fnx=an.wx+(an.wx>v.x*WW?0.5:-0.5),fny=an.wy+(an.wy>v.y*WH?0.3:-0.3);
+          if(animalCanMove(fnx,fny)){an.wx=fnx;an.wy=fny}break}}
     }else if(an.type==='wolf'){
-      an.wx+=an.vx;an.wy+=an.vy;
+      const wnx=an.wx+an.vx,wny=an.wy+an.vy;
+      if(animalCanMove(wnx,wny)){an.wx=wnx;an.wy=wny}
+      else{an.vx=-an.vx;an.vy=-an.vy}
       if(frame%200===Math.floor(an.phase*20)%200){an.vx=(Math.random()-0.5)*0.03;an.vy=(Math.random()-0.5)*0.02}
-      // Hunt deer
       for(const d2 of wildAnimals){if(d2.type==='deer'&&Math.abs(d2.wx-an.wx)+Math.abs(d2.wy-an.wy)<1){d2.life=0;G.food+=2;break}}
-      // Alert settlements
       for(const s of settlements){if(Math.abs(an.wx-s.cx)+Math.abs(an.wy-s.cy)<10&&frame%600===0){
         gameEvent(`🐺 Wolves spotted near ${s.name}!`,'agent_message')}}
     }else if(an.type==='chicken'){
-      // Wander near farm
-      an.wx+=Math.sin(frame*0.01+an.phase)*0.003;an.wy+=Math.cos(frame*0.013+an.phase)*0.002;
+      const cnx=an.wx+Math.sin(frame*0.01+an.phase)*0.003;
+      const cny=an.wy+Math.cos(frame*0.013+an.phase)*0.002;
+      if(animalCanMove(cnx,cny)){an.wx=cnx;an.wy=cny}
     }
-    // Clamp to world
     an.wx=Math.max(1,Math.min(WW-1,an.wx));an.wy=Math.max(1,Math.min(WH-1,an.wy));
   }
   // Remove dead
