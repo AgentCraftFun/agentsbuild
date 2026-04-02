@@ -3728,9 +3728,21 @@ for(let i=0;i<agentRenderData.length;i++){
 
 // Sort everything by Y (bottom/ground contact point)
 renderItems.sort((a2,b2)=>a2.sortY-b2.sortY);
-// Off-screen rendering guard: cap visible objects to prevent zoom-out crash
-const MAX_VISIBLE=500;
-if(renderItems.length>MAX_VISIBLE)renderItems.length=MAX_VISIBLE;
+// Off-screen rendering guard: thin out details when zoomed far out
+const MAX_VISIBLE=2000;
+if(renderItems.length>MAX_VISIBLE){
+  // Keep all buildings and agents, thin out details
+  const essential=renderItems.filter(r=>r.type==='building'||r.type==='agent'||r.type==='animal'||r.type==='worldobj');
+  const details2=renderItems.filter(r=>r.type==='detail');
+  // Keep every Nth detail to fit budget
+  const detailBudget=MAX_VISIBLE-essential.length;
+  const skip=Math.max(1,Math.ceil(details2.length/Math.max(1,detailBudget)));
+  const thinned=details2.filter((_,i)=>i%skip===0);
+  renderItems.length=0;
+  for(const e of essential)renderItems.push(e);
+  for(const d of thinned)renderItems.push(d);
+  renderItems.sort((a2,b2)=>a2.sortY-b2.sortY);
+}
 
 // PASS 1: Draw ALL shadows first (under everything)
 for(const item of renderItems){
