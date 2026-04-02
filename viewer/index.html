@@ -67,7 +67,11 @@ canvas{display:block;image-rendering:pixelated;image-rendering:crisp-edges}
 </head>
 <body>
 <div id="notif-bar" style="position:fixed;top:-40px;left:50%;transform:translateX(-50%);background:rgba(10,10,30,0.9);border:1px solid #f0c040;border-radius:0 0 8px 8px;padding:8px 24px;color:#f0c040;font:bold 12px 'Courier New',monospace;z-index:600;transition:top 0.3s ease;text-align:center;white-space:nowrap"></div>
-<div id="intro-overlay"><div id="intro-text">Your agents have arrived in an untamed land...<br><br><span style="font-size:11px;color:#888">They must gather, build, and survive.</span></div></div>
+<div id="intro-overlay" onclick="this.remove()"><div id="intro-text">Your agents have arrived in an untamed land...<br><br><span style="font-size:11px;color:#888">They must gather, build, and survive.<br><br>Click to start</span></div></div>
+<script>
+// FAILSAFE: remove intro no matter what after 4 seconds
+setTimeout(function(){var io=document.getElementById('intro-overlay');if(io)io.remove()},4000);
+</script>
 <div id="era-announce"></div>
 <div id="app">
   <div id="header">
