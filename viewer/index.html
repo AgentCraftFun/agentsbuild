@@ -247,7 +247,7 @@ function renderTBuf(){
       const greys=['#5a5a64','#6a6a74','#7a7a84','#4a4a54'];
       for(let i=0;i<7;i++){
         c.fillStyle=greys[i%4];
-        c.fillRect(px+((h>>(i*3))%20),py+((h>>(i*3+2))%20),2,1+((h>>(i*5))%2));
+        c.fillRect(px+((h>>(i*3))%20),py+((h>>(i*3+2))%20),1,1);
       }
       // Pebble clusters (10%)
       if(h%10===0){
@@ -265,7 +265,7 @@ function renderTBuf(){
         }
       }
       // Blue shadow dots (8%)
-      if(h%12===0){c.fillStyle='#d0d8f0';c.fillRect(px+4+(h>>4)%12,py+6+(h>>6)%10,2,2)}
+      if(h%12===0){c.fillStyle='#d4d8e8';c.fillRect(px+4+(h>>4)%12,py+6+(h>>6)%10,1,1)}
     }
     else if(b==='shallow_water'||b==='deep_water'||b==='river'){
       // Shore tint: lighter blue if adjacent to land
@@ -289,9 +289,9 @@ function renderTBuf(){
     }
     // Gold vein gets extra sparkle dots
     if(b==='gold_vein'){
-      for(let i=0;i<4;i++){
-        c.fillStyle=i%2===0?'#ffe844':'#ffd020';
-        c.fillRect(px+2+((h>>(i*4))%16),py+2+((h>>(i*4+2))%16),2,2);
+      for(let i=0;i<3;i++){
+        c.fillStyle=i%2===0?'#c8a840':'#b09030';// muted gold, not bright yellow
+        c.fillRect(px+2+((h>>(i*4))%16),py+2+((h>>(i*4+2))%16),1,1);
       }
     }
   }
@@ -653,10 +653,11 @@ function drawFruitTree(c,px,py,h){
   c.fillStyle='#3a9a2a';c.beginPath();c.arc(ox-1,oy-23,9,0,Math.PI*2);c.fill();
   // Fruits: type based on hash
   const fruitType=h%3;
-  const fruitCol=fruitType===0?'#cc3333':fruitType===1?'#dd8822':'#ddaacc';
+  // Muted fruit colors, 2x2 not 3x3
+  const fruitCol=fruitType===0?'#aa4444':fruitType===1?'#bb7733':'#cc99aa';
   c.fillStyle=fruitCol;
   for(let fi=0;fi<4;fi++){
-    c.fillRect(ox-6+((h>>(fi*3+4))%12),oy-26+((h>>(fi*3+6))%10),3,3);
+    c.fillRect(ox-6+((h>>(fi*3+4))%12),oy-26+((h>>(fi*3+6))%10),2,2);
   }
 }
 function drawTallGrass(c,px,py,h,fr){
@@ -673,12 +674,13 @@ function drawTallGrass(c,px,py,h,fr){
 }
 function drawFlower(c,px,py,h){
   const ox=px+4+(h%14),oy=py+TS-2;
-  const flowerCols=['#cc3333','#ddaa22','#4466cc','#dddddd','#8844aa'];
+  // Muted flower colors (no bright primary colors)
+  const flowerCols=['#aa5050','#bb9940','#7788aa','#b8b0a0','#8866aa'];
   const count=2+((h>>6)%2);
   for(let i=0;i<count;i++){
     const fx=ox+i*5+((h>>(i*3))%4),fy=oy;
-    c.fillStyle='#3a7a20';c.fillRect(fx,fy-6,1,6);
-    c.fillStyle=flowerCols[(h+i*17)%5];c.fillRect(fx-1,fy-8,3,3);
+    c.fillStyle='#3a7a20';c.fillRect(fx,fy-5,1,5);// stem
+    c.fillStyle=flowerCols[(h+i*17)%5];c.fillRect(fx,fy-7,2,2);// 2x2 head (was 3x3)
   }
 }
 function drawDeadTree(c,px,py,h){
@@ -704,7 +706,7 @@ function drawCactus(c,px,py,h){
   c.fillStyle='#4a8a38';
   c.fillRect(ox-6,oy+6,6,5);c.fillRect(ox-6,oy+2,4,5);
   c.fillRect(ox+8,oy+10,6,5);c.fillRect(ox+10,oy+6,4,5);
-  if((h>>6)%3===0){c.fillStyle='#dd4466';c.fillRect(ox+2,oy-2,3,3)}
+  if((h>>6)%3===0){c.fillStyle='#bb5566';c.fillRect(ox+2,oy-2,2,2)}
 }
 function drawMushroom(c,px,py,h){
   const ox=px+8+(h%8),oy=py+TS-3;
@@ -3132,8 +3134,8 @@ for(const s of settlements){
       }
       // Tiny flower dots
       const fh2=tileHash(b2.x*3,b2.y*5);
-      if(fh2%3===0){ctx.fillStyle='#cc3333';ctx.fillRect(gx+3,gy+1,2,2)}
-      if(fh2%5<2){ctx.fillStyle='#ddaa22';ctx.fillRect(gx+10,gy+4,2,2)}
+      if(fh2%3===0){ctx.fillStyle='#aa5050';ctx.fillRect(gx+3,gy+1,1,1)}
+      if(fh2%5<2){ctx.fillStyle='#aa9040';ctx.fillRect(gx+10,gy+4,1,1)}
     }
     // Wood piles near lumber mill
     if(b2.type==='lumber_mill'){
@@ -3317,8 +3319,8 @@ for(const b of G.clientBuildings){
   if(!b.personalized||!b.complete)continue;
   const bpx=b.x*ts,bpy=b.y*ts,bpw=(b.width||1)*ts;
   if(b.personalFaction==='human'){// flower boxes
-    ctx.fillStyle='#dd4466';ctx.fillRect(bpx+4,bpy+bpw-4,3,3);
-    ctx.fillStyle='#ddaa22';ctx.fillRect(bpx+10,bpy+bpw-4,3,3);
+    ctx.fillStyle='#aa5566';ctx.fillRect(bpx+4,bpy+bpw-4,2,2);
+    ctx.fillStyle='#aa9040';ctx.fillRect(bpx+10,bpy+bpw-4,2,2);
   }else if(b.personalFaction==='orc'){// skull + spikes
     ctx.fillStyle='#aaa';ctx.beginPath();ctx.arc(bpx+bpw/2,bpy+4,3,0,Math.PI*2);ctx.fill();
   }else if(b.personalFaction==='dwarf'){// ore display
