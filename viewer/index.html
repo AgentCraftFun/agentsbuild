@@ -3812,9 +3812,10 @@ for(const s of settlements){
   // PROGRESSIVE WALL SEGMENTS (4+ buildings)
   if(s.buildings.length>=4){
     const wallR=s.radius*ts+15;
-    // Regenerate walls when building count changes significantly
-    if(s.wallSegs&&s._wallBldCount&&Math.abs(s.buildings.length-s._wallBldCount)>=3){s.wallSegs=null}
-    s._wallBldCount=s.buildings.length;
+    // Only regenerate walls when settlement grows significantly AND walls are fully complete
+    // This prevents walls from vanishing mid-construction
+    if(s.wallSegs&&s._wallBldCount&&Math.abs(s.buildings.length-s._wallBldCount)>=6&&s.wallSegs.every(ws=>ws.progress>=1)){s.wallSegs=null}
+    if(!s._wallBldCount)s._wallBldCount=s.buildings.length;
     const gateAngle=Math.atan2(scy-WH*ts/2,scx-WW*ts/2)+Math.PI;
     const isStone=G.era>=2;
     // Wall-building overlap check
@@ -3829,6 +3830,7 @@ for(const s of settlements){
     // Generate wall segments if not yet created
     if(!s.wallSegs){
       s.wallSegs=[];
+      s._wallBldCount=s.buildings.length;// track what count walls were generated at
       const segCount=Math.max(8,Math.min(20,s.buildings.length*2));
       for(let wi=0;wi<segCount;wi++){
         const a2=wi*(Math.PI*2/segCount),a3=(wi+1)*(Math.PI*2/segCount);
@@ -3844,11 +3846,23 @@ for(const s of settlements){
         });
       }
     }
-    // Progress wall construction: 1 segment at a time
-    const nextSeg=s.wallSegs.find(ws=>ws.progress<1&&!ws.isGate);
-    if(nextSeg){nextSeg.progress=Math.min(1,nextSeg.progress+0.0008)}// ~20 sec per segment (2x faster)
-    // Gate built last
-    if(!nextSeg){const gateSeg=s.wallSegs.find(ws=>ws.isGate&&ws.progress<1);if(gateSeg)gateSeg.progress=Math.min(1,gateSeg.progress+0.0008)}
+    // Progress wall construction: only when an agent is nearby and idle/not busy
+    // Agents "build" walls passively when they're in the settlement
+    const wallBuilders=S.agents.filter(ag=>{
+      const av=agentVisual.get(ag.id);if(!av)return false;
+      const ast4=agentState.get(ag.id);
+      // Agent must be idle or walking (not building/chopping/mining)
+      if(ast4&&ast4.state!=='idle'&&ast4.state!=='walking')return false;
+      const adx=Math.abs(av.x*WW*ts-scx),ady=Math.abs(av.y*WH*ts-scy);
+      return adx<wallR+30&&ady<wallR+30;// within settlement wall radius
+    });
+    if(wallBuilders.length>0){
+      const buildRate=0.0006*wallBuilders.length;// more agents = faster walls
+      const nextSeg=s.wallSegs.find(ws=>ws.progress<1&&!ws.isGate);
+      if(nextSeg){nextSeg.progress=Math.min(1,nextSeg.progress+buildRate)}
+      // Gate built last
+      if(!nextSeg){const gateSeg=s.wallSegs.find(ws=>ws.isGate&&ws.progress<1);if(gateSeg)gateSeg.progress=Math.min(1,gateSeg.progress+buildRate)}
+    }
     // Draw completed + in-progress segments
     // Helper: check if pixel position is on a water tile
     function _isWaterAt(px2,py2){const tx3=Math.floor(px2/ts),ty3=Math.floor(py2/ts);if(tx3<0||tx3>=WW||ty3<0||ty3>=WH)return false;const bi3=tBiomes[ty3*WW+tx3];return bi3===0||bi3===1||bi3===10}
