@@ -2602,10 +2602,14 @@ function updateAgentMovement(){
     else if(st.state==='building'){
       if(!st.target||st.target.complete){st.state='idle';st.taskCooldown=15;continue}
       if(!atTarget){v.tx=st.target.x/WW;v.ty=st.target.y/WH;continue}
-      // Build speed scales with building era: small=fast, large=slower
-      const buildEra=TECH_TREE.find(t2=>t2.type===st.target.type);
-      const buildSpeed=buildEra?(0.003+0.01/(1+buildEra.era)):0.008;// era0=0.013, era3=0.0055
-      st.target.progress=Math.min(1,st.target.progress+buildSpeed);
+      // Build speed: per-type construction time
+      const BUILD_TIMES={campfire:300,wood_hut:720,log_cabin:1080,lumber_mill:1080,farm:720,
+        stone_house:1500,quarry:1500,blacksmith:1500,watchtower:1500,well:480,
+        town_hall:2400,barracks:2400,church:2400,market:2400,library:1800,
+        brick_house:1800,apartment:2700,office:2700,factory:3000,monument:2400,
+        garden:300,fence:240,fountain:900,statue:1500,dock:600,bridge:900};
+      const buildFrames=BUILD_TIMES[st.target.type]||1200;
+      st.target.progress=Math.min(1,st.target.progress+1.0/buildFrames);
       // Building impact effects
       // Building particles (just 1, no text spam)
       if(frame%20===0)spawnParticle(st.target.x*TS+TS+(Math.random()-0.5)*10,st.target.y*TS+TS-5,'debris');
@@ -2848,7 +2852,7 @@ if(frame%300===0){ensureResourceAbundance();batchResourceSummary()}
 // Drama events
 dramaTimer--;if(dramaTimer<=0){dramaTimer=60*(90+Math.random()*30);triggerDramaEvent()}
 // Spotlight
-spotlightTimer--;if(spotlightTimer<=0){spotlightTimer=60*60;triggerSpotlight()}
+spotlightTimer--;if(spotlightTimer<=0){spotlightTimer=60*180;triggerSpotlight()}// 3 min between spotlights
 // Prediction timer
 if(predState.active){predState.timer--;if(predState.timer<=0)resolvePrediction()}
 // Influence cooldown
@@ -3360,6 +3364,25 @@ for(const bird of ambientBirds){
   ctx.lineWidth=1;
 }
 
+// Deer herd (world-space, Y-sorted roughly)
+for(let di=deerHerd.length-1;di>=0;di--){
+  const d2=deerHerd[di];d2.life--;
+  if(d2.life<=0||d2.wx<-10||d2.wx>WW+10){deerHerd.splice(di,1);continue}
+  d2.wx+=d2.vx;d2.wy+=Math.sin(frame*0.02+d2.phase)*0.03;// gentle wobble
+  const dpx=d2.wx*ts,dpy=d2.wy*ts;
+  // Body
+  ctx.fillStyle='#8a6a3a';ctx.fillRect(dpx-4,dpy-3,8,5);
+  // Belly
+  ctx.fillStyle='#b09060';ctx.fillRect(dpx-3,dpy-1,6,3);
+  // Head
+  ctx.fillStyle='#8a6a3a';ctx.fillRect(dpx+(d2.vx>0?4:-6),dpy-5,4,4);
+  // Ear dot
+  ctx.fillStyle='#6a5030';ctx.fillRect(dpx+(d2.vx>0?6:-5),dpy-6,2,2);
+  // Legs
+  ctx.fillStyle='#6a5030';
+  ctx.fillRect(dpx-3,dpy+2,1,3);ctx.fillRect(dpx+2,dpy+2,1,3);
+}
+
 // Speech bubbles (on top of everything)
 for(let i=bubbles.length-1;i>=0;i--){
   const bub=bubbles[i];
@@ -3869,6 +3892,7 @@ function setCursor(type){
 
 // === Ambient Creatures ===
 const ambientBirds=[];
+const deerHerd=[];// {wx,wy,vx,phase,life}
 const ambientButterflies=[];
 const ambientLeaves=[];
 let fishJumpTimer=400+Math.floor(Math.random()*200);
@@ -3974,6 +3998,13 @@ function updateWorldEvents(){
       }else{// Migration (visual)
         showDramaBanner('🦌 A herd of deer crosses the plains');
         gameEvent('🦌 Wildlife spotted — deer migrating south','tile_claimed');
+        // Spawn visible deer herd
+        deerHerd.length=0;
+        const startX=Math.random()<0.5?-5:WW+5,dir=startX<0?0.08:-0.08;
+        const baseY=20+Math.random()*(WH-40);
+        for(let di=0;di<5;di++){
+          deerHerd.push({wx:startX+di*2*(Math.random()-0.5),wy:baseY+di*3*(Math.random()-0.5),vx:dir,phase:Math.random()*10,life:3600});
+        }
       }
     }else if(rarity<0.85){// === UNCOMMON ===
       if(roll<0.33){// Gold Rush
@@ -4186,14 +4217,17 @@ window.useInfluence=function(idx){
 };
 
 // === Agent Spotlight ===
-let spotlightTimer=60*60;// first after 60s
+let spotlightTimer=60*180;// first after 3 min
 function triggerSpotlight(){
-  const active=S.agents.filter(a=>{const st2=agentState.get(a.id);return st2&&st2.state!=='idle'});
-  if(active.length===0)return;
-  const a=active[Math.floor(Math.random()*active.length)];
+  // Only spotlight genuinely interesting activities
+  const interestingStates=new Set(['building','fishing']);
+  const interesting=S.agents.filter(a=>{const st2=agentState.get(a.id);return st2&&interestingStates.has(st2.state)});
+  if(interesting.length===0)return;// skip this cycle if nothing interesting
+  const a=interesting[Math.floor(Math.random()*interesting.length)];
   const st2=agentState.get(a.id);
   const label=STATE_LABELS[st2.state]||'working';
-  showDramaBanner(`📺 SPOTLIGHT: ${a.name} is ${label.toLowerCase()}`);
+  const extra=st2.target&&st2.target.name?` ${st2.target.name}`:'';
+  showDramaBanner(`📺 ${a.name} is ${label.toLowerCase()}${extra}`);
   // Pan to agent
   const v2=agentVisual.get(a.id);
   if(v2){panTarget={vpX:canvasEl.width/(2*1.3)-v2.x*WW*TS-TS/2,vpY:canvasEl.height/(2*1.3)-v2.y*WH*TS-TS/2,zoom:1.3};panFrames=30}
