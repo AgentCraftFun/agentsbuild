@@ -1346,6 +1346,19 @@ function drawTownHall(c,bx,by,bw,bh,fr){
   // Flag
   c.fillStyle='#5a3010';c.fillRect(bx+bw/2-1,by-bh*0.4-12,2,14);
   c.fillStyle='#4488ff';c.beginPath();const w2=Math.sin(fr*0.08)*2;c.moveTo(bx+bw/2+1,by-bh*0.4-12);c.lineTo(bx+bw/2+11,by-bh*0.4-8+w2);c.lineTo(bx+bw/2+1,by-bh*0.4-4);c.fill();
+  // Castle corner turrets (Gold Age+)
+  if(G.era>=2){
+    const turretW=8,turretH=16;
+    const turrets=[[bx-4,by-4],[bx+bw-4,by-4],[bx-4,by+bh-8],[bx+bw-4,by+bh-8]];
+    for(const[tx5,ty5] of turrets){
+      c.fillStyle='#6a6672';c.fillRect(tx5,ty5,turretW,turretH);
+      // Crenellations on top
+      c.fillStyle='#7a7682';
+      for(let ci=0;ci<3;ci++)c.fillRect(tx5+ci*3,ty5-3,2,3);
+      // Pointed cap
+      c.fillStyle='#3a3650';c.beginPath();c.moveTo(tx5,ty5-3);c.lineTo(tx5+turretW/2,ty5-8);c.lineTo(tx5+turretW,ty5-3);c.fill();
+    }
+  }
 }
 
 function drawChurch(c,bx,by,bw,bh,fr){
@@ -3123,31 +3136,36 @@ for(const s of settlements){
   ctx.fillStyle='rgba(130,110,80,0.12)';
   ctx.beginPath();ctx.arc(scx,scy,55,0,Math.PI*2);ctx.fill();
 
-  // CROSSROADS — N/S and E/W roads through center
-  const roadW=10,roadLen2=s.radius*ts+30;
-  ctx.fillStyle='rgba(138,122,88,0.2)';
+  // CROSSROADS — N/S and E/W roads through center (wider, with wheel tracks)
+  const roadW=16,roadLen2=s.radius*ts+40;
+  ctx.fillStyle='rgba(138,122,88,0.22)';
   ctx.fillRect(scx-roadW/2,scy-roadLen2,roadW,roadLen2*2);// N-S road
   ctx.fillRect(scx-roadLen2,scy-roadW/2,roadLen2*2,roadW);// E-W road
+  // Wheel tracks (dark center lines on roads)
+  ctx.fillStyle='rgba(106,90,56,0.15)';
+  ctx.fillRect(scx-3,scy-roadLen2,2,roadLen2*2);// N-S track 1
+  ctx.fillRect(scx+2,scy-roadLen2,2,roadLen2*2);// N-S track 2
+  ctx.fillRect(scx-roadLen2,scy-3,roadLen2*2,2);// E-W track 1
+  ctx.fillRect(scx-roadLen2,scy+2,roadLen2*2,2);// E-W track 2
 
-  // BRANCH PATHS from each building to nearest road
+  // BRANCH PATHS from each building to nearest road (wider, 8px)
   ctx.fillStyle='#8a7a58';ctx.globalAlpha=0.2;
   for(const b2 of settBlds2){
     const bpx2=b2.x*ts+(b2.pw||ts)/2,bpy2=b2.y*ts+(b2.ph||ts)/2;
-    // Connect to nearest axis (horizontal or vertical road)
     const toNS=Math.abs(bpx2-scx),toEW=Math.abs(bpy2-scy);
-    if(toNS<toEW){// closer to N-S road: draw horizontal path to it
+    if(toNS<toEW){
       const sy3=bpy2,sx3=Math.min(bpx2,scx),ex3=Math.max(bpx2,scx);
-      for(let px4=sx3;px4<ex3;px4+=3)ctx.fillRect(px4,sy3-2,4,4);
-    }else{// closer to E-W road: draw vertical path
+      for(let px4=sx3;px4<ex3;px4+=3)ctx.fillRect(px4,sy3-3,4,6);
+    }else{
       const sx3=bpx2,sy3=Math.min(bpy2,scy),ey3=Math.max(bpy2,scy);
-      for(let py4=sy3;py4<ey3;py4+=3)ctx.fillRect(sx3-2,py4,4,4);
+      for(let py4=sy3;py4<ey3;py4+=3)ctx.fillRect(sx3-3,py4,6,4);
     }
   }
   ctx.globalAlpha=1;
 
   // ROAD INTERSECTION DETAIL — wider square at center crossroads
-  ctx.fillStyle='rgba(138,122,88,0.15)';
-  ctx.fillRect(scx-12,scy-12,24,24);
+  ctx.fillStyle='rgba(138,122,88,0.18)';
+  ctx.fillRect(scx-14,scy-14,28,28);
 
   // TORCHES at road intersections (every 80px along roads)
   if(settBlds2.length>=4){
@@ -3166,6 +3184,7 @@ for(const s of settlements){
   for(const b2 of settBlds2){
     const bpx2=b2.x*ts,bpy2=b2.y*ts;
     const bw2=b2.pw||ts*2,bh2=b2.ph||ts;
+    const bHash=tileHash(b2.x*3,b2.y*5);
     // Garden patches near homes
     if(['wood_hut','log_cabin','stone_house','brick_house'].includes(b2.type)){
       const gx=bpx2-15,gy=bpy2+bh2+4;
@@ -3173,16 +3192,86 @@ for(const s of settlements){
         ctx.fillStyle=row%2===0?'#5a8a2a':'#7a6a38';
         ctx.fillRect(gx,gy+row*3,18,2);
       }
-      // Tiny flower dots
-      const fh2=tileHash(b2.x*3,b2.y*5);
-      if(fh2%3===0){ctx.fillStyle='#aa5050';ctx.fillRect(gx+3,gy+1,1,1)}
-      if(fh2%5<2){ctx.fillStyle='#aa9040';ctx.fillRect(gx+10,gy+4,1,1)}
+      if(bHash%3===0){ctx.fillStyle='#aa5050';ctx.fillRect(gx+3,gy+1,1,1)}
+      if(bHash%5<2){ctx.fillStyle='#aa9040';ctx.fillRect(gx+10,gy+4,1,1)}
+      // Small fence between adjacent buildings
+      if(bHash%4===0){
+        ctx.fillStyle='#5a3a18';
+        for(let fi=0;fi<4;fi++)ctx.fillRect(bpx2+bw2+6+fi*6,bpy2+bh2-4,2,6);
+        ctx.fillRect(bpx2+bw2+6,bpy2+bh2-1,22,1);
+      }
     }
     // Wood piles near lumber mill
     if(b2.type==='lumber_mill'){
       const wpx=bpx2+bw2+4,wpy=bpy2+bh2-12;
       ctx.fillStyle='#6a4a20';
       ctx.fillRect(wpx,wpy,10,3);ctx.fillRect(wpx+1,wpy-3,8,3);ctx.fillRect(wpx+2,wpy-6,6,3);
+    }
+    // FARM FIELDS — crop rows adjacent to farms
+    if(b2.type==='farm'){
+      const dirFromCenter=Math.atan2(bpy2-scy,bpx2-scx);
+      const fieldX=bpx2+Math.cos(dirFromCenter)*50,fieldY=bpy2+Math.sin(dirFromCenter)*40;
+      const cropColors=[['#4a7a2a','#5a4a28'],['#6a8a20','#5a4a28'],['#3a6a20','#4a3a18']];
+      for(let fi=0;fi<3;fi++){
+        const fx=fieldX+fi*16-16,fy=fieldY;
+        const cc=cropColors[fi%3];
+        for(let row=0;row<8;row++){
+          ctx.fillStyle=row%2===0?cc[0]:cc[1];
+          ctx.fillRect(fx,fy+row*3,12,2);
+        }
+      }
+    }
+    // MARKET STALLS — small canopy structures near market
+    if(b2.type==='market'){
+      const stallColors=['#aa3030','#3050aa','#aa8020'];
+      for(let si=0;si<3;si++){
+        const sx5=bpx2+bw2+8+si*16,sy5=bpy2+10+si*8;
+        // Posts
+        ctx.fillStyle='#5a3a18';ctx.fillRect(sx5,sy5,2,10);ctx.fillRect(sx5+10,sy5,2,10);
+        // Canopy (triangle)
+        ctx.fillStyle=stallColors[si];
+        ctx.beginPath();ctx.moveTo(sx5-2,sy5);ctx.lineTo(sx5+6,sy5-6);ctx.lineTo(sx5+14,sy5);ctx.fill();
+        // Goods (small colored squares)
+        ctx.fillStyle='#cc9940';ctx.fillRect(sx5+2,sy5+6,3,3);
+        ctx.fillStyle='#80aa40';ctx.fillRect(sx5+6,sy5+6,3,3);
+      }
+    }
+    // Barrels and crates near industrial buildings
+    if(['blacksmith','quarry','factory','barracks'].includes(b2.type)){
+      const cx5=bpx2-8,cy5=bpy2+bh2-8;
+      ctx.fillStyle='#5a3a18';ctx.fillRect(cx5,cy5,5,5);// crate
+      ctx.fillStyle='#4a2a10';ctx.fillRect(cx5+1,cy5+1,3,1);// crate detail
+      if(bHash%3===0){// barrel
+        ctx.fillStyle='#6a4a28';ctx.beginPath();ctx.arc(cx5+12,cy5+3,3,0,Math.PI*2);ctx.fill();
+        ctx.fillStyle='#5a3a18';ctx.fillRect(cx5+11,cy5+1,3,1);
+      }
+    }
+    // Lamp posts at building entrances (town phase, 5+ buildings)
+    if(settBlds2.length>=5&&bHash%3===0){
+      const lpx=bpx2+bw2/2+8,lpy=bpy2+bh2+2;
+      ctx.fillStyle='#4a4a52';ctx.fillRect(lpx,lpy-10,2,10);// post
+      ctx.fillStyle='#aa8833';ctx.fillRect(lpx-1,lpy-11,4,3);// lamp
+      if(window._isNight){ctx.fillStyle='rgba(255,200,100,0.08)';ctx.beginPath();ctx.arc(lpx+1,lpy-10,12,0,Math.PI*2);ctx.fill()}
+    }
+  }
+  // INTER-SETTLEMENT ROADS (if 2+ settlements)
+  if(settlements.length>=2){
+    for(let si2=0;si2<settlements.length;si2++){
+      const s2=settlements[si2];if(s2===s)continue;
+      if(s2.buildings.length<3)continue;// only connect established settlements
+      const s2cx=s2.cx*ts+ts/2,s2cy=s2.cy*ts+ts/2;
+      // Draw a dotted dirt road between settlement centers
+      const dx5=s2cx-scx,dy5=s2cy-scy;
+      const dist5=Math.sqrt(dx5*dx5+dy5*dy5);
+      if(dist5<10)continue;
+      const nx5=dx5/dist5,ny5=dy5/dist5;
+      ctx.fillStyle='rgba(122,106,72,0.12)';
+      for(let rd=0;rd<dist5;rd+=6){
+        const rx=scx+nx5*rd,ry=scy+ny5*rd;
+        // Slight curve for natural feel
+        const curveOff=Math.sin(rd*0.02)*10;
+        ctx.fillRect(rx+ny5*curveOff-4,ry-nx5*curveOff-4,8,8);
+      }
     }
   }
   // WELL at settlement center (if no fountain already drawn)
