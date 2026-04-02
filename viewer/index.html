@@ -4610,7 +4610,7 @@ function saveGame(){
     // Pre-save validation: remove corrupt entries
     G.clientBuildings=G.clientBuildings.filter(b=>b&&isFinite(b.x)&&isFinite(b.y));
     while(G.clientBuildings.length>50)G.clientBuildings.pop();
-    const state={version:2,savedAt:Date.now(),tick:frame,era:G.era,
+    const state={version:3,savedAt:Date.now(),tick:frame,era:G.era,
       wood:G.wood||0,stone:G.stone||0,gold:G.gold||0,food:G.food||0,
       buildings:G.clientBuildings.slice(0,50).map(b=>({type:b.type,name:b.name,abbr:b.abbr,x:b.x,y:b.y,progress:b.progress,complete:b.complete,faction:b.faction,width:b.width,height:b.height,pw:b.pw,ph:b.ph,tall:b.tall,owner:b.owner,ownerName:b.ownerName,isHome:b.isHome,personalized:b.personalized,personalFaction:b.personalFaction,claimedBy:b.claimedBy,settlement:b.settlement})),
       harvested:[...harvestables.keys()].slice(0,500),
@@ -4636,7 +4636,7 @@ function loadGame(){
     const raw=localStorage.getItem(SAVE_KEY);
     if(!raw)return false;
     const s=JSON.parse(raw);
-    if(!s||s.version<2)return false;
+    if(!s||s.version<3)return false;// v3 = fresh world reset
     G.era=s.era||0;G.wood=s.wood||0;G.stone=s.stone||0;G.gold=s.gold||0;G.food=s.food||0;
     frame=s.tick||0;
     G.clientBuildings.length=0;
