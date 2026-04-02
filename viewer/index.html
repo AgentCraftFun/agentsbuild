@@ -3464,24 +3464,57 @@ for(const item of renderItems){
   }else if(item.type==='animal'){
     const an=item.an,apx=an.wx*ts,apy=an.wy*ts;
     if(an.type==='deer'){
-      ctx.fillStyle='rgba(0,0,0,0.15)';ctx.beginPath();ctx.ellipse(apx,apy+4,6,2,0,0,Math.PI*2);ctx.fill();
-      ctx.fillStyle='#8a6a3a';ctx.beginPath();ctx.ellipse(apx,apy,5,3,0,0,Math.PI*2);ctx.fill();
-      ctx.fillStyle='#b09060';ctx.fillRect(apx-4,apy,8,2);
-      ctx.fillStyle='#8a6a3a';ctx.beginPath();ctx.arc(apx+(an.vx>0?5:-5),apy-3,2.5,0,Math.PI*2);ctx.fill();
-      ctx.fillStyle='#6a4a28';for(let li=0;li<4;li++)ctx.fillRect(apx-3+li*2,apy+3,1,3);
-      if(an.hasAntlers){ctx.strokeStyle='#6a5a3a';ctx.lineWidth=1;const hx=apx+(an.vx>0?6:-6),hy=apy-5;ctx.beginPath();ctx.moveTo(hx,hy);ctx.lineTo(hx-2,hy-4);ctx.moveTo(hx,hy);ctx.lineTo(hx+2,hy-4);ctx.stroke()}
+      // Shadow
+      ctx.fillStyle='rgba(0,0,0,0.2)';ctx.beginPath();ctx.ellipse(apx,apy+6,8,3,0,0,Math.PI*2);ctx.fill();
+      // Body: 12x7
+      ctx.fillStyle='#9a7040';ctx.beginPath();ctx.ellipse(apx,apy-2,6,3.5,0,0,Math.PI*2);ctx.fill();
+      // Head
+      const hdir=an.vx>0?1:-1;
+      ctx.fillStyle='#9a7040';ctx.beginPath();ctx.arc(apx+8*hdir,apy-5,3,0,Math.PI*2);ctx.fill();
+      // Ears
+      ctx.fillStyle='#8a6030';ctx.fillRect(apx+7*hdir,apy-9,2,3);ctx.fillRect(apx+10*hdir,apy-8,2,3);
+      // Legs
+      ctx.fillStyle='#6a4a28';
+      ctx.fillRect(apx-4,apy+2,1,5);ctx.fillRect(apx-1,apy+2,1,5);
+      ctx.fillRect(apx+2,apy+2,1,5);ctx.fillRect(apx+5,apy+2,1,5);
+      // White tail
+      ctx.fillStyle='#e0d8c8';ctx.fillRect(apx-7*hdir,apy-2,2,2);
+      // Antlers
+      if(an.hasAntlers){ctx.strokeStyle='#7a6a4a';ctx.lineWidth=1;
+        const ahx=apx+10*hdir,ahy=apy-8;
+        ctx.beginPath();ctx.moveTo(ahx,ahy);ctx.lineTo(ahx+3*hdir,ahy-5);ctx.moveTo(ahx,ahy);ctx.lineTo(ahx-2*hdir,ahy-4);ctx.stroke();ctx.lineWidth=1}
     }else if(an.type==='rabbit'){
-      ctx.fillStyle='#b09868';ctx.beginPath();ctx.ellipse(apx,apy,3,2,0,0,Math.PI*2);ctx.fill();
-      ctx.fillStyle='#c0a878';ctx.fillRect(apx-1,apy-4,2,3);ctx.fillRect(apx+1,apy-4,2,3);
+      // Body: 6x4
+      ctx.fillStyle='#b8a078';ctx.beginPath();ctx.ellipse(apx,apy,4,2.5,0,0,Math.PI*2);ctx.fill();
+      // Ears: 2x4 pointing up
+      ctx.fillStyle='#c0a888';ctx.fillRect(apx-2,apy-6,2,4);ctx.fillRect(apx+1,apy-6,2,4);
+      // Eye
+      ctx.fillStyle='#222';ctx.fillRect(apx+2,apy-1,1,1);
+      // Tail
+      ctx.fillStyle='#d8d0c0';ctx.beginPath();ctx.arc(apx-4,apy,1.5,0,Math.PI*2);ctx.fill();
     }else if(an.type==='wolf'){
-      ctx.fillStyle='rgba(0,0,0,0.15)';ctx.beginPath();ctx.ellipse(apx,apy+3,5,2,0,0,Math.PI*2);ctx.fill();
-      ctx.fillStyle='#5a5a5a';ctx.beginPath();ctx.ellipse(apx,apy,4,2.5,0,0,Math.PI*2);ctx.fill();
-      ctx.fillStyle='#4a4a4a';ctx.beginPath();ctx.arc(apx+(an.vx>0?4:-4),apy-2,2,0,Math.PI*2);ctx.fill();
-      ctx.fillStyle='#5a5a5a';ctx.beginPath();ctx.moveTo(apx+(an.vx>0?3:-3),apy-3);ctx.lineTo(apx+(an.vx>0?5:-5),apy-6);ctx.lineTo(apx+(an.vx>0?6:-6),apy-2);ctx.fill();
+      ctx.fillStyle='rgba(0,0,0,0.2)';ctx.beginPath();ctx.ellipse(apx,apy+5,6,2,0,0,Math.PI*2);ctx.fill();
+      // Body
+      ctx.fillStyle='#5a5a5a';ctx.beginPath();ctx.ellipse(apx,apy,5,3,0,0,Math.PI*2);ctx.fill();
+      // Head
+      const wdir=an.vx>0?1:-1;
+      ctx.fillStyle='#4a4a4a';ctx.beginPath();ctx.arc(apx+6*wdir,apy-3,3,0,Math.PI*2);ctx.fill();
+      // Pointy ears
+      ctx.fillStyle='#5a5a5a';
+      ctx.beginPath();ctx.moveTo(apx+5*wdir,apy-5);ctx.lineTo(apx+7*wdir,apy-10);ctx.lineTo(apx+9*wdir,apy-5);ctx.fill();
+      // Eyes
+      ctx.fillStyle='#ffaa00';ctx.fillRect(apx+5*wdir,apy-4,2,1);
     }else if(an.type==='chicken'){
-      ctx.fillStyle='#e8e0d0';ctx.beginPath();ctx.ellipse(apx,apy,2,1.5,0,0,Math.PI*2);ctx.fill();
-      ctx.fillStyle='#cc3333';ctx.fillRect(apx,apy-2,1,1);
-      ctx.fillStyle='#cc8833';ctx.fillRect(apx+2,apy-1,1,1);
+      // Body: white/cream 5x4
+      ctx.fillStyle='#e8e0d0';ctx.beginPath();ctx.ellipse(apx,apy,3,2,0,0,Math.PI*2);ctx.fill();
+      // Red comb
+      ctx.fillStyle='#cc3333';ctx.fillRect(apx-1,apy-3,2,2);
+      // Beak
+      ctx.fillStyle='#dd8822';ctx.fillRect(apx+3,apy-1,2,1);
+      // Legs
+      ctx.fillStyle='#dd8822';ctx.fillRect(apx-1,apy+2,1,2);ctx.fillRect(apx+1,apy+2,1,2);
+      // Peck animation
+      if(frame%40<5){ctx.fillStyle='#dd8822';ctx.fillRect(apx+3,apy+1,1,1)}
     }
   }
 }
@@ -3563,6 +3596,28 @@ for(let di=deerHerd.length-1;di>=0;di--){
   // Legs
   ctx.fillStyle='#6a5030';
   ctx.fillRect(dpx-3,dpy+2,1,3);ctx.fillRect(dpx+2,dpy+2,1,3);
+}
+
+// Fish jump (world-space, 1 at a time)
+if(!_slowMode&&frame%300<30){
+  const fishPhase=frame%300;
+  // Pick a deterministic water cell
+  const fh2=tileHash(Math.floor(frame/300),42);
+  const fx2=(fh2%WW),fy2=((fh2>>8)%WH);
+  if(fx2<WW&&fy2<WH&&tBiomes&&(tBiomes[fy2*WW+fx2]===0||tBiomes[fy2*WW+fx2]===1)){
+    const fpx=fx2*ts+ts/2,fpy=fy2*ts+ts/2;
+    const arc=Math.sin(fishPhase/30*Math.PI)*14;// arc height
+    // Fish body
+    ctx.fillStyle='#7a9aba';
+    ctx.beginPath();ctx.ellipse(fpx,fpy-arc,3,1.5,0.3,0,Math.PI*2);ctx.fill();
+    // Tail
+    ctx.fillStyle='#6a8aaa';ctx.beginPath();ctx.moveTo(fpx-3,fpy-arc);ctx.lineTo(fpx-6,fpy-arc-3);ctx.lineTo(fpx-6,fpy-arc+3);ctx.fill();
+    // Splash at entry/exit
+    if(fishPhase<5||fishPhase>25){
+      ctx.fillStyle='rgba(200,220,255,0.4)';
+      for(let si2=0;si2<3;si2++){ctx.beginPath();ctx.arc(fpx+(si2-1)*4,fpy+2,1.5,0,Math.PI*2);ctx.fill()}
+    }
+  }
 }
 
 // Speech bubbles (on top of everything)
