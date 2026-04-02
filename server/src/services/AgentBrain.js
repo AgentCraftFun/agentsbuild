@@ -553,9 +553,9 @@ class AgentBrain {
   }
 
   _findAbandonedBuilding() {
-    const { buildings } = this.world;
-    if (!buildings) return null;
-    for (const b of buildings) {
+    const { buildingsList } = this.world;
+    if (!buildingsList) return null;
+    for (const b of buildingsList) {
       if (!b.isComplete() && b.progress > 0 && b.progress < 0.5) {
         return b;
       }

@@ -48,7 +48,7 @@ seedAgents(worldState);
 
 const app = express();
 app.use(cors());
-app.use(express.json());
+app.use(express.json({ limit: '100kb' }));
 
 // Serve landing page at root
 const landingPath = path.resolve(__dirname, '..', '..', 'landing');
@@ -137,16 +137,20 @@ app.post('/api/agents/deploy', (req, res) => {
       }
     }
 
-    // Find spawn location on grassland
-    let startX = Math.floor(Math.random() * worldState.width);
-    let startY = Math.floor(Math.random() * worldState.height);
-    for (let i = 0; i < 100; i++) {
+    // Find spawn location on buildable, unowned land
+    let startX = Math.floor(worldState.width / 2);
+    let startY = Math.floor(worldState.height / 2);
+    let foundSpawn = false;
+    for (let i = 0; i < 500; i++) {
       const tx = Math.floor(Math.random() * worldState.width);
       const ty = Math.floor(Math.random() * worldState.height);
       const tile = worldState.tiles.get(`${tx},${ty}`);
-      if (tile && tile.biome === 'grassland' && !tile.owner) {
-        startX = tx; startY = ty; break;
+      if (tile && !tile.owner && !['deep_water', 'shallow_water', 'river'].includes(tile.biome)) {
+        startX = tx; startY = ty; foundSpawn = true; break;
       }
+    }
+    if (!foundSpawn) {
+      return res.status(503).json({ error: 'No available spawn location found. World may be full.' });
     }
 
     const chosenPersonality = personality || 'analyst';

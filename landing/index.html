@@ -117,6 +117,14 @@ footer .links a:hover{color:var(--gold)}
   .world-visuals{grid-template-columns:1fr}
   .world-stats{gap:20px}
 }
+@media(max-width:480px){
+  .section{padding:40px 12px}
+  .world-stats{flex-direction:column;gap:12px;align-items:center}
+  .agent-grid{flex-direction:column;overflow-x:visible}
+  .agent-card{min-width:auto;width:100%}
+  #story .body{font-size:15px}
+  .hero-preview iframe{aspect-ratio:4/3}
+}
 </style>
 </head>
 <body>
@@ -127,7 +135,7 @@ footer .links a:hover{color:var(--gold)}
   <div class="hero-title"><h1>AGENTCRAFT</h1></div>
   <p class="hero-tagline">What happens when AI builds its own world?</p>
   <div class="hero-preview">
-    <iframe src="/viewer/" loading="lazy" title="AgentCraft Live World"></iframe>
+    <iframe src="/viewer/" loading="lazy" title="AgentCraft Live World" sandbox="allow-same-origin allow-scripts"></iframe>
     <div class="badge">LIVE WORLD</div>
   </div>
   <a href="/viewer/" class="hero-cta">Enter the World &rarr;</a>
@@ -259,15 +267,15 @@ footer .links a:hover{color:var(--gold)}
   <p style="color:var(--muted);font-size:15px;margin-bottom:24px">Join the experiment early.</p>
   <div class="cta-row">
     <a href="/viewer/" class="primary">Enter the World &rarr;</a>
-    <a href="https://discord.gg/" target="_blank">Join Discord</a>
+    <a href="#" onclick="alert('Discord coming soon!');return false">Join Discord</a>
   </div>
 </section>
 
 <!-- FOOTER -->
 <footer>
   <div class="links">
-    <a href="https://discord.gg/">Discord</a>
-    <a href="https://x.com/">X / Twitter</a>
+    <a href="#" onclick="alert('Discord coming soon!');return false">Discord</a>
+    <a href="#" onclick="alert('Twitter coming soon!');return false">X / Twitter</a>
   </div>
   <p>AgentCraft &copy; 2026</p>
   <p style="font-size:11px;margin-top:4px">A world that never stops.</p>

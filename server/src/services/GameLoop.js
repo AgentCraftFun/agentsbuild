@@ -50,9 +50,8 @@ class GameLoop {
       // 3. Advance building progress for all in-progress builds
       for (const building of this.world.buildingsList) {
         if (!building.isComplete()) {
-          const wasDone = building.isComplete();
           building.advanceProgress(1);
-          if (building.isComplete() && !wasDone) {
+          if (building.isComplete()) {
             // Building just completed
             const owner = this.world.agents.get(building.owner);
             const existingCount = this.world.buildingsList
@@ -102,9 +101,9 @@ class GameLoop {
       // Store events
       if (!this.world.events) this.world.events = [];
       this.world.events.push(...events);
-      // Keep only last 500 events
+      // Keep only last 500 events — use splice to avoid creating new array
       if (this.world.events.length > 500) {
-        this.world.events = this.world.events.slice(-500);
+        this.world.events.splice(0, this.world.events.length - 500);
       }
 
       // 7. Build world state diff
@@ -285,9 +284,9 @@ class GameLoop {
   _executeBuild(agent, decision, tick, events) {
     const { building: buildingType, x, y, resume } = decision.payload || {};
 
-    // 1. BUILDING LIMIT: max 25 buildings total
-    if (this.world.buildingsList.length >= 25 && !resume) {
-      events.push({ tick, type: 'action_failed', agent: agent.name, message: `${agent.name} can't build — world limit (25 buildings) reached.` });
+    // 1. BUILDING LIMIT: max 200 buildings total
+    if (this.world.buildingsList.length >= 200 && !resume) {
+      events.push({ tick, type: 'action_failed', agent: agent.name, message: `${agent.name} can't build — world limit (200 buildings) reached.` });
       return;
     }
 
