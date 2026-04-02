@@ -3607,16 +3607,33 @@ for(const item of renderItems){
       // Eyes
       ctx.fillStyle='#ffaa00';ctx.fillRect(apx+5*wdir,apy-4,2,1);
     }else if(an.type==='chicken'){
-      // Body: white/cream 5x4
-      ctx.fillStyle='#e8e0d0';ctx.beginPath();ctx.ellipse(apx,apy,3,2,0,0,Math.PI*2);ctx.fill();
-      // Red comb
-      ctx.fillStyle='#cc3333';ctx.fillRect(apx-1,apy-3,2,2);
-      // Beak
-      ctx.fillStyle='#dd8822';ctx.fillRect(apx+3,apy-1,2,1);
+      const f=an.vx>=0?1:-1;
+      const pecking=(frame+Math.floor(an.phase*100))%50<8;
+      const bd=pecking?2:0;
+      // Shadow
+      ctx.fillStyle='rgba(0,0,0,0.15)';ctx.beginPath();ctx.ellipse(apx,apy+4,7,3,0,0,Math.PI*2);ctx.fill();
       // Legs
-      ctx.fillStyle='#dd8822';ctx.fillRect(apx-1,apy+2,1,2);ctx.fillRect(apx+1,apy+2,1,2);
-      // Peck animation
-      if(frame%40<5){ctx.fillStyle='#dd8822';ctx.fillRect(apx+3,apy+1,1,1)}
+      ctx.fillStyle='#c8a030';
+      ctx.fillRect(apx-3*f,apy-2+bd,2,5);ctx.fillRect(apx+1*f,apy-2+bd,2,5);
+      ctx.fillRect(apx-4*f,apy+3,3,1);ctx.fillRect(apx,apy+3,3,1);
+      // Body
+      ctx.fillStyle='#e8e0d0';ctx.fillRect(apx-5*f,apy-6+bd,10,8);
+      ctx.fillStyle='#d8d0c0';ctx.fillRect(apx-4*f,apy-7+bd,8,2);
+      // Wing
+      ctx.fillStyle='#d0c8b8';ctx.fillRect(apx-3*f,apy-4+bd,6,4);
+      // Tail
+      ctx.fillStyle='#d8d0c0';ctx.fillRect(apx-6*f,apy-8+bd,3,4);
+      ctx.fillStyle='#c8c0b0';ctx.fillRect(apx-7*f,apy-9+bd,2,3);
+      // Head
+      ctx.fillStyle='#e8e0d0';ctx.fillRect(apx+4*f,apy-8+bd,5,5);
+      // Eye
+      ctx.fillStyle='#1a1a1a';ctx.fillRect(apx+6*f,apy-7+bd,1,1);
+      // Beak
+      ctx.fillStyle='#dd9920';ctx.fillRect(apx+8*f,apy-6+bd+(pecking?1:0),2,1);
+      // Comb
+      ctx.fillStyle='#cc2222';ctx.fillRect(apx+5*f,apy-10+bd,3,2);ctx.fillRect(apx+4*f,apy-9+bd,2,1);
+      // Wattle
+      ctx.fillStyle='#cc2222';ctx.fillRect(apx+6*f,apy-4+bd,2,2);
     }
   }else if(item.type==='worldobj'){
     const wo=item.wo,wpx=wo.x*ts,wpy=wo.y*ts;
