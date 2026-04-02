@@ -555,6 +555,9 @@ function drawPaths(c,buildings,fr){
         const t=s/steps;
         const px=ax+(bx2-ax)*t+Math.sin(t*8+i)*3;
         const py=ay+(by2-ay)*t+Math.cos(t*6+j)*2;
+        // Skip path segments on water tiles
+        const tx2=Math.floor(px/TS),ty2=Math.floor(py/TS);
+        if(tx2>=0&&tx2<WW&&ty2>=0&&ty2<WH){const bi2=tBiomes[ty2*WW+tx2];if(bi2===0||bi2===1||bi2===10)continue}
         c.globalAlpha=0.3;
         for(let d=-1;d<=1;d++){
           c.fillRect(px+d*2,py+d,2,2);
@@ -3334,16 +3337,23 @@ for(const s of settlements){
   ctx.beginPath();ctx.arc(scx,scy,55,0,Math.PI*2);ctx.fill();
 
   // CROSSROADS — N/S and E/W roads through center (wider, with wheel tracks)
+  // Draw segment by segment, skipping water tiles
   const roadW=16,roadLen2=s.radius*ts+40;
-  ctx.fillStyle='rgba(138,122,88,0.22)';
-  ctx.fillRect(scx-roadW/2,scy-roadLen2,roadW,roadLen2*2);// N-S road
-  ctx.fillRect(scx-roadLen2,scy-roadW/2,roadLen2*2,roadW);// E-W road
-  // Wheel tracks (dark center lines on roads)
-  ctx.fillStyle='rgba(106,90,56,0.15)';
-  ctx.fillRect(scx-3,scy-roadLen2,2,roadLen2*2);// N-S track 1
-  ctx.fillRect(scx+2,scy-roadLen2,2,roadLen2*2);// N-S track 2
-  ctx.fillRect(scx-roadLen2,scy-3,roadLen2*2,2);// E-W track 1
-  ctx.fillRect(scx-roadLen2,scy+2,roadLen2*2,2);// E-W track 2
+  const roadStep=ts;// draw in tile-sized segments
+  // N-S road
+  for(let ry=scy-roadLen2;ry<scy+roadLen2;ry+=roadStep){
+    const rtx=Math.floor(scx/ts),rty=Math.floor(ry/ts);
+    if(rtx>=0&&rtx<WW&&rty>=0&&rty<WH){const rbi=tBiomes[rty*WW+rtx];if(rbi===0||rbi===1||rbi===10)continue}
+    ctx.fillStyle='rgba(138,122,88,0.22)';ctx.fillRect(scx-roadW/2,ry,roadW,roadStep);
+    ctx.fillStyle='rgba(106,90,56,0.15)';ctx.fillRect(scx-3,ry,2,roadStep);ctx.fillRect(scx+2,ry,2,roadStep);
+  }
+  // E-W road
+  for(let rx=scx-roadLen2;rx<scx+roadLen2;rx+=roadStep){
+    const rtx=Math.floor(rx/ts),rty=Math.floor(scy/ts);
+    if(rtx>=0&&rtx<WW&&rty>=0&&rty<WH){const rbi=tBiomes[rty*WW+rtx];if(rbi===0||rbi===1||rbi===10)continue}
+    ctx.fillStyle='rgba(138,122,88,0.22)';ctx.fillRect(rx,scy-roadW/2,roadStep,roadW);
+    ctx.fillStyle='rgba(106,90,56,0.15)';ctx.fillRect(rx,scy-3,roadStep,2);ctx.fillRect(rx,scy+2,roadStep,2);
+  }
 
   // BRANCH PATHS from each building to nearest road (wider, 8px)
   ctx.fillStyle='#8a7a58';ctx.globalAlpha=0.2;
@@ -3352,10 +3362,10 @@ for(const s of settlements){
     const toNS=Math.abs(bpx2-scx),toEW=Math.abs(bpy2-scy);
     if(toNS<toEW){
       const sy3=bpy2,sx3=Math.min(bpx2,scx),ex3=Math.max(bpx2,scx);
-      for(let px4=sx3;px4<ex3;px4+=3)ctx.fillRect(px4,sy3-3,4,6);
+      for(let px4=sx3;px4<ex3;px4+=3){const ptx=Math.floor(px4/ts),pty=Math.floor(sy3/ts);if(ptx>=0&&ptx<WW&&pty>=0&&pty<WH){const pbi=tBiomes[pty*WW+ptx];if(pbi===0||pbi===1||pbi===10)continue}ctx.fillRect(px4,sy3-3,4,6)}
     }else{
       const sx3=bpx2,sy3=Math.min(bpy2,scy),ey3=Math.max(bpy2,scy);
-      for(let py4=sy3;py4<ey3;py4+=3)ctx.fillRect(sx3-3,py4,6,4);
+      for(let py4=sy3;py4<ey3;py4+=3){const ptx=Math.floor(sx3/ts),pty=Math.floor(py4/ts);if(ptx>=0&&ptx<WW&&pty>=0&&pty<WH){const pbi=tBiomes[pty*WW+ptx];if(pbi===0||pbi===1||pbi===10)continue}ctx.fillRect(sx3-3,py4,6,4)}
     }
   }
   ctx.globalAlpha=1;
@@ -3467,7 +3477,11 @@ for(const s of settlements){
         const rx=scx+nx5*rd,ry=scy+ny5*rd;
         // Slight curve for natural feel
         const curveOff=Math.sin(rd*0.02)*10;
-        ctx.fillRect(rx+ny5*curveOff-4,ry-nx5*curveOff-4,8,8);
+        const rpx=rx+ny5*curveOff,rpy=ry-nx5*curveOff;
+        // Skip road segments on water tiles
+        const rtx2=Math.floor(rpx/ts),rty2=Math.floor(rpy/ts);
+        if(rtx2>=0&&rtx2<WW&&rty2>=0&&rty2<WH){const rbi2=tBiomes[rty2*WW+rtx2];if(rbi2===0||rbi2===1||rbi2===10)continue}
+        ctx.fillRect(rpx-4,rpy-4,8,8);
       }
     }
   }
