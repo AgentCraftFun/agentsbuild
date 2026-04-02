@@ -66,7 +66,7 @@ canvas{display:block;image-rendering:pixelated;image-rendering:crisp-edges}
 </style>
 </head>
 <body>
-<div id="notif-bar" style="position:fixed;top:-40px;left:50%;transform:translateX(-50%);background:rgba(10,10,30,0.9);border:1px solid #f0c040;border-radius:0 0 8px 8px;padding:8px 24px;color:#f0c040;font:bold 12px 'Courier New',monospace;z-index:600;transition:top 0.3s ease;text-align:center;white-space:nowrap"></div>
+<!-- notif-bar removed — using single drama-banner system -->
 <div id="intro-overlay" onclick="this.remove()"><div id="intro-text">Your agents have arrived in an untamed land...<br><br><span style="font-size:11px;color:#888">They must gather, build, and survive.<br><br>Click to start</span></div></div>
 <script>
 // FAILSAFE: remove intro no matter what after 4 seconds
@@ -1733,14 +1733,9 @@ function batchResourceSummary(){
   }
 }
 
-// === Notification System ===
-let notifTimer=0;
-function showNotification(msg){
-  const nb=document.getElementById('notif-bar');
-  nb.textContent=msg;nb.style.top='0px';
-  clearTimeout(notifTimer);
-  notifTimer=setTimeout(()=>{nb.style.top='-40px'},3000);
-}
+// === Notification System (consolidated — ONE banner only) ===
+let _bannerCooldown=0;
+function showNotification(msg){showDramaBanner(msg)}// delegate to single banner system
 
 function gameEvent(msg,cls){
   // Log to persistent event log with drama score
@@ -1751,13 +1746,9 @@ function gameEvent(msg,cls){
   if(msg.includes('UNLOCKED'))addPoints(50);
   if(msg.includes('formed')&&msg.includes('🏰'))addPoints(20);
   if(msg.includes('🏘️'))addPoints(30);
-  // Drama banners for major events
-  if(msg.includes('🏰')||msg.includes('⭐')||msg.includes('🏘️')||msg.includes('BETRAY')||msg.includes('💎')){
+  // ONE banner system — only for genuinely exciting events
+  if(msg.includes('🏰')||msg.includes('⭐')||msg.includes('🏘️')||msg.includes('BETRAY')||msg.includes('💎')||msg.includes('UNLOCKED')||msg.includes('☄️')||msg.includes('🌋')||msg.includes('🐉')||msg.includes('☠️')){
     showDramaBanner(msg);
-  }
-  // Notification for important events
-  if(msg.includes('🏰')||msg.includes('⭐')||msg.includes('🏘️')||msg.includes('Village')||msg.includes('formed')||msg.includes('UNLOCKED')){
-    showNotification(msg);
   }
   const el=document.getElementById('event-feed');
   const div=document.createElement('div');
@@ -2901,7 +2892,8 @@ if(frame%3===0)try{updateWildlife()}catch(e){}// wildlife every 3 frames
 // Drama events
 dramaTimer--;if(dramaTimer<=0){dramaTimer=60*(90+Math.random()*30);triggerDramaEvent()}
 // Spotlight
-spotlightTimer--;if(spotlightTimer<=0){spotlightTimer=60*180;triggerSpotlight()}// 3 min between spotlights
+// Banner cooldown tick
+if(_bannerCooldown>0)_bannerCooldown--;
 // Prediction timer
 if(predState.active){predState.timer--;if(predState.timer<=0)resolvePrediction()}
 // Influence cooldown
@@ -4196,18 +4188,14 @@ function updateWorldEvents(){
     if(rarity<0.60){// === COMMON ===
       if(roll<0.25){// Wandering Merchant
         G.gold+=20;G.food+=10;
-        showDramaBanner('🐪 A wandering merchant approaches!');
         gameEvent('🐪 Merchant traded goods (+20 gold, +10 food)','build_complete');
       }else if(roll<0.50){// Bountiful Harvest
         G.food+=40;
-        showDramaBanner('🌾 Bountiful harvest! Double food yield!');
         gameEvent('🌾 The land provides abundantly (+40 food)','build_complete');
       }else if(roll<0.75){// Strong Winds
         weatherState.type='wind';weatherState.timer=60*30;
-        showDramaBanner('💨 Strong winds sweep across the land!');
         gameEvent('💨 Strong winds — trees sway, leaves fly','agent_message');
-      }else{// Migration (visual)
-        showDramaBanner('🦌 A herd of deer crosses the plains');
+      }else{// Migration (visual — feed only, no banner)
         gameEvent('🦌 Wildlife spotted — deer migrating south','tile_claimed');
         // Spawn visible deer herd
         deerHerd.length=0;
@@ -4229,7 +4217,6 @@ function updateWorldEvents(){
         addPoints(10);
       }else if(roll<0.66){// Thunderstorm
         weatherState.type='rain';weatherState.timer=60*45;
-        showDramaBanner('⛈️ A thunderstorm is rolling in!');
         gameEvent('⛈️ Thunderstorm — agents seek shelter','agent_message');
         // Lightning may destroy a tree
         if(Math.random()<0.3&&harvestables.size<100){
@@ -4447,10 +4434,12 @@ function triggerSpotlight(){
 
 // === Drama Banners ===
 function showDramaBanner(text){
+  if(_bannerCooldown>0)return;// enforce 45s cooldown
+  _bannerCooldown=60*45;
   const el=document.getElementById('drama-banner');
   el.textContent=text;el.style.bottom='40px';el.style.opacity='1';
-  setTimeout(()=>{el.style.opacity='0'},4000);
-  setTimeout(()=>{el.style.bottom='-50px'},4500);
+  setTimeout(()=>{el.style.opacity='0'},5000);
+  setTimeout(()=>{el.style.bottom='-50px'},6000);
 }
 
 // Hook points into game events
