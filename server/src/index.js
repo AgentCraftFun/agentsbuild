@@ -240,8 +240,11 @@ app.post('/api/generate-building', async (req, res) => {
 
   try {
     const { agentName, personality, faction, era, resources, biome, settlementSize, clan } = req.body;
-    const Anthropic = require('@anthropic-ai/sdk');
-    const client = new Anthropic();
+    // Reuse the LLM brain's Anthropic client (initialized at startup)
+    const client = llmBrain.anthropic;
+    if (!client) {
+      return res.status(503).json({ error: 'Anthropic client not available' });
+    }
 
     const prompt = `You are a building architect in a pixel-art medieval/fantasy world. Design a small building for this character:
 
@@ -284,12 +287,23 @@ Category must be: residential, military, economic, cultural, or decorative`;
     const clean = text.replace(/```json|```/g, '').trim();
     const blueprint = JSON.parse(clean);
 
-    // Validate
+    // Validate structure and dimensions
     if (!blueprint.grid || !blueprint.name ||
         blueprint.width < 3 || blueprint.width > 6 ||
         blueprint.height < 3 || blueprint.height > 6 ||
-        !Array.isArray(blueprint.grid)) {
+        !Array.isArray(blueprint.grid) ||
+        blueprint.grid.length !== blueprint.height) {
       return res.status(422).json({ error: 'Invalid blueprint structure' });
+    }
+    // Ensure each row is an array of correct width with valid colors or null
+    for (let i = 0; i < blueprint.grid.length; i++) {
+      if (!Array.isArray(blueprint.grid[i])) { blueprint.grid[i] = new Array(blueprint.width).fill(null); }
+      while (blueprint.grid[i].length < blueprint.width) blueprint.grid[i].push(null);
+      blueprint.grid[i] = blueprint.grid[i].slice(0, blueprint.width).map(c => {
+        if (c === null) return null;
+        if (typeof c === 'string' && /^#[0-9a-fA-F]{6}$/.test(c)) return c;
+        return null;
+      });
     }
 
     res.json({ blueprint, callsRemaining: 200 - _aiBuildCount });

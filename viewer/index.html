@@ -1719,7 +1719,7 @@ function drawBuilding(c,b,bx,by,bw,bh,fr){
       if(p>0.05){
         const revealH=(bh+10)*Math.min(1,p/0.95);
         const clipTop=by+bh-revealH+4;
-        c.save();c.beginPath();c.rect(bx-6,clipTop,bw+20,revealH+10);c.clip();
+        c.save();c.beginPath();c.rect(bx-6,clipTop,bw+30,revealH+12);c.clip();
         drawCustomGridBuilding(c,b,bx,by,bw,bh,fr);
         c.restore();
         if(p<0.75){c.fillStyle='#8a6a30';c.fillRect(bx-3,Math.max(clipTop,by),2,by+bh-Math.max(clipTop,by));c.fillRect(bx+bw+1,Math.max(clipTop,by),2,by+bh-Math.max(clipTop,by))}
@@ -2971,9 +2971,10 @@ function pickBuildSite(bdef,agentId){
 function updateAgentMovement(){
   const hasLumberMill=G.clientBuildings.some(b=>b.type==='lumber_mill'&&b.complete);
   const hasQuarry=G.clientBuildings.some(b=>b.type==='quarry'&&b.complete);
-  // Cleanup dead agent visuals
+  // Cleanup dead agent visuals and blueprints
   const liveIds=new Set(S.agents.map(a=>a.id));
   for(const id of agentVisual.keys()){if(!liveIds.has(id)){agentVisual.delete(id);agentState.delete(id)}}
+  for(const id of agentBlueprints.keys()){if(!liveIds.has(id))agentBlueprints.delete(id)}
 
   for(const a of S.agents){
     let v=agentVisual.get(a.id);
@@ -3395,13 +3396,20 @@ for(let i=particles.length-1;i>=0;i--){if(!particles[i]||particles[i].life>=part
 for(let i=footprints.length-1;i>=0;i--){if(!footprints[i]||footprints[i].life<=0)footprints.splice(i,1)}
 // Filter corrupt building entries
 G.clientBuildings=G.clientBuildings.filter(b=>b&&typeof b.x==='number'&&isFinite(b.x)&&typeof b.y==='number'&&isFinite(b.y));
-// Deduplicate buildings: remove buildings of same type within 2 tiles of each other
-{const seen=[];G.clientBuildings=G.clientBuildings.filter(b=>{
-  const dup=seen.find(s=>s.type===b.type&&Math.abs(s.x-b.x)<2&&Math.abs(s.y-b.y)<2);
-  if(dup)return false;seen.push(b);return true;
-})}
-// Hard cap on buildings
-if(G.clientBuildings.length>100){console.warn('Building cap exceeded:',G.clientBuildings.length);G.clientBuildings.length=100}
+// Deduplicate buildings + enforce cap — only every 300 frames (~5 sec) to avoid O(n²) per frame
+if(frame%300===1){
+  const seen2=[];G.clientBuildings=G.clientBuildings.filter(b=>{
+    const dup=seen2.find(s=>s.type===b.type&&Math.abs(s.x-b.x)<2&&Math.abs(s.y-b.y)<2);
+    if(dup)return false;seen2.push(b);return true;
+  });
+  // Hard cap: remove oldest non-complete buildings first, then oldest complete
+  while(G.clientBuildings.length>100){
+    const idx=G.clientBuildings.findIndex(b=>!b.complete);
+    if(idx>=0)G.clientBuildings.splice(idx,1);
+    else G.clientBuildings.shift();// remove oldest completed
+    console.warn('Building cap enforced, removed oldest');
+  }
+}
 // Frame timing
 const _now=performance.now(),_dt=_now-_lastFrameTime;_lastFrameTime=_now;
 _slowMode=_dt>50;const _lowPerf=_dt>100;
