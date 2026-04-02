@@ -502,6 +502,12 @@ function getDetails(sx,sy,ex,ey){
   }
   for(let y=sy;y<ey;y++)for(let x=sx;x<ex;x++){
     const bi=tBiomes[y*WW+x],b=BL[bi],px=x*TS,py=y*TS;
+    // Skip deep water and river — only lily pads on shallow_water
+    if(bi===0||bi===10)continue;// deep_water, river: no details at all
+    if(bi===1){// shallow_water: only lily pads
+      const h1s=detailHash(x,y);if(h1s%100<8)D.push({t:'lilypad',x:px,y:py,h:h1s,sY:py+TS});
+      continue;
+    }
     const h1=detailHash(x,y),h2v=hash2(x,y),h3v=hash3(x,y);
     const r1=h1%100,r2=h2v%100,r3=h3v%100;
     const sY=py+TS;
@@ -537,9 +543,6 @@ function getDetails(sx,sy,ex,ey){
     if(b==='sand'){
       if(r1<6)D.push({t:'cactus',x:px,y:py,h:h1,sY});
       if(r2<5)D.push({t:'deadtree',x:px,y:py,h:h2v,sY});
-    }
-    if(b==='shallow_water'){
-      if(r1<8)D.push({t:'lilypad',x:px,y:py,h:h1,sY});
     }
   }
   // Filter out harvested details
@@ -3012,7 +3015,16 @@ for(const item of renderItems){
     }
     // Footprints (stamp every 30 frames while walking)
     if(ad.isWalking&&frame%30===0){
-      if(footprints.length<30)footprints.push({x:ad.vx*ts+ts/2,y:ad.vy*ts+ts,life:60});// shorter life, capped
+      // No footprints on water
+      const fpTx=Math.floor(ad.vx),fpTy=Math.floor(ad.vy);
+      if(fpTx>=0&&fpTx<WW&&fpTy>=0&&fpTy<WH){
+        const fpBi=tBiomes[fpTy*WW+fpTx];
+        if(fpBi!==0&&fpBi!==1&&fpBi!==10&&footprints.length<30){// not water/river
+          footprints.push({x:ad.vx*ts+ts/2,y:ad.vy*ts+ts,life:60});
+        }
+        // Splash particles on water
+        if((fpBi===0||fpBi===1||fpBi===10)&&frame%15===0)spawnParticle(ad.vx*ts+ts/2,ad.vy*ts+ts,'debris');
+      }
     }
     const ax=ad.vx*ts+ts/2,ay=ad.vy*ts+ts-4;
     const sel=selAgent&&selAgent.id===ad.a.id;
