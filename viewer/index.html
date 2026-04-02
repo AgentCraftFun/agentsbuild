@@ -1665,6 +1665,18 @@ function getNextBuilding(){
 
 function canAfford(cost){return G.wood>=cost.wood&&G.stone>=cost.stone&&G.gold>=cost.gold}
 
+// Batch resource summaries instead of per-gather event spam
+let _lastSummaryWood=0,_lastSummaryStone=0,_lastSummaryGold=0;
+function batchResourceSummary(){
+  const dw=G.wood-_lastSummaryWood,ds=G.stone-_lastSummaryStone,dg=G.gold-_lastSummaryGold;
+  _lastSummaryWood=G.wood;_lastSummaryStone=G.stone;_lastSummaryGold=G.gold;
+  if(dw>0||ds>0||dg>0){
+    const parts=[];
+    if(dw>0)parts.push(`+${dw}🪵`);if(ds>0)parts.push(`+${ds}🪨`);if(dg>0)parts.push(`+${dg}🪙`);
+    gameEvent(`Resources gathered: ${parts.join(' ')}`,'tile_claimed');
+  }
+}
+
 // === Notification System ===
 let notifTimer=0;
 function showNotification(msg){
@@ -1705,7 +1717,7 @@ function gameEvent(msg,cls){
   else if(msg.includes('Discover')||msg.includes('Found'))icon='⭐ ';
   div.innerHTML=`<span class="ev-time">${Math.floor(G.tick/60)}</span> ${icon}${msg}`;
   el.prepend(div);
-  while(el.children.length>30)el.removeChild(el.lastChild);
+  while(el.children.length>15)el.removeChild(el.lastChild);
   document.getElementById('last-event').textContent=icon+msg;
   for(const a of S.agents){if(msg.startsWith(a.name)){addBubble(a,msg.substring(0,30));break}}
 }
@@ -2338,12 +2350,10 @@ function updateAgentMovement(){
       if(st.target){
         const key=`${st.target.x},${st.target.y}`;
         harvestAnim.set(key,{progress:chopProg,shakeTimer:0,type:'tree'});
-        // Impact every 15 frames
+        // Impact every 15 frames (just shake + 1 particle, no text spam)
         if(frame%15===0){
           harvestAnim.get(key).shakeTimer=5;
-          // Wood chips
-          for(let i=0;i<4;i++)spawnParticle(st.target.x+TS/2+(Math.random()-0.5)*10,st.target.y+TS*0.6,'debris');
-          impactTexts.push({x:st.target.x+TS/2,y:st.target.y+TS*0.3,text:'chop!',color:'#b09050',life:0,maxLife:18});
+          spawnParticle(st.target.x+TS/2,st.target.y+TS*0.6,'debris');
         }
       }
       if(st.timer<=0){
@@ -2353,7 +2363,7 @@ function updateAgentMovement(){
         const soc3=getAgentSocial(a.id);soc3.morale=Math.min(100,soc3.morale+5);soc3.stats.treesChopped++;
         milestones.trees++;checkMilestones();
         if(q2&&q2.regrows&&st.target){const rk=`${st.target.x},${st.target.y}`;setTimeout(()=>harvestables.delete(rk),60000)}
-        gameEvent(`${a.name} chopped a tree (+${woodAmt} wood)`,'build_complete');
+        // Batched in summary — no individual event spam
         if(st.target){
           const key2=`${st.target.x},${st.target.y}`;
           harvestables.set(key2,true);harvestAnim.delete(key2);
@@ -2374,16 +2384,14 @@ function updateAgentMovement(){
         harvestAnim.set(key,{progress:mineProg,shakeTimer:0,type:'rock'});
         if(frame%20===0){
           harvestAnim.get(key).shakeTimer=4;
-          spawnParticle(st.target.x+TS/2,st.target.y+TS/2,'gold');// bright spark
-          spawnParticle(st.target.x+TS/2+(Math.random()-0.5)*8,st.target.y+TS/2,'debris');
-          impactTexts.push({x:st.target.x+TS/2,y:st.target.y+TS*0.3,text:'clink!',color:'#aaa',life:0,maxLife:18});
+          spawnParticle(st.target.x+TS/2,st.target.y+TS/2,'debris');
         }
       }
       if(st.timer<=0){
         G.stone+=3;worldStats.totalStone+=3;
         const soc4=getAgentSocial(a.id);soc4.morale=Math.min(100,soc4.morale+5);soc4.stats.stoneMined++;
         milestones.stones++;checkMilestones();
-        gameEvent(`${a.name} mined stone (+3 stone)`,'build_complete');
+        // Batched in summary
         if(st.target){
           const key2=`${st.target.x},${st.target.y}`;
           harvestables.set(key2,true);harvestAnim.delete(key2);
@@ -2397,11 +2405,10 @@ function updateAgentMovement(){
       st.timer-=(isLazy?0.5:1);
       if(st.target&&frame%20===0){
         spawnParticle(st.target.x+TS/2,st.target.y+TS/2,'gold');
-        impactTexts.push({x:st.target.x+TS/2,y:st.target.y+TS*0.3,text:'clink!',color:'#ffd700',life:0,maxLife:18});
       }
       if(st.timer<=0){
         G.gold+=1;worldStats.totalGold++;getAgentSocial(a.id).stats.goldMined++;
-        gameEvent(`${a.name} found gold (+1 gold)`,'build_complete');
+        // Batched in summary
         if(st.target)st.target.alive=false;
         st.state='idle';st.taskCooldown=15;
       }
@@ -2414,13 +2421,8 @@ function updateAgentMovement(){
       const buildSpeed=buildEra?(0.003+0.01/(1+buildEra.era)):0.008;// era0=0.013, era3=0.0055
       st.target.progress=Math.min(1,st.target.progress+buildSpeed);
       // Building impact effects
-      if(frame%12===0){
-        const bpx=st.target.x*TS+TS,bpy=st.target.y*TS+TS;
-        spawnParticle(bpx+(Math.random()-0.5)*10,bpy-5,'debris');
-        const txt=G.era<2?'tap!':'tink!';
-        const col2=G.era<1?'#b09050':'#aaa';
-        impactTexts.push({x:bpx,y:bpy-10,text:txt,color:col2,life:0,maxLife:15});
-      }
+      // Building particles (just 1, no text spam)
+      if(frame%20===0)spawnParticle(st.target.x*TS+TS+(Math.random()-0.5)*10,st.target.y*TS+TS-5,'debris');
       if(st.target.progress>=1){
         st.target.complete=true;st.target.claimedBy=null;
         st.target.owner=a.id;st.target.ownerName=a.name;
@@ -2548,6 +2550,17 @@ function updateMinimap(){
 let frame=0;
 function render(){
 try{
+// HARD CAPS — enforce every frame (prevents runaway arrays)
+while(bubbles.length>3)bubbles.shift();
+while(impactTexts.length>5)impactTexts.shift();
+while(particles.length>20)particles.shift();
+while(footprints.length>30)footprints.shift();
+while(stumps.length>10)stumps.shift();
+// Sweep dead entries
+for(let i=bubbles.length-1;i>=0;i--)if(bubbles[i].life<=0)bubbles.splice(i,1);
+for(let i=impactTexts.length-1;i>=0;i--)if(impactTexts[i].life>=impactTexts[i].maxLife)impactTexts.splice(i,1);
+for(let i=particles.length-1;i>=0;i--)if(particles[i].life>=particles[i].maxLife)particles.splice(i,1);
+for(let i=footprints.length-1;i>=0;i--)if(footprints[i].life<=0)footprints.splice(i,1);
 // Frame timing
 const _now=performance.now(),_dt=_now-_lastFrameTime;_lastFrameTime=_now;
 _frameTimes.push(_dt);if(_frameTimes.length>60)_frameTimes.shift();
@@ -2603,7 +2616,7 @@ if(frame%60===0)tickNeeds();
 if(frame%90===0)checkSocialInteractions();
 socialCheckTimer--;if(socialCheckTimer<=0){socialCheckTimer=600;checkClanFormation();checkVillages()}
 if(frame%30===0)updateConflicts();
-if(frame%300===0)ensureResourceAbundance();
+if(frame%300===0){ensureResourceAbundance();batchResourceSummary()}
 // Drama events
 dramaTimer--;if(dramaTimer<=0){dramaTimer=60*(90+Math.random()*30);triggerDramaEvent()}
 // Spotlight
@@ -2806,9 +2819,8 @@ for(const a of S.agents){
   const faceLeft=v&&(v.tx<v.x);
   let isBuilding=false;
   for(const b of S.buildings){if(!b.complete&&b.progress!=null&&b.progress<1){if(Math.abs(vx-b.x)+Math.abs(vy-b.y)<4){isBuilding=true;break}}}
-  if(isWalking&&frame%20===0)spawnParticle(vx*ts+ts/2,vy*ts+ts,'debris');
-  if(isBuilding&&frame%10===4)spawnParticle(vx*ts+ts/2+((Math.random()-0.5)*8),vy*ts,'debris');
-  if(a.personality==='lazy'&&frame%45===0)spawnParticle(vx*ts+ts/2+(Math.random()-0.5)*6,vy*ts-10,'leaf');
+  // Only building gets rare particles (no walking/lazy spam)
+  if(isBuilding&&frame%30===0)spawnParticle(vx*ts+ts/2,vy*ts,'debris');
   agentRenderData.push({a,vx,vy,isWalking,faceLeft,isBuilding});
   renderItems.push({type:'agent',idx:agentRenderData.length-1,sortY:vy*ts+ts});
 }
@@ -2863,7 +2875,7 @@ for(const item of renderItems){
     }
     // Footprints (stamp every 30 frames while walking)
     if(ad.isWalking&&frame%30===0){
-      footprints.push({x:ad.vx*ts+ts/2,y:ad.vy*ts+ts,life:120});
+      if(footprints.length<30)footprints.push({x:ad.vx*ts+ts/2,y:ad.vy*ts+ts,life:60});// shorter life, capped
     }
     const ax=ad.vx*ts+ts/2,ay=ad.vy*ts+ts-4;
     const sel=selAgent&&selAgent.id===ad.a.id;
@@ -3119,27 +3131,19 @@ requestAnimationFrame(render)}
 const bubbles=[];
 function addBubble(agent,text){
   for(let i=bubbles.length-1;i>=0;i--)if(bubbles[i].agent.id===agent.id)bubbles.splice(i,1);
-  while(bubbles.length>=5)bubbles.shift();// cap at 5
-  bubbles.push({agent,text:text.substring(0,30),life:220,maxLife:220});
+  while(bubbles.length>=3)bubbles.shift();
+  bubbles.push({agent,text:text.substring(0,30),life:90,maxLife:90});
 }
 
 // === Ambient Particle System ===
 const particles=[];
 function spawnParticle(x,y,type){
-  if(particles.length>=30){particles.shift()}// hard cap 30, remove oldest
-  const p={x,y,type,life:0,maxLife:60,alpha:1,size:2,color:'#fff',vx:0,vy:0,radius:0};
-  if(type==='gold'){
-    p.color='#ffd700';p.size=2;p.vy=-0.3;p.maxLife=60;
-    p.vx=(Math.random()-0.5)*0.3;
-  }else if(type==='smoke'){
-    p.color='rgba(150,150,160,1)';p.radius=2;p.vy=-0.2;p.vx=0.1;p.maxLife=90;
-  }else if(type==='leaf'){
-    const greens=['#3a8a28','#4aaa38','#2a7a18','#5abc3a'];
-    p.color=greens[Math.floor(Math.random()*greens.length)];
-    p.size=2;p.vy=-0.1;p.vx=0.15;p.maxLife=120;
-  }else if(type==='debris'){
-    p.color='#8a6a30';p.size=1;p.vy=-1.5;p.vx=(Math.random()-0.5)*0.8;p.maxLife=40;
-  }
+  if(particles.length>=20)return;// hard cap 20
+  const p={x,y,type,life:0,maxLife:30,alpha:1,size:2,color:'#fff',vx:0,vy:0,radius:0};
+  if(type==='gold'){p.color='#ffd700';p.size=2;p.vy=-0.5;p.vx=(Math.random()-0.5)*0.3}
+  else if(type==='smoke'){p.color='rgba(150,150,160,1)';p.radius=2;p.vy=-0.3;p.vx=0.1}
+  else if(type==='leaf'){p.color='#3a8a28';p.size=2;p.vy=-0.2;p.vx=0.15}
+  else if(type==='debris'){p.color='#8a6a30';p.size=1;p.vy=-1.5;p.vx=(Math.random()-0.5)*0.8}
   particles.push(p);
 }
 
