@@ -523,7 +523,9 @@ function getDetails(sx,sy,ex,ey){
       if(r1<8)D.push({t:'deciduous',x:px,y:py,h:h1,sY});
       else if(r1>=8&&r1<12)D.push({t:'oak',x:px,y:py,h:h1,sY});
       if(nearWater&&r2<3)D.push({t:'birch',x:px,y:py,h:h2v,sY});
-      if(r2>=3&&r2<15)D.push({t:'bush',x:px,y:py,h:h2v,sY});
+      else if(nearWater&&r2>=3&&r2<8)D.push({t:'willow',x:px,y:py,h:h2v,sY});// willow near water
+      if(r2>=8&&r2<20)D.push({t:'bush',x:px,y:py,h:h2v,sY});
+      if(r1>=12&&r1<17)D.push({t:'fruittree',x:px,y:py,h:h1,sY});// fruit trees
       if(r3<15)D.push({t:'tallgrass',x:px,y:py,h:h3v,sY});
       if(r3>=15&&r3<19)D.push({t:'flower',x:px,y:py,h:h3v,sY});
     }
@@ -566,6 +568,8 @@ function drawDeciduous(c,px,py,h){
   c.fillStyle='#3a9a2a';c.beginPath();c.arc(ox-2,oy-29,10,0,Math.PI*2);c.fill();// front bright
   // Highlight spot
   c.fillStyle='#5ebc40';c.beginPath();c.arc(ox-5,oy-33,4,0,Math.PI*2);c.fill();
+  // Canopy underside shadow
+  c.fillStyle='rgba(0,0,0,0.12)';c.beginPath();c.arc(ox+1,oy-18,14,0,Math.PI);c.fill();
   // Leaf texture: 5 tiny scattered circles on front canopy
   const leafGreens=['#4aaa30','#32882a','#56c442','#3a9828','#48b636'];
   for(let li=0;li<5;li++){
@@ -619,6 +623,38 @@ function drawBush(c,px,py,h){
   c.fillStyle='#2a6818';c.beginPath();c.arc(ox,oy,8,0,Math.PI*2);c.fill();
   c.fillStyle='#3a8828';c.beginPath();c.arc(ox+5,oy-3,6,0,Math.PI*2);c.fill();
   c.fillStyle='#4aa838';c.beginPath();c.arc(ox+1,oy-4,3,0,Math.PI*2);c.fill();
+}
+function drawWillow(c,px,py,h){
+  const ox=px+TS/2+((h%6)-3),oy=py+TS-2;
+  c.fillStyle='rgba(0,0,0,0.2)';c.beginPath();c.ellipse(ox+4,oy+3,14,5,0,0,Math.PI*2);c.fill();
+  c.fillStyle='#5a3a18';c.fillRect(ox-3,oy-16,6,16);// trunk
+  // Round canopy, lighter green
+  c.fillStyle='#3a8a2a';c.beginPath();c.arc(ox,oy-22,13,0,Math.PI*2);c.fill();
+  c.fillStyle='#4a9a3a';c.beginPath();c.arc(ox-1,oy-25,10,0,Math.PI*2);c.fill();
+  // Drooping branches
+  c.strokeStyle='#3a7a2a';c.lineWidth=1;
+  for(let wi=0;wi<5;wi++){
+    const a=wi*(Math.PI/4)-Math.PI*0.5;
+    const bx2=ox+Math.cos(a)*11,by2=oy-22+Math.sin(a)*11;
+    c.beginPath();c.moveTo(bx2,by2);
+    c.quadraticCurveTo(bx2+Math.cos(a)*4,by2+12,bx2+Math.cos(a)*2,by2+18);
+    c.stroke();
+  }
+  c.lineWidth=1;
+}
+function drawFruitTree(c,px,py,h){
+  const ox=px+TS/2+((h%6)-3),oy=py+TS-2;
+  c.fillStyle='rgba(0,0,0,0.2)';c.beginPath();c.ellipse(ox+4,oy+3,12,5,0,0,Math.PI*2);c.fill();
+  c.fillStyle='#5a3a18';c.fillRect(ox-3,oy-14,6,14);
+  c.fillStyle='#2a7a1a';c.beginPath();c.arc(ox,oy-20,12,0,Math.PI*2);c.fill();
+  c.fillStyle='#3a9a2a';c.beginPath();c.arc(ox-1,oy-23,9,0,Math.PI*2);c.fill();
+  // Fruits: type based on hash
+  const fruitType=h%3;
+  const fruitCol=fruitType===0?'#cc3333':fruitType===1?'#dd8822':'#ddaacc';
+  c.fillStyle=fruitCol;
+  for(let fi=0;fi<4;fi++){
+    c.fillRect(ox-6+((h>>(fi*3+4))%12),oy-26+((h>>(fi*3+6))%10),3,3);
+  }
 }
 function drawTallGrass(c,px,py,h,fr){
   const ox=px+4+(h%14),oy=py+TS-2;
@@ -728,6 +764,8 @@ function drawDetail(c,d,fr){
   else if(t==='cactus')drawCactus(c,d.x,d.y,d.h);
   else if(t==='mushroom')drawMushroom(c,d.x,d.y,d.h);
   else if(t==='lilypad')drawLilyPad(c,d.x,d.y,d.h);
+  else if(t==='willow')drawWillow(c,d.x,d.y,d.h);
+  else if(t==='fruittree')drawFruitTree(c,d.x,d.y,d.h);
   else if(t==='lgboulder')drawLargeBoulder(c,d.bdata);
   else if(t==='mdboulder')drawMediumRock(c,d.bdata);
   else if(t==='golddeposit')drawGoldDeposit(c,d.x,d.y,d.h,fr);
@@ -3290,7 +3328,7 @@ for(const t of S.tiles){if(t.x<sx||t.x>=ex||t.y<sy||t.y>=ey)continue;if(t.owner)
 // Layer 4-6: UNIFIED Y-SORT — all standing objects in one list
 const renderItems=[];
 // Standing details with proper sort keys (bottom/ground contact point)
-const treeLikeTypes=new Set(['deciduous','oak','pine','birch','deadtree']);
+const treeLikeTypes=new Set(['deciduous','oak','pine','birch','deadtree','willow','fruittree']);
 for(const d of details){
   if(groundTypes.has(d.t))continue;
   // Sort by ground contact: trees sort by trunk base, others by bottom
