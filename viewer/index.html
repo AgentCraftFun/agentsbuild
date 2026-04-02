@@ -2795,7 +2795,11 @@ vpY=Math.min(0,Math.max(-(worldPxH-viewH),vpY));
 const cw=canvasEl.width,ch=canvasEl.height;
 // Fill with ocean color before anything (eliminates black void)
 ctx.fillStyle='#061050';ctx.fillRect(0,0,cw,ch);
-ctx.save();ctx.scale(zoom,zoom);ctx.translate(vpX,vpY);
+ctx.save();ctx.scale(zoom,zoom);
+// Screen shake effect
+let shX=0,shY=0;
+if(screenShake>0){shX=Math.sin(frame*1.7)*screenShake*0.3;shY=Math.cos(frame*2.3)*screenShake*0.3;screenShake--}
+ctx.translate(vpX+shX,vpY+shY);
 const ts=TS;
 const sx=Math.max(0,Math.floor(-vpX/ts-1)),sy=Math.max(0,Math.floor(-vpY/ts-1));
 const ex=Math.min(WW,Math.ceil((-vpX+cw/zoom)/ts+1)),ey=Math.min(WH,Math.ceil((-vpY+ch/zoom)/ts+1));
@@ -3800,60 +3804,120 @@ function checkMilestones(){
   if(milestones.builds===5)showNotification('🏘️ 5 buildings completed!');
 }
 
+// Screen shake state
+let screenShake=0;
+
 function updateWorldEvents(){
   weatherCooldown--;
   if(weatherCooldown<=0){
-    weatherCooldown=WEATHER_INTERVAL*(0.7+Math.random()*0.6);
+    weatherCooldown=60*(90+Math.random()*60);// 90-150 sec
+    // Roll rarity: Common 60%, Uncommon 25%, Rare 10%, Legendary 5%
+    const rarity=Math.random();
     const roll=Math.random();
-    if(roll<0.2){
-      weatherState.type='rain';weatherState.timer=60*15;
-      const a=S.agents[Math.floor(Math.random()*S.agents.length)];
-      if(a)gameEvent(`${a.name}: It's raining...`,'agent_message');
-    }else if(roll<0.35){
-      weatherState.type='wind';weatherState.timer=60*5;
-    }else if(roll<0.55){
-      // Resource discovery — spawn new gold deposit
-      const a=S.agents[Math.floor(Math.random()*S.agents.length)];
-      if(a){
-        const msg=DISCOVERY_MSGS[Math.floor(Math.random()*DISCOVERY_MSGS.length)];
-        gameEvent(`${a.name}: ${msg}`,'build_complete');
-        const v=agentVisual.get(a.id);
-        if(v){
-          for(let i=0;i<5;i++)spawnParticle(v.x*WW*TS+Math.random()*20-10,v.y*WH*TS-10+Math.random()*20,'gold');
-          // Actually spawn a new gold deposit nearby
-          if(goldDeposits.filter(g=>g.alive).length<12){
-            goldDeposits.push({x:v.x*WW*TS,y:v.y*WH*TS,h:tileHash(frame,frame*7),alive:true});
-          }
+
+    if(rarity<0.60){// === COMMON ===
+      if(roll<0.25){// Wandering Merchant
+        G.gold+=20;G.food+=10;
+        showDramaBanner('🐪 A wandering merchant approaches!');
+        gameEvent('🐪 Merchant traded goods (+20 gold, +10 food)','build_complete');
+      }else if(roll<0.50){// Bountiful Harvest
+        G.food+=40;
+        showDramaBanner('🌾 Bountiful harvest! Double food yield!');
+        gameEvent('🌾 The land provides abundantly (+40 food)','build_complete');
+      }else if(roll<0.75){// Strong Winds
+        weatherState.type='wind';weatherState.timer=60*30;
+        showDramaBanner('💨 Strong winds sweep across the land!');
+        gameEvent('💨 Strong winds — trees sway, leaves fly','agent_message');
+      }else{// Migration (visual)
+        showDramaBanner('🦌 A herd of deer crosses the plains');
+        gameEvent('🦌 Wildlife spotted — deer migrating south','tile_claimed');
+      }
+    }else if(rarity<0.85){// === UNCOMMON ===
+      if(roll<0.33){// Gold Rush
+        for(let i=0;i<3;i++){
+          const rng2=new SeededRNG(frame+i*77);
+          const gx=Math.floor(0.3*WW+rng2.next()*0.4*WW),gy=Math.floor(rng2.next()*0.3*WH);
+          goldDeposits.push({x:gx*TS,y:gy*TS,h:tileHash(gx+frame,gy),alive:true});
+        }
+        showDramaBanner('💰 GOLD RUSH! Rich deposits discovered!');
+        gameEvent('💰 Gold Rush — 3 new deposits near the mountains!','build_complete');
+        addPoints(10);
+      }else if(roll<0.66){// Thunderstorm
+        weatherState.type='rain';weatherState.timer=60*45;
+        showDramaBanner('⛈️ A thunderstorm is rolling in!');
+        gameEvent('⛈️ Thunderstorm — agents seek shelter','agent_message');
+        // Lightning may destroy a tree
+        if(Math.random()<0.3&&harvestables.size<100){
+          const rng2=new SeededRNG(frame);
+          const lx=Math.floor(rng2.next()*WW),ly=Math.floor(rng2.next()*WH);
+          harvestables.set(`${lx*TS},${ly*TS}`,true);
+          gameEvent('⚡ Lightning struck a tree!','raid_success');
+        }
+      }else{// Territorial Dispute
+        if(S.agents.length>=2){
+          const a1=S.agents[Math.floor(Math.random()*S.agents.length)];
+          let a2=S.agents[Math.floor(Math.random()*S.agents.length)];
+          if(a2.id===a1.id)a2=S.agents[(S.agents.indexOf(a1)+1)%S.agents.length];
+          showDramaBanner(`⚔️ Dispute: ${a1.name} vs ${a2.name}!`);
+          gameEvent(`⚔️ Territorial dispute between ${a1.name} and ${a2.name}!`,'raid_success');
+          addBubble(a1,'This land is ours!');addBubble(a2,'Back off!');
+          const s1=getAgentSocial(a1.id),s2=getAgentSocial(a2.id);
+          if(s1.clan&&s2.clan)modTension(s1.clan,s2.clan,20);
         }
       }
-    }else if(roll<0.7){
-      // Natural regrowth — remove some old stumps and let trees regrow
-      if(harvestables.size>5){
-        let cleared=0;
-        for(const[key] of harvestables){if(cleared<3){harvestables.delete(key);cleared++}}
-        gameEvent('🌱 New growth spotted in the forest','tile_claimed');
+    }else if(rarity<0.95){// === RARE ===
+      if(roll<0.33){// Meteor Strike
+        screenShake=10;
+        const mx2=Math.floor(0.2*WW+Math.random()*0.6*WW),my2=Math.floor(0.2*WH+Math.random()*0.6*WH);
+        // Destroy trees in radius
+        for(let dy=-2;dy<=2;dy++)for(let dx=-2;dx<=2;dx++)harvestables.set(`${(mx2+dx)*TS},${(my2+dy)*TS}`,true);
+        G.gold+=50;G.stone+=30;
+        for(let i=0;i<8;i++)spawnParticle(mx2*TS+Math.random()*40-20,my2*TS+Math.random()*40-20,'gold');
+        showDramaBanner('☄️ METEOR STRIKE! Something crashed!');
+        gameEvent('☄️ Meteor impact — 50 gold + 30 stone recovered!','build_complete');
+        addPoints(10);
+      }else if(roll<0.66){// Ancient Ruins
+        G.gold+=100;
+        showDramaBanner('🏛️ Ancient ruins emerge from the ground!');
+        gameEvent('🏛️ Ancient ruins discovered — 100 gold found!','build_complete');
+        addPoints(10);
+      }else{// Plague of Locusts
+        G.food=Math.max(0,G.food-30);
+        showDramaBanner('🦗 Locusts devastate the region!');
+        gameEvent('🦗 Plague of locusts — 30 food destroyed!','raid_success');
       }
-    }else if(roll<0.85){
-      // Population growth — spawn new agent if conditions met
-      if(S.agents.length<16&&G.clientBuildings.filter(b=>b.complete).length>=5&&G.food>30){
-        const faction=['human','orc','dwarf','elf'][Math.floor(Math.random()*4)];
-        const name2=NEW_AGENT_NAMES[Math.floor(Math.random()*NEW_AGENT_NAMES.length)];
-        const pers2=['optimist','grinder','analyst','aggressive','chaotic'][Math.floor(Math.random()*5)];
-        const spawnB=G.clientBuildings.find(b=>b.complete);
-        if(spawnB){
-          const newA={id:'new_'+frame,name:name2,faction,personality:pers2,x:spawnB.x,y:spawnB.y,mood:'idle',current_action:null,message:'',resources:{food:0,wood:0,stone:0,gold:0},work_balance:0,owned_tiles:0};
-          S.agents.push(newA);
-          const vName=villages.length>0?villages[0].name:'the settlement';
-          gameEvent(`👤 ${name2} arrived at ${vName}!`,'build_complete');
-          showNotification(`👤 New settler: ${name2}!`);
+    }else{// === LEGENDARY ===
+      if(roll<0.5){// Dragon Sighting
+        showDramaBanner('🐉 Something massive flies over the mountains...');
+        gameEvent('🐉 DRAGON SIGHTING! Agents are terrified!','raid_success');
+        for(const a of S.agents)addBubble(a,'What was THAT?!');
+        addPoints(10);
+      }else{// Earthquake
+        screenShake=30;
+        // Damage random building
+        const dmg=G.clientBuildings.find(b=>b.complete);
+        if(dmg){dmg.progress=Math.max(0.3,dmg.progress-0.3);dmg.complete=false}
+        // Spawn new rocks
+        G.stone+=20;
+        for(let i=0;i<3;i++){
+          const rng2=new SeededRNG(frame+i);
+          const rx=Math.floor(rng2.next()*WW),ry=Math.floor(rng2.next()*WH);
+          if(tBiomes[ry*WW+rx]!==0)harvestables.delete(`${rx*TS},${ry*TS}`);
         }
+        showDramaBanner('🌋 EARTHQUAKE! The ground trembles!');
+        gameEvent('🌋 Earthquake! A building damaged, new stone deposits!','raid_success');
+        addPoints(10);
       }
-    }else{
-      // Wandering trader event
-      const a=S.agents[Math.floor(Math.random()*S.agents.length)];
-      if(a){
-        G.gold+=2;G.food+=5;
-        gameEvent(`🧳 A wandering trader visited and left gifts (+2 gold, +5 food)`,'build_complete');
+    }
+    // Also handle natural regrowth and population
+    if(harvestables.size>5){let cl=0;for(const[key] of harvestables){if(cl<5){harvestables.delete(key);cl++}}}
+    if(S.agents.length<16&&G.clientBuildings.filter(b=>b.complete).length>=5&&G.food>30){
+      const faction=['human','orc','dwarf','elf'][Math.floor(Math.random()*4)];
+      const nm2=NEW_AGENT_NAMES[Math.floor(Math.random()*NEW_AGENT_NAMES.length)];
+      const spawnB=G.clientBuildings.find(b=>b.complete);
+      if(spawnB){
+        S.agents.push({id:'new_'+frame,name:nm2,faction,personality:['optimist','grinder','analyst'][Math.floor(Math.random()*3)],x:spawnB.x,y:spawnB.y,mood:'idle',current_action:null,message:'',resources:{food:0,wood:0,stone:0,gold:0},work_balance:0,owned_tiles:0});
+        gameEvent(`👤 ${nm2} arrived!`,'build_complete');
       }
     }
   }
