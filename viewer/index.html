@@ -2231,23 +2231,45 @@ const RING2_TYPES=new Set(['wood_hut','log_cabin','stone_house','brick_house','a
 const RING3_TYPES=new Set(['quarry','lumber_mill','farm','factory','office']);
 const RING4_TYPES=new Set(['watchtower','monument','fence','statue']);
 
+// Agent settlement group assignment (cached)
+const agentSettlementGroup=new Map();// agentId -> groupId
+function assignAgentGroups(){
+  if(agentSettlementGroup.size>0)return;
+  // Split agents into 2-3 groups based on spawn position
+  const sorted=[...S.agents].sort((a2,b2)=>a2.x-b2.x);
+  const groupSize=Math.ceil(sorted.length/Math.min(3,Math.max(2,Math.floor(sorted.length/3))));
+  sorted.forEach((a2,i)=>agentSettlementGroup.set(a2.id,Math.floor(i/groupSize)));
+}
+
 function getSettlementForAgent(agentId){
+  assignAgentGroups();
+  const groupId=agentSettlementGroup.get(agentId);
   const soc=getAgentSocial(agentId);
-  // Find existing settlement for this agent's clan/faction
-  for(const s of settlements){
-    if(soc.clan&&s.clan===soc.clan)return s;
-    if(!soc.clan&&s.faction===S.agents.find(a=>a.id===agentId)?.faction)return s;
-  }
+  // First: check clan settlement
+  if(soc.clan){for(const s of settlements){if(s.clan===soc.clan)return s}}
+  // Then: check group settlement
+  for(const s of settlements){if(s.groupId===groupId)return s}
   return null;
 }
 
 function createSettlement(agentId,tx,ty){
+  // MINIMUM DISTANCE: 25% of map from any existing settlement
+  const minDist=0.25;
+  for(const es of settlements){
+    if(Math.abs(es.cx/WW-tx/WW)+Math.abs(es.cy/WH-ty/WH)<minDist){
+      // Too close — try to offset further away
+      const angle=Math.atan2(ty-es.cy,tx-es.cx);
+      tx=Math.max(5,Math.min(WW-5,Math.round(es.cx+Math.cos(angle)*WW*0.3)));
+      ty=Math.max(5,Math.min(WH-5,Math.round(es.cy+Math.sin(angle)*WH*0.3)));
+    }
+  }
   const a=S.agents.find(a2=>a2.id===agentId);
   const soc=getAgentSocial(agentId);
+  const groupId=agentSettlementGroup.get(agentId)||0;
   let name=TERRAIN_WORDS[Math.floor(Math.random()*TERRAIN_WORDS.length)]+' '+SUFFIX_WORDS[Math.floor(Math.random()*SUFFIX_WORDS.length)];
   // Ensure unique name
   let suffix=2;while(settlements.find(s2=>s2.name===name)){name=name.replace(/ [IVX]+$/,'')+' '+['II','III','IV','V'][suffix-2];suffix++}
-  const s={name,clan:soc.clan||null,faction:a?a.faction:'human',cx:tx,cy:ty,buildings:[],radius:6,clearRadius:3};
+  const s={name,clan:soc.clan||null,faction:a?a.faction:'human',cx:tx,cy:ty,buildings:[],radius:6,clearRadius:3,groupId};
   settlements.push(s);
   villages.push({name:s.name,cx:tx,cy:ty,faction:s.faction,buildings:s.buildings});
   // Clear initial settlement zone
@@ -2585,6 +2607,13 @@ function updateAgentMovement(){
         const dep=goldDeposits.find(g=>g.alive);
         if(dep){st.state='walking_to_gold';st.target=dep;v.tx=dep.x/WW/TS+0.01;v.ty=dep.y/WH/TS+0.01}
         else{action='mine';st.taskCooldown=10}
+      }
+      // Occasional visit to another settlement (2% chance when idle)
+      if(settlements.length>=2&&Math.random()<0.02){
+        const mySett=getSettlementForAgent(a.id);
+        const other=settlements.find(s2=>s2!==mySett);
+        if(other){v.tx=other.cx/WW;v.ty=other.cy/WH;st.taskCooldown=300;
+          addBubble(a,`Visiting ${other.name}...`);continue}
       }
       // Fishing: if food is low, walk toward water to fish
       if(G.food<20&&st.state==='idle'&&Math.random()<0.2){
@@ -3206,6 +3235,24 @@ for(const s of settlements){
     ctx.fillStyle='#ddd';ctx.font='7px Courier New';ctx.textAlign='center';ctx.textBaseline='middle';
     ctx.fillText(s.name,signX,signY-10);
   }
+}
+
+// TRADE ROUTES between settlements (dotted brown lines)
+if(settlements.length>=2){
+  ctx.setLineDash([4,6]);ctx.lineWidth=2;
+  for(let si=0;si<settlements.length;si++){
+    for(let sj=si+1;sj<settlements.length;sj++){
+      const s1=settlements[si],s2=settlements[sj];
+      // Draw trade route if both have 3+ buildings
+      const b1=G.clientBuildings.filter(b=>b.settlement===s1.name&&b.complete).length;
+      const b2=G.clientBuildings.filter(b=>b.settlement===s2.name&&b.complete).length;
+      if(b1>=3&&b2>=3){
+        ctx.strokeStyle='rgba(138,122,88,0.2)';
+        ctx.beginPath();ctx.moveTo(s1.cx*ts+ts/2,s1.cy*ts+ts/2);ctx.lineTo(s2.cx*ts+ts/2,s2.cy*ts+ts/2);ctx.stroke();
+      }
+    }
+  }
+  ctx.setLineDash([]);ctx.lineWidth=1;
 }
 
 // Village/settlement names — positioned ABOVE topmost building, always visible
