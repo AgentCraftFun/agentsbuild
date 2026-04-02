@@ -782,6 +782,7 @@ const ROOF_COL={human:'#2a3a5a',orc:'#4a1808',dwarf:'#4a2a10',elf:'#1a3a10',neut
 const ROOF_LIGHT={human:'#3a4a6a',orc:'#5a2818',dwarf:'#5a3a20',elf:'#2a4a20',neutral:'#5a5a5a'};
 
 function drawCompletedBuilding(c,b,bx,by,bw,bh,fr){
+  if(!isFinite(bw)||!isFinite(bh)||bw<=0||bh<=0||bw>300||bh>300)return;// safety cap
   const fc=b.faction||'human',cols=BFC[fc]||BFC.human;
   const tall=b.tall||false;
   const roofC=ROOF_COL[fc]||ROOF_COL.neutral;
@@ -908,12 +909,12 @@ function drawCompletedBuilding(c,b,bx,by,bw,bh,fr){
 }
 
 function drawBuildingPixelArt(c,b,bx,by,bw,bh,fr){
+  if(!isFinite(bw)||!isFinite(bh)||bw<=0||bh<=0||bw>300||bh>300)return;
   const fc=b.faction||'human',cols=BFC[fc]||BFC.human;
   const p=b.progress!=null?b.progress:1;
   const tall=b.tall||false;
 
-  // Completed buildings get the detailed renderer
-  if(p>=1){return drawCompletedBuilding(c,b,bx,by,bw,bh,fr)}
+  if(p>=1){try{return drawCompletedBuilding(c,b,bx,by,bw,bh,fr)}catch(e){return}}
 
   // === UNDER CONSTRUCTION (all existing animation stages) ===
   // p>0.02: Foundation
@@ -1357,8 +1358,9 @@ function drawFactory(c,bx,by,bw,bh,fr){
 }
 
 function drawBuilding(c,b,bx,by,bw,bh,fr){
+  if(!isFinite(bx)||!isFinite(by)||!isFinite(bw)||!isFinite(bh)||bw<=0||bh<=0)return;
   const p=b.progress!=null?b.progress:1;
-  const type=b.type;
+  const type=b.type||'';
   // Legacy special types
   if(type==='mine_shaft')return drawGoldMine(c,bx,by,bw,bh,p,fr);
   if(type==='moonwell')return drawLighthouse(c,bx,by,bw,bh,p,fr);
@@ -2549,20 +2551,24 @@ function updateMinimap(){
 // === Render ===
 let frame=0;
 function render(){
+requestAnimationFrame(render);// ALWAYS schedule next frame FIRST — loop never dies
 try{
-// HARD CAPS — enforce every frame (prevents runaway arrays)
+// HARD CAPS — enforce every frame
 while(bubbles.length>3)bubbles.shift();
 while(impactTexts.length>5)impactTexts.shift();
 while(particles.length>20)particles.shift();
 while(footprints.length>30)footprints.shift();
 while(stumps.length>10)stumps.shift();
-// Sweep dead entries
-for(let i=bubbles.length-1;i>=0;i--)if(bubbles[i].life<=0)bubbles.splice(i,1);
-for(let i=impactTexts.length-1;i>=0;i--)if(impactTexts[i].life>=impactTexts[i].maxLife)impactTexts.splice(i,1);
-for(let i=particles.length-1;i>=0;i--)if(particles[i].life>=particles[i].maxLife)particles.splice(i,1);
-for(let i=footprints.length-1;i>=0;i--)if(footprints[i].life<=0)footprints.splice(i,1);
+for(let i=bubbles.length-1;i>=0;i--){if(!bubbles[i]||bubbles[i].life<=0)bubbles.splice(i,1)}
+for(let i=impactTexts.length-1;i>=0;i--){if(!impactTexts[i]||impactTexts[i].life>=impactTexts[i].maxLife)impactTexts.splice(i,1)}
+for(let i=particles.length-1;i>=0;i--){if(!particles[i]||particles[i].life>=particles[i].maxLife)particles.splice(i,1)}
+for(let i=footprints.length-1;i>=0;i--){if(!footprints[i]||footprints[i].life<=0)footprints.splice(i,1)}
+// Filter corrupt building entries
+G.clientBuildings=G.clientBuildings.filter(b=>b&&typeof b.x==='number'&&isFinite(b.x)&&typeof b.y==='number'&&isFinite(b.y));
 // Frame timing
 const _now=performance.now(),_dt=_now-_lastFrameTime;_lastFrameTime=_now;
+_slowMode=_dt>50;// update existing slow mode flag
+const _lowPerf=_dt>100;// if last frame >100ms, skip more
 _frameTimes.push(_dt);if(_frameTimes.length>60)_frameTimes.shift();
 _slowMode=_dt>32;// below 30fps
 frame++;G.tick=frame;
@@ -2842,8 +2848,10 @@ for(const item of renderItems){
     drawDetail(ctx,item.d,frame);
   }else if(item.type==='building'){
     const b=item.b;
+    if(!b||typeof b.x!=='number'||!isFinite(b.x)||typeof b.y!=='number'||!isFinite(b.y))continue;
     const bw=b.pw||(b.width||1)*ts,bh=b.ph||(b.height||1)*ts,bx=b.x*ts,by=b.y*ts-Math.max(0,bh-ts);
-    drawBuilding(ctx,b,bx+2,by+2,bw-4,bh-4,frame);
+    if(!isFinite(bw)||!isFinite(bh)||bw<=0||bh<=0)continue;
+    try{drawBuilding(ctx,b,bx+2,by+2,bw-4,bh-4,frame)}catch(be){console.warn('Building draw error:',be)}
     // Progress bar above building during construction
     const p=b.progress!=null?b.progress:1;
     if(p<1){
@@ -2865,9 +2873,11 @@ for(const item of renderItems){
     }
   }else if(item.type==='agent'){
     const ad=agentRenderData[item.idx];
+    if(!ad||!ad.a||!isFinite(ad.vx)||!isFinite(ad.vy))continue;
     const tc=TEAM_COL[ad.a.faction]||'#888';
-    // Movement trail
-    for(let ti=0;ti<ad.a._trail.length-1;ti++){
+    // Movement trail (capped)
+    const trailLen=Math.min(ad.a._trail?ad.a._trail.length:0,3);
+    for(let ti=0;ti<trailLen-1;ti++){
       const tp=ad.a._trail[ti];
       ctx.fillStyle=tc;ctx.globalAlpha=0.06*(ti+1)/ad.a._trail.length;
       ctx.beginPath();ctx.arc(tp.x*ts+ts/2,tp.y*ts+ts-4,4-ti,0,Math.PI*2);ctx.fill();
@@ -3125,7 +3135,7 @@ if(shiftDown&&_frameTimes.length>10){
   ctx.fillText(`${fps} fps`,canvasEl.width-6,canvasEl.height-4);
 }
 }catch(e){console.error('Frame error:',e)}
-requestAnimationFrame(render)}
+}// rAF already scheduled at top
 
 // === Speech Bubble System ===
 const bubbles=[];
