@@ -1,14 +1,14 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.20;
 
-/// @title WORK Token
-/// @notice ERC-20 token for the "Agents at Work" game economy.
-/// @dev Activity-gated emission with no max supply. Only MINTER_ROLE holders can mint.
-contract WORK {
+/// @title AgentCraft Token ($AGENTCRAFT)
+/// @notice ERC-20 utility token for the AgentCraft autonomous AI civilization.
+/// @dev Deployed on Base L2. Activity-gated emission with no max supply. Only MINTER_ROLE holders can mint.
+contract AgentCraft {
     // ──────────────────── ERC-20 Storage ────────────────────
 
-    string public constant name     = "WORK";
-    string public constant symbol   = "WORK";
+    string public constant name     = "AgentCraft";
+    string public constant symbol   = "AGENTCRAFT";
     uint8  public constant decimals = 18;
 
     uint256 public totalSupply;

@@ -2,9 +2,9 @@
 pragma solidity ^0.8.20;
 
 /// @title LandRegistry
-/// @notice ERC-721 land deed contract for the "Agents at Work" 200x150 tile world.
+/// @notice ERC-721 land deed contract for the AgentCraft 200x150 tile world.
 /// @dev Token IDs are deterministic tile IDs (0 .. 29 999). Land is purchased by
-///      burning WORK tokens at the biome-specific price.
+///      burning $AGENTCRAFT tokens at the biome-specific price.
 contract LandRegistry {
     // ──────────────────── Constants ─────────────────────────
 
@@ -14,8 +14,8 @@ contract LandRegistry {
 
     // ──────────────────── ERC-721 Metadata ──────────────────
 
-    string public constant name   = "Agents at Work Land";
-    string public constant symbol = "AAWLAND";
+    string public constant name   = "AgentCraft Land";
+    string public constant symbol = "ACLAND";
 
     // ──────────────────── ERC-721 Storage ───────────────────
 
@@ -30,9 +30,9 @@ contract LandRegistry {
     address public owner;
     address public server; // SERVER_ROLE — can set biomes
 
-    IWORK public immutable workToken;
+    IAgentCraft public immutable agentCraftToken;
 
-    /// @notice Biome id => price in WORK (18 decimals).
+    /// @notice Biome id => price in $AGENTCRAFT (18 decimals).
     mapping(uint8 => uint256) public biomePrice;
 
     /// @notice Tile id => biome id.
@@ -92,18 +92,18 @@ contract LandRegistry {
 
     // ──────────────────── Constructor ───────────────────────
 
-    /// @param _workToken Address of the WORK ERC-20 contract.
+    /// @param _agentCraftToken Address of the $AGENTCRAFT ERC-20 contract.
     /// @param _owner     Initial contract owner.
-    constructor(address _workToken, address _owner) {
-        if (_workToken == address(0) || _owner == address(0)) revert ZeroAddress();
-        workToken = IWORK(_workToken);
+    constructor(address _agentCraftToken, address _owner) {
+        if (_agentCraftToken == address(0) || _owner == address(0)) revert ZeroAddress();
+        agentCraftToken = IAgentCraft(_agentCraftToken);
         owner = _owner;
         server = _owner; // default server to owner; can be changed later
     }
 
     // ──────────────────── Land Claims ───────────────────────
 
-    /// @notice Claim a tile by burning the biome-appropriate WORK cost.
+    /// @notice Claim a tile by burning the biome-appropriate $AGENTCRAFT cost.
     /// @param tileId Tile to claim (0 .. 29 999).
     function claim(uint256 tileId) external nonReentrant {
         if (tileId >= MAX_TILE_ID) revert InvalidTileId();
@@ -113,8 +113,8 @@ contract LandRegistry {
         uint256 price = biomePrice[biome];
         if (price == 0) revert BiomePriceNotSet();
 
-        // Burn WORK from caller (requires prior approval to this contract)
-        workToken.burnFrom(msg.sender, price);
+        // Burn $AGENTCRAFT from caller (requires prior approval to this contract)
+        agentCraftToken.burnFrom(msg.sender, price);
 
         // Mint the land deed
         _mint(msg.sender, tileId);
@@ -287,7 +287,7 @@ contract LandRegistry {
 
 // ──────────────────── Minimal Interfaces ────────────────────
 
-interface IWORK {
+interface IAgentCraft {
     function burnFrom(address from, uint256 amount) external;
     function transfer(address to, uint256 amount) external returns (bool);
     function transferFrom(address from, address to, uint256 amount) external returns (bool);
