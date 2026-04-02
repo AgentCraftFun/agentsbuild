@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Agents at Work</title>
+<title>AgentCraft</title>
 <style>
 *{margin:0;padding:0;box-sizing:border-box}
 :root{--bg:#0d0d1a;--panel:#080812;--border:#1a1a3e;--text:#c8c8d8;--dim:#666680;--accent:#4488ff;--gold:#ffcc44;--red:#ff4444;--green:#44cc44;--human:#4488ff;--orc:#cc4444;--dwarf:#cc8844;--elf:#aa44cc}
@@ -119,7 +119,7 @@ setTimeout(function(){var io=document.getElementById('intro-overlay');if(io)io.r
 <!-- era-announce removed — using drama banner system -->
 <div id="app">
   <div id="header">
-    <h1>Agents at Work</h1>
+    <h1>AgentCraft</h1>
     <div id="header-stats">
       <span id="h-era-wrap" style="display:flex;align-items:center;gap:4px"><span id="h-era-icon">🪵</span> <span class="val" id="h-era">Wood Age</span></span>
       <span>Pop: <span class="val" id="h-agents">0</span></span>
@@ -148,20 +148,23 @@ setTimeout(function(){var io=document.getElementById('intro-overlay');if(io)io.r
       <div class="section-title">Villages</div>
       <div id="village-list" style="padding:4px 12px;font-size:10px"></div>
     </div>
-    <div id="leaderboard-section" style="border-bottom:1px solid var(--border)">
-      <div class="section-title" style="cursor:pointer" onclick="document.getElementById('lb-content').style.display=document.getElementById('lb-content').style.display==='none'?'':'none'">🏆 Leaderboard ▾</div>
-      <div id="lb-content" style="padding:4px 12px;font-size:9px;max-height:120px;overflow-y:auto;display:none"></div>
-    </div>
     <div id="event-section">
       <div class="section-title">Event Feed</div>
       <div id="event-feed"></div>
     </div>
-    <div id="predict-section" style="border-top:1px solid var(--border);padding:6px 12px;font-size:10px;display:none">
-      <div style="color:var(--dim);font-size:9px;text-transform:uppercase;letter-spacing:1px;margin-bottom:4px">🔮 Predict</div>
-      <div id="predict-question" style="color:#ddd;margin-bottom:4px"></div>
-      <div id="predict-options"></div>
-      <div id="predict-result" style="margin-top:4px;color:#f0c040;display:none"></div>
-      <div id="predict-accuracy" style="font-size:8px;color:var(--dim);margin-top:2px"></div>
+    <div id="market-section" style="border-top:1px solid var(--border);padding:8px 12px">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px">
+        <div style="color:var(--dim);font-size:9px;text-transform:uppercase;letter-spacing:1px">🔮 Prediction Market</div>
+        <div id="wallet-status" style="font-size:8px;color:#666;cursor:pointer" onclick="connectWallet()">Connect Wallet</div>
+      </div>
+      <div id="market-question" style="color:#ddd;font-size:11px;margin-bottom:6px;line-height:1.4"></div>
+      <div id="market-odds" style="display:flex;gap:4px;margin-bottom:6px">
+        <div id="odds-yes" style="flex:1;text-align:center;padding:4px;background:rgba(68,204,68,0.1);border:1px solid #2a4a2a;border-radius:3px;font-size:9px;color:#44cc44;cursor:pointer" onclick="openBetModal('yes')">YES <span id="odds-yes-pct">50%</span></div>
+        <div id="odds-no" style="flex:1;text-align:center;padding:4px;background:rgba(255,68,68,0.1);border:1px solid #4a2a2a;border-radius:3px;font-size:9px;color:#ff4444;cursor:pointer" onclick="openBetModal('no')">NO <span id="odds-no-pct">50%</span></div>
+      </div>
+      <div id="market-pool" style="font-size:8px;color:#555;margin-bottom:4px">Pool: 0 $AGENTCRAFT</div>
+      <div id="market-timer" style="font-size:8px;color:#888"></div>
+      <div id="market-result" style="font-size:10px;color:#f0c040;display:none;margin-top:4px"></div>
     </div>
     <div id="deploy-section" style="border-top:1px solid var(--border);padding:8px 12px">
       <button id="deploy-btn" style="width:100%;padding:8px;background:linear-gradient(135deg,#f0c040,#dd8833);color:#0a0a14;font-family:'Courier New',monospace;font-weight:bold;font-size:11px;border:none;border-radius:4px;cursor:pointer;letter-spacing:1px;text-transform:uppercase">🚀 Deploy Agent</button>
@@ -275,6 +278,33 @@ setTimeout(function(){var io=document.getElementById('intro-overlay');if(io)io.r
       <button class="deploy-submit" onclick="deployImportAgent()">Connect & Deploy</button>
       <div id="import-status" class="deploy-status"></div>
     </div>
+  </div>
+</div>
+
+<!-- BET MODAL -->
+<div id="bet-modal" style="display:none;position:fixed;top:0;left:0;right:0;bottom:0;z-index:950;background:rgba(5,5,20,0.9);align-items:center;justify-content:center">
+  <div style="background:#0d0d1e;border:2px solid #f0c040;border-radius:12px;width:min(380px,90vw);padding:20px;font-family:'Courier New',monospace;box-shadow:0 0 60px rgba(240,192,64,0.15)">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px">
+      <h3 style="color:#f0c040;font-size:13px;letter-spacing:2px;margin:0">PLACE BET</h3>
+      <button onclick="closeBetModal()" style="background:none;border:none;color:#666;font-size:18px;cursor:pointer">&times;</button>
+    </div>
+    <div id="bet-question" style="color:#ddd;font-size:12px;margin-bottom:12px;line-height:1.4"></div>
+    <div id="bet-side" style="text-align:center;margin-bottom:12px">
+      <span id="bet-side-label" style="font-size:14px;font-weight:bold;letter-spacing:2px"></span>
+    </div>
+    <div style="margin-bottom:12px">
+      <label style="display:block;font-size:9px;text-transform:uppercase;letter-spacing:1px;color:#666;margin-bottom:4px">Bet Amount ($AGENTCRAFT)</label>
+      <div style="display:flex;gap:6px;margin-bottom:8px">
+        <button class="bet-preset" onclick="setBetAmount(10)" style="flex:1;padding:6px;background:#1a1a3e;border:1px solid #3a3a5e;border-radius:3px;color:#f0c040;cursor:pointer;font-family:'Courier New',monospace;font-size:11px">10</button>
+        <button class="bet-preset" onclick="setBetAmount(50)" style="flex:1;padding:6px;background:#1a1a3e;border:1px solid #3a3a5e;border-radius:3px;color:#f0c040;cursor:pointer;font-family:'Courier New',monospace;font-size:11px">50</button>
+        <button class="bet-preset" onclick="setBetAmount(100)" style="flex:1;padding:6px;background:#1a1a3e;border:1px solid #3a3a5e;border-radius:3px;color:#f0c040;cursor:pointer;font-family:'Courier New',monospace;font-size:11px">100</button>
+        <button class="bet-preset" onclick="setBetAmount(500)" style="flex:1;padding:6px;background:#1a1a3e;border:1px solid #3a3a5e;border-radius:3px;color:#f0c040;cursor:pointer;font-family:'Courier New',monospace;font-size:11px">500</button>
+      </div>
+      <input type="number" id="bet-amount" value="10" min="1" style="width:100%;padding:8px;background:#080812;border:1px solid #2a2a4e;border-radius:4px;color:#f0c040;font-family:'Courier New',monospace;font-size:14px;text-align:center;box-sizing:border-box;outline:none">
+    </div>
+    <div id="bet-payout" style="font-size:10px;color:#888;text-align:center;margin-bottom:12px">Potential payout: <span style="color:#aaffaa">—</span></div>
+    <button id="bet-confirm-btn" onclick="confirmBet()" style="width:100%;padding:10px;background:linear-gradient(135deg,#f0c040,#dd8833);color:#0a0a14;font-family:'Courier New',monospace;font-weight:bold;font-size:12px;border:none;border-radius:4px;cursor:pointer;letter-spacing:1px">CONFIRM & SIGN TRANSACTION</button>
+    <div id="bet-status" style="font-size:10px;text-align:center;margin-top:8px;min-height:14px;color:#aaffaa"></div>
   </div>
 </div>
 
@@ -2999,16 +3029,6 @@ function updateGameUI(){
   // Leaderboard (update every 5 seconds)
   if(frame%300===0){
     const lb=getLeaderboards();
-    const lbEl=document.getElementById('lb-content');
-    if(lbEl&&lb.fame.length>0){
-      lbEl.innerHTML=
-        `<div style="color:var(--dim);margin-bottom:2px">🏆 Most Famous</div>`+
-        lb.fame.slice(0,3).map((a2,i)=>`<div style="color:${FC[a2.faction]||'#ccc'}">${i+1}. ${a2.name} — ${a2.fame}pts</div>`).join('')+
-        `<div style="color:var(--dim);margin-top:4px">🏗️ Best Builder</div>`+
-        lb.builder.slice(0,2).map((a2,i)=>`<div style="color:${FC[a2.faction]||'#ccc'}">${i+1}. ${a2.name} — ${a2.builder} built</div>`).join('')+
-        `<div style="color:var(--dim);margin-top:4px">⚔️ Most Aggressive</div>`+
-        lb.aggressive.slice(0,2).map((a2,i)=>`<div style="color:${FC[a2.faction]||'#ccc'}">${i+1}. ${a2.name}</div>`).join('');
-    }
   }
   // Minimap
   updateMinimap();
@@ -3193,7 +3213,8 @@ dramaTimer--;if(dramaTimer<=0){dramaTimer=60*(90+Math.random()*30);triggerDramaE
 // Banner cooldown tick
 if(_bannerCooldown>0)_bannerCooldown--;
 // Prediction timer
-if(predState.active){predState.timer--;if(predState.timer<=0)resolvePrediction()}
+// Old prediction system disabled — using prediction market now
+if(typeof predState!=='undefined'&&predState.active){predState.active=false}
 // Influence cooldown
 if(influenceCooldown>0){influenceCooldown--}
 // Agent quirks (every 60 frames)
@@ -5382,6 +5403,245 @@ async function deployImportAgent(){
 }
 
 // LLM agents persist server-side — no localStorage needed
+
+// === Prediction Market + Wallet ===
+let _walletAddress=null;
+let _walletConnected=false;
+
+async function connectWallet(){
+  const statusEl=document.getElementById('wallet-status');
+  if(_walletConnected){statusEl.textContent=_walletAddress.slice(0,6)+'...'+_walletAddress.slice(-4);return}
+  if(!window.ethereum){
+    statusEl.textContent='No wallet found';statusEl.style.color='#ff6644';
+    // Open MetaMask install page
+    window.open('https://metamask.io/download/','_blank');
+    return;
+  }
+  try{
+    statusEl.textContent='Connecting...';statusEl.style.color='#f0c040';
+    const accounts=await window.ethereum.request({method:'eth_requestAccounts'});
+    if(accounts.length>0){
+      _walletAddress=accounts[0];_walletConnected=true;
+      statusEl.textContent=_walletAddress.slice(0,6)+'...'+_walletAddress.slice(-4);
+      statusEl.style.color='#aaffaa';
+    }
+  }catch(e){
+    statusEl.textContent='Rejected';statusEl.style.color='#ff6644';
+  }
+}
+
+// Listen for account changes
+if(window.ethereum){
+  window.ethereum.on('accountsChanged',accs=>{
+    if(accs.length>0){_walletAddress=accs[0];_walletConnected=true;
+      document.getElementById('wallet-status').textContent=_walletAddress.slice(0,6)+'...'+_walletAddress.slice(-4);
+    }else{_walletAddress=null;_walletConnected=false;
+      document.getElementById('wallet-status').textContent='Connect Wallet';document.getElementById('wallet-status').style.color='#666'}
+  });
+}
+
+// Prediction market state
+const MARKET_QUESTIONS=[
+  {q:'Will a new settlement be founded in the next 3 minutes?',check:()=>settlements.length>(_marketSnapshot.settlements||0)},
+  {q:'Will any agent reach Stone Age in 2 minutes?',check:()=>G.era>=1&&_marketSnapshot.era<1},
+  {q:'Will {agent} complete a building in 2 minutes?',check:()=>G.clientBuildings.filter(b=>b.complete).length>(_marketSnapshot.completedBuildings||0),needsAgent:true},
+  {q:'Will a clan conflict escalate in the next 3 minutes?',check:()=>{for(const[,t] of clanTension){if(t.tension>=70)return true}return false}},
+  {q:'Will total buildings exceed {n} in 3 minutes?',check:()=>G.clientBuildings.length>=_marketSnapshot.targetBuildings,needsCount:true},
+  {q:'Will {agent} chop more than 5 trees in 2 minutes?',check:()=>{const s=getAgentSocial(_marketSnapshot.agentId);return s&&(s.stats.treesChopped-(_marketSnapshot.treesChopped||0))>=5},needsAgent:true},
+  {q:'Will a new agent arrive in the next 4 minutes?',check:()=>S.agents.length>_marketSnapshot.agentCount},
+  {q:'Will {agent} switch clans in 3 minutes?',check:()=>{const s=getAgentSocial(_marketSnapshot.agentId);return s&&s.clan!==_marketSnapshot.agentClan},needsAgent:true},
+];
+
+let _currentMarket=null;
+let _marketSnapshot={};
+let _marketBets={yes:[],no:[]};// [{address,amount}]
+let _marketTimer=0;
+let _marketResolveTick=0;
+let _betSide=null;
+
+function generateMarket(){
+  const template=MARKET_QUESTIONS[Math.floor(Math.random()*MARKET_QUESTIONS.length)];
+  let question=template.q;
+  const agent=S.agents[Math.floor(Math.random()*S.agents.length)];
+
+  // Snapshot for resolution
+  _marketSnapshot={
+    settlements:settlements.length,
+    era:G.era,
+    completedBuildings:G.clientBuildings.filter(b=>b.complete).length,
+    agentCount:S.agents.length,
+  };
+
+  if(template.needsAgent&&agent){
+    question=question.replace('{agent}',agent.name);
+    _marketSnapshot.agentId=agent.id;
+    const soc=getAgentSocial(agent.id);
+    _marketSnapshot.treesChopped=soc?soc.stats.treesChopped:0;
+    _marketSnapshot.agentClan=soc?soc.clan:null;
+  }
+  if(template.needsCount){
+    const target=G.clientBuildings.length+Math.floor(Math.random()*5)+3;
+    question=question.replace('{n}',target);
+    _marketSnapshot.targetBuildings=target;
+  }
+
+  // Duration: 2-4 minutes
+  const durationMin=question.includes('2 min')?2:question.includes('4 min')?4:3;
+  const durationFrames=durationMin*60*60;
+
+  _currentMarket={question,check:template.check,duration:durationFrames,startTick:frame};
+  _marketBets={yes:[],no:[]};
+  _marketResolveTick=frame+durationFrames;
+
+  // Update UI
+  document.getElementById('market-question').textContent=question;
+  document.getElementById('market-result').style.display='none';
+  updateMarketUI();
+}
+
+function updateMarketUI(){
+  if(!_currentMarket)return;
+  const yesTotal=_marketBets.yes.reduce((s,b)=>s+b.amount,0);
+  const noTotal=_marketBets.no.reduce((s,b)=>s+b.amount,0);
+  const total=yesTotal+noTotal;
+  const yesPct=total>0?Math.round(yesTotal/total*100):50;
+  const noPct=total>0?100-yesPct:50;
+
+  document.getElementById('odds-yes-pct').textContent=yesPct+'%';
+  document.getElementById('odds-no-pct').textContent=noPct+'%';
+  document.getElementById('odds-yes').style.borderColor=`rgba(68,204,68,${0.3+yesPct/200})`;
+  document.getElementById('odds-no').style.borderColor=`rgba(255,68,68,${0.3+noPct/200})`;
+  document.getElementById('market-pool').textContent=`Pool: ${total} $AGENTCRAFT`;
+
+  // Timer
+  const remaining=Math.max(0,_marketResolveTick-frame);
+  const secs=Math.ceil(remaining/60);
+  const mins=Math.floor(secs/60);
+  const s=secs%60;
+  document.getElementById('market-timer').textContent=remaining>0?`Resolves in ${mins}:${s.toString().padStart(2,'0')}`:'Resolving...';
+}
+
+function openBetModal(side){
+  if(!_currentMarket){return}
+  if(!_walletConnected){connectWallet();return}
+  _betSide=side;
+  document.getElementById('bet-modal').style.display='flex';
+  document.getElementById('bet-question').textContent=_currentMarket.question;
+  const label=document.getElementById('bet-side-label');
+  label.textContent=side.toUpperCase();
+  label.style.color=side==='yes'?'#44cc44':'#ff4444';
+  document.getElementById('bet-amount').value='10';
+  document.getElementById('bet-status').textContent='';
+  updatePayoutPreview();
+}
+
+function closeBetModal(){document.getElementById('bet-modal').style.display='none'}
+
+function setBetAmount(amt){
+  document.getElementById('bet-amount').value=amt;
+  updatePayoutPreview();
+}
+
+document.getElementById('bet-amount').addEventListener('input',updatePayoutPreview);
+
+function updatePayoutPreview(){
+  const amt=parseFloat(document.getElementById('bet-amount').value)||0;
+  const yesTotal=_marketBets.yes.reduce((s,b)=>s+b.amount,0);
+  const noTotal=_marketBets.no.reduce((s,b)=>s+b.amount,0);
+  const pool=yesTotal+noTotal+amt;
+  const mySideTotal=(_betSide==='yes'?yesTotal:noTotal)+amt;
+  const payout=mySideTotal>0?Math.round(pool*(amt/mySideTotal)*100)/100:amt*2;
+  document.getElementById('bet-payout').innerHTML=`Potential payout: <span style="color:#aaffaa">${payout} $AGENTCRAFT</span>`;
+}
+
+async function confirmBet(){
+  const amt=parseFloat(document.getElementById('bet-amount').value)||0;
+  const statusEl=document.getElementById('bet-status');
+  if(amt<=0){statusEl.textContent='Enter a valid amount';statusEl.style.color='#ff6644';return}
+  if(!_walletConnected){statusEl.textContent='Connect wallet first';statusEl.style.color='#ff6644';return}
+
+  statusEl.textContent='Requesting signature...';statusEl.style.color='#f0c040';
+
+  try{
+    // Create bet message for signing
+    const betData={
+      market:_currentMarket.question,
+      side:_betSide,
+      amount:amt,
+      token:'$AGENTCRAFT',
+      timestamp:Date.now(),
+      address:_walletAddress
+    };
+    const message=`AgentCraft Prediction Market\n\nBet: ${amt} $AGENTCRAFT on ${_betSide.toUpperCase()}\nMarket: ${_currentMarket.question}\nTimestamp: ${betData.timestamp}`;
+
+    // Request signature from wallet (EIP-191 personal_sign)
+    const signature=await window.ethereum.request({
+      method:'personal_sign',
+      params:[message,_walletAddress]
+    });
+
+    // Record the bet
+    _marketBets[_betSide].push({address:_walletAddress,amount:amt,signature,timestamp:Date.now()});
+    updateMarketUI();
+
+    statusEl.textContent=`Bet placed! ${amt} $AGENTCRAFT on ${_betSide.toUpperCase()}`;statusEl.style.color='#aaffaa';
+    gameEvent(`💰 ${_walletAddress.slice(0,6)}... bet ${amt} $AGENTCRAFT on ${_betSide.toUpperCase()}`,'build_complete');
+
+    setTimeout(closeBetModal,1500);
+  }catch(e){
+    if(e.code===4001){statusEl.textContent='Transaction rejected';statusEl.style.color='#ff6644'}
+    else{statusEl.textContent='Error: '+e.message;statusEl.style.color='#ff6644'}
+  }
+}
+
+function resolveMarket(){
+  if(!_currentMarket)return;
+  let outcome=false;
+  try{outcome=_currentMarket.check()}catch(e){}
+
+  const winningSide=outcome?'yes':'no';
+  const losingSide=outcome?'no':'yes';
+  const yesTotal=_marketBets.yes.reduce((s,b)=>s+b.amount,0);
+  const noTotal=_marketBets.no.reduce((s,b)=>s+b.amount,0);
+  const pool=yesTotal+noTotal;
+  const winners=_marketBets[winningSide];
+  const winningSideTotal=winningSide==='yes'?yesTotal:noTotal;
+
+  // Calculate payouts
+  const payouts=winners.map(b=>({
+    address:b.address,
+    payout:winningSideTotal>0?Math.round(pool*(b.amount/winningSideTotal)*100)/100:b.amount
+  }));
+
+  const resultEl=document.getElementById('market-result');
+  resultEl.style.display='block';
+  if(pool>0){
+    resultEl.innerHTML=`<span style="color:${outcome?'#44cc44':'#ff4444'}">${outcome?'YES':'NO'} wins!</span> Pool: ${pool} $AGENTCRAFT → ${winners.length} winner${winners.length!==1?'s':''}`;
+    gameEvent(`🔮 Market resolved: ${outcome?'YES':'NO'}! Pool of ${pool} $AGENTCRAFT distributed`,'build_complete');
+  }else{
+    resultEl.innerHTML=`<span style="color:#888">Resolved: ${outcome?'YES':'NO'} — no bets placed</span>`;
+  }
+
+  // Generate next market after 30 seconds
+  _currentMarket=null;
+  setTimeout(generateMarket,30000);
+}
+
+// Market tick — update timer and resolve when time's up
+safeInterval(()=>{
+  if(_currentMarket){
+    updateMarketUI();
+    if(frame>=_marketResolveTick)resolveMarket();
+  }
+},1000);
+
+// Initialize first market after 10 seconds
+setTimeout(generateMarket,10000);
+
+// Click handler on bet modal background
+document.getElementById('bet-modal').addEventListener('click',e=>{
+  if(e.target.id==='bet-modal')closeBetModal();
+});
 
 // === Save/Load System ===
 const SAVE_KEY='agentsAtWork_save';
