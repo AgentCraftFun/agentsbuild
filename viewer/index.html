@@ -125,6 +125,8 @@ setTimeout(function(){var io=document.getElementById('intro-overlay');if(io)io.r
       <span id="h-era-wrap" style="display:flex;align-items:center;gap:4px"><span id="h-era-icon">🪵</span> <span class="val" id="h-era">Wood Age</span></span>
       <span>Pop: <span class="val" id="h-agents">0</span></span>
       <span>B: <span class="val" id="h-bldcount">0</span></span>
+      <span>A: <span class="val" id="h-animalcount">0</span></span>
+      <span>FPS: <span class="val" id="h-fps">0</span></span>
       <span id="h-time-wrap" style="display:flex;align-items:center;gap:3px"><span id="h-time-icon">☀️</span><span class="val" id="h-time-name">Morning</span></span>
       <span>🗓<span class="val" id="h-playtime">Day 1, 06:00</span></span>
       <span>🪙<span class="val" id="h-points">0</span></span>
@@ -3058,6 +3060,9 @@ function updateAgentMovement(){
             if(site){
               const bpw=bp.width*16,bph=bp.height*16;
               if(canPlaceAt(site.x,site.y,bpw,bph)){
+                // Duplicate check before push
+                const _isDup=G.clientBuildings.some(b4=>Math.abs(b4.x-site.x)<2&&Math.abs(b4.y-site.y)<2);
+                if(_isDup){console.log('[DUP] Blocked AI building at',site.x,site.y);continue}
                 clearDetailsAtBuilding(site.x,site.y,bpw,bph);
                 const cb={type:'custom',customName:bp.name,customDescription:bp.description,
                   customGrid:bp.grid,category:bp.category,name:bp.name,abbr:bp.name.slice(0,2).toUpperCase(),
@@ -3123,6 +3128,9 @@ function updateAgentMovement(){
                 const settBldCount=G.clientBuildings.filter(b3=>b3.settlement===site.settlement).length;
                 if(settBldCount>=30){action='chop';continue}
               }
+              // Duplicate check before push
+              const _isDup2=G.clientBuildings.some(b4=>Math.abs(b4.x-site.x)<2&&Math.abs(b4.y-site.y)<2&&b4.type===cb.type);
+              if(_isDup2){console.log('[DUP] Blocked predefined building:',cb.type,'at',site.x,site.y);continue}
               G.clientBuildings.push(cb);
               G.wood-=next.cost.wood;G.stone-=next.cost.stone;G.gold-=next.cost.gold;
               st.state='building';st.target=cb;st.timer=0;
@@ -3410,13 +3418,22 @@ if(frame%300===1){
     console.warn('Building cap enforced, removed oldest');
   }
 }
-// Frame timing
-const _now=performance.now(),_dt=_now-_lastFrameTime;_lastFrameTime=_now;
+// Frame timing — CAP deltaTime to prevent simulation explosions after tab-switch
+const _now=performance.now();
+let _dt=_now-_lastFrameTime;_lastFrameTime=_now;
+if(_dt>200){console.warn('[DT] Capped deltaTime from',Math.round(_dt),'to 200ms');_dt=200}// GLOBAL CAP
 _slowMode=_dt>50;const _lowPerf=_dt>100;
 if(_dt>50){_slowFrames=(_slowFrames||0)+1;if(_slowFrames>=3)console.warn('3+ slow frames:',Math.round(_dt)+'ms')}else{_slowFrames=0}
 _frameTimes.push(_dt);if(_frameTimes.length>60)_frameTimes.shift();
 // _slowMode already set above
 frame++;G.tick=frame;
+// Building spike detection
+if(!window._lastBldCount)window._lastBldCount=G.clientBuildings.length;
+if(G.clientBuildings.length-window._lastBldCount>3){
+  const newOnes=G.clientBuildings.slice(window._lastBldCount);
+  console.warn('[BLDSPIKE] +'+newOnes.length+' buildings this frame:',newOnes.map(b=>`${b.type||b.customName}@${b.x},${b.y} by:${b.claimedBy||'?'}`));
+}
+window._lastBldCount=G.clientBuildings.length;
 // Heartbeat every 60 seconds
 // Heartbeat + memory management every 30 seconds
 if(frame%(60*30)===0){
@@ -3572,8 +3589,10 @@ let shX=0,shY=0;
 if(screenShake>0){shX=Math.sin(frame*1.7)*screenShake*0.3;shY=Math.cos(frame*2.3)*screenShake*0.3;screenShake--}
 ctx.translate(vpX+shX,vpY+shY);
 const ts=TS;
-const sx=Math.max(0,Math.floor(-vpX/ts-1)),sy=Math.max(0,Math.floor(-vpY/ts-1));
-const ex=Math.min(WW,Math.ceil((-vpX+cw/zoom)/ts+1)),ey=Math.min(WH,Math.ceil((-vpY+ch/zoom)/ts+1));
+// Viewport bounds with generous padding to prevent pop-in during pan/zoom
+const _pad=5;// tiles of padding beyond viewport edges
+const sx=Math.max(0,Math.floor(-vpX/ts-_pad)),sy=Math.max(0,Math.floor(-vpY/ts-_pad));
+const ex=Math.min(WW,Math.ceil((-vpX+cw/zoom)/ts+_pad)),ey=Math.min(WH,Math.ceil((-vpY+ch/zoom)/ts+_pad));
 
 // Terrain
 if(tCanvas&&ex>sx&&ey>sy&&isFinite(sx)&&isFinite(sy)){
@@ -4651,6 +4670,10 @@ if(frame%60===0){try{
   document.getElementById('h-playtime').textContent=`Day ${days+1}, ${String(hours).padStart(2,'0')}:${String(mins).padStart(2,'0')}`;
   document.getElementById('h-agents').textContent=S.agents.length;
   document.getElementById('h-bldcount').textContent=G.clientBuildings.length;
+  try{document.getElementById('h-animalcount').textContent=wildAnimals.length}catch(e){}
+  // FPS counter
+  const _fps=_frameTimes.length>0?Math.round(1000/(_frameTimes.reduce((a2,b2)=>a2+b2,0)/_frameTimes.length)):0;
+  try{document.getElementById('h-fps').textContent=_fps}catch(e){}
   document.getElementById('h-era').textContent=G.eraNames[G.era];
   document.getElementById('h-era-icon').textContent=ERA_ICONS[G.era];
   document.getElementById('h-points').textContent=specPoints;
@@ -5096,20 +5119,28 @@ function animalCanMove(nx,ny){
 }
 
 function updateWildlife(){
+  const MAX_SPEED=0.05;// max animal velocity per frame
   for(const an of wildAnimals){
+    // NaN/Infinity safety — respawn if position is corrupt
+    if(!isFinite(an.wx)||!isFinite(an.wy)){an.wx=Math.random()*WW;an.wy=Math.random()*WH;an.vx=0;an.vy=0;an.fleeing=0;console.warn('[ANIMAL] Reset NaN position');continue}
+    // Cap velocity globally
+    an.vx=Math.max(-MAX_SPEED,Math.min(MAX_SPEED,an.vx||0));
+    an.vy=Math.max(-MAX_SPEED,Math.min(MAX_SPEED,an.vy||0));
     if(an.type==='deer'){
       let nx2=an.wx,ny2=an.wy;
-      if(an.fleeing>0){an.fleeing--;nx2+=an.vx*3;ny2+=an.vy*3}
+      if(an.fleeing>0){an.fleeing--;nx2+=an.vx*2;ny2+=an.vy*2}// reduced flee multiplier from 3→2
       else{nx2+=an.vx;ny2+=an.vy}
       if(frame%300===Math.floor(an.phase*30)%300){an.vx=(Math.random()-0.5)*0.02;an.vy=(Math.random()-0.5)*0.01}
       // Apply with collision check
       if(animalCanMove(nx2,ny2)){an.wx=nx2;an.wy=ny2}
-      else{an.vx=-an.vx+(Math.random()-0.5)*0.01;an.vy=-an.vy+(Math.random()-0.5)*0.01}// bounce
-      // Flee from agents
-      for(const a of S.agents){const v=agentVisual.get(a.id);if(!v)continue;
-        if(Math.abs(v.x*WW-an.wx)+Math.abs(v.y*WH-an.wy)<2){
-          an.vx=an.wx>v.x*WW?0.04:-0.04;an.vy=an.wy>v.y*WH?0.03:-0.03;an.fleeing=60;break;
-      }}
+      else{an.vx=-an.vx*0.5;an.vy=-an.vy*0.5}// dampened bounce instead of full reversal
+      // Flee from agents — only recalculate if NOT already fleeing (prevents bounce)
+      if(an.fleeing<=0){
+        for(const a of S.agents){const v=agentVisual.get(a.id);if(!v)continue;
+          if(Math.abs(v.x*WW-an.wx)+Math.abs(v.y*WH-an.wy)<2){
+            an.vx=an.wx>v.x*WW?0.04:-0.04;an.vy=an.wy>v.y*WH?0.03:-0.03;an.fleeing=40;break;
+        }}
+      }
     }else if(an.type==='rabbit'){
       an.hopTimer--;
       if(an.hopTimer<=0){
@@ -5124,7 +5155,7 @@ function updateWildlife(){
     }else if(an.type==='wolf'){
       const wnx=an.wx+an.vx,wny=an.wy+an.vy;
       if(animalCanMove(wnx,wny)){an.wx=wnx;an.wy=wny}
-      else{an.vx=-an.vx;an.vy=-an.vy}
+      else{an.vx=-an.vx*0.5;an.vy=-an.vy*0.5}// dampened bounce
       if(frame%200===Math.floor(an.phase*20)%200){an.vx=(Math.random()-0.5)*0.03;an.vy=(Math.random()-0.5)*0.02}
       for(const d2 of wildAnimals){if(d2.type==='deer'&&Math.abs(d2.wx-an.wx)+Math.abs(d2.wy-an.wy)<1){d2.life=0;G.food+=2;break}}
       for(const s of settlements){if(Math.abs(an.wx-s.cx)+Math.abs(an.wy-s.cy)<10&&frame%600===0){
@@ -6073,6 +6104,34 @@ function loadGame(){
   }catch(e){console.warn('Load failed:',e);return false}
 }
 
+// === Game State Validation (runs after load) ===
+function validateGameState(){
+  let removed=0,fixed=0;
+  // Remove buildings with invalid positions
+  const before=G.clientBuildings.length;
+  G.clientBuildings=G.clientBuildings.filter(b=>{
+    if(!b||!isFinite(b.x)||!isFinite(b.y)){removed++;return false}
+    return true;
+  });
+  // Remove duplicate buildings (same type within 2 cells)
+  const seen3=[];
+  G.clientBuildings=G.clientBuildings.filter(b=>{
+    const dup=seen3.find(s=>s.type===b.type&&Math.abs(s.x-b.x)<2&&Math.abs(s.y-b.y)<2);
+    if(dup){removed++;return false}
+    seen3.push(b);return true;
+  });
+  // Fix animals with invalid positions
+  for(const an of wildAnimals){
+    if(!isFinite(an.wx)||!isFinite(an.wy)){an.wx=Math.random()*WW;an.wy=Math.random()*WH;an.vx=0;an.vy=0;fixed++}
+  }
+  // Verify agents have valid positions
+  for(const a of S.agents){
+    if(!isFinite(a.x)){a.x=Math.floor(WW/2);fixed++}
+    if(!isFinite(a.y)){a.y=Math.floor(WH/2);fixed++}
+  }
+  console.log(`[Validate] Removed ${removed} invalid/duplicate buildings (${before}→${G.clientBuildings.length}), fixed ${fixed} positions`);
+}
+
 // === Resource Regeneration System ===
 function regrowResources(){
   const rng2=new SeededRNG(frame+7777);
@@ -6164,13 +6223,15 @@ function runOfflineSim(){
         if(b.progress>=1){b.progress=1;b.complete=true;summary.buildings++}
       }
     }
-    // Try spawning new buildings if affordable
+    // Try spawning new buildings if affordable (with duplicate check)
     const next=getNextBuilding();
     if(next&&canAfford(next.cost)&&G.clientBuildings.length<80){
-      G.wood-=next.cost.wood;G.stone-=next.cost.stone;G.gold-=next.cost.gold;
       const rng3=new SeededRNG(t+G.clientBuildings.length*13);
       const bx2=Math.floor(0.15*WW+rng3.next()*0.7*WW);
       const by2=Math.floor(0.15*WH+rng3.next()*0.7*WH);
+      const _offDup=G.clientBuildings.some(b=>Math.abs(b.x-bx2)<2&&Math.abs(b.y-by2)<2);
+      if(_offDup)continue;// skip this chunk's building
+      G.wood-=next.cost.wood;G.stone-=next.cost.stone;G.gold-=next.cost.gold;
       G.clientBuildings.push({type:next.type,name:next.name,abbr:next.abbr,x:bx2,y:by2,
         progress:0.5,complete:false,faction:next.faction,width:next.w,height:next.h,
         pw:next.pw,ph:next.ph,tall:next.tall,claimedBy:null});
@@ -6227,6 +6288,7 @@ try{
   try{document.getElementById('h-points').textContent=specPoints}catch(e){}
   // Try loading saved game
   didLoad=loadGame();
+  if(didLoad)validateGameState();// clean up any corrupt data from save
   let offlineSummary=null;
   if(didLoad){
     console.log('Restored saved game');
