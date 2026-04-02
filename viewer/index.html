@@ -1231,6 +1231,7 @@ function drawBuildingPixelArt(c,b,bx,by,bw,bh,fr){
 // Helper: draw the correct finished building by type (ignoring progress)
 function _drawFinishedByType(c,b,bx,by,bw,bh,fr){
   const type=b.type||'';
+  if(type==='custom'&&b.customGrid)return drawCustomGridBuilding(c,b,bx,by,bw,bh,fr);
   if(type==='mine_shaft')return drawGoldMine(c,bx,by,bw,bh,1,fr);
   if(type==='moonwell')return drawLighthouse(c,bx,by,bw,bh,1,fr);
   if(type==='stone_wall')return drawRuins(c,bx,by,bw,bh);
@@ -1710,6 +1711,23 @@ function drawBuilding(c,b,bx,by,bw,bh,fr){
   if(!isFinite(bx)||!isFinite(by)||!isFinite(bw)||!isFinite(bh)||bw<=0||bh<=0)return;
   const p=b.progress!=null?b.progress:1;
   const type=b.type||'';
+  // AI-generated custom building
+  if(type==='custom'&&b.customGrid){
+    if(p<0.95){
+      // Progressive construction for custom buildings
+      c.fillStyle='#5a4a2a';c.fillRect(bx-2,by+bh-4,bw+10,6);
+      if(p>0.05){
+        const revealH=(bh+10)*Math.min(1,p/0.95);
+        const clipTop=by+bh-revealH+4;
+        c.save();c.beginPath();c.rect(bx-6,clipTop,bw+20,revealH+10);c.clip();
+        drawCustomGridBuilding(c,b,bx,by,bw,bh,fr);
+        c.restore();
+        if(p<0.75){c.fillStyle='#8a6a30';c.fillRect(bx-3,Math.max(clipTop,by),2,by+bh-Math.max(clipTop,by));c.fillRect(bx+bw+1,Math.max(clipTop,by),2,by+bh-Math.max(clipTop,by))}
+      }
+      return;
+    }
+    return drawCustomGridBuilding(c,b,bx,by,bw,bh,fr);
+  }
   // Legacy special types
   if(type==='mine_shaft')return drawGoldMine(c,bx,by,bw,bh,p,fr);
   if(type==='moonwell')return drawLighthouse(c,bx,by,bw,bh,p,fr);
@@ -1980,6 +1998,101 @@ const TECH_TREE=[
   {type:'dock',name:'Dock',abbr:'DK',w:2,h:1,pw:40,ph:20,tall:false,cost:{wood:12,stone:5,gold:0},era:1,faction:'neutral',decorative:true},
   {type:'bridge',name:'Bridge',abbr:'BR',w:3,h:1,pw:48,ph:16,tall:false,cost:{wood:15,stone:5,gold:0},era:1,faction:'neutral',decorative:true},
 ];
+
+// ─── AI-Generated Building System ───
+const _aiQueue=[];// queue of {agentId, resolve} for pending generation requests
+let _aiProcessing=false;
+let _aiCallCount=0;
+const AI_MAX_CALLS=200;
+const AI_CALL_INTERVAL=32000;// 32s between calls (slightly over server's 30s limit)
+let _lastAiCall=0;
+
+// Agent blueprint storage: agentId -> [{name, description, grid, width, height, cost, category}]
+const agentBlueprints=new Map();
+
+// Request an AI building for an agent (queued, non-blocking)
+function requestAiBuilding(agentId){
+  if(_aiCallCount>=AI_MAX_CALLS)return;
+  if(_aiQueue.length>=10)return;// don't overload queue
+  if(_aiQueue.find(q=>q.agentId===agentId))return;// already queued
+  _aiQueue.push({agentId});
+}
+
+// Process one item from the AI queue (called periodically)
+async function processAiQueue(){
+  if(_aiProcessing||_aiQueue.length===0)return;
+  const now=Date.now();
+  if(now-_lastAiCall<AI_CALL_INTERVAL)return;
+  const item=_aiQueue.shift();
+  const agent=S.agents.find(a=>a.id===item.agentId);
+  if(!agent)return;
+  _aiProcessing=true;
+  _lastAiCall=now;
+  _aiCallCount++;
+  try{
+    const sett=getSettlementForAgent?.(agent.id);
+    const biomeIdx=tBiomes?tBiomes[Math.floor(agent.y)*WW+Math.floor(agent.x)]:3;
+    const biomeName=BL[biomeIdx]||'grassland';
+    const resp=await fetch('/api/generate-building',{
+      method:'POST',headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({
+        agentName:agent.name,personality:agent.personality||'balanced',
+        faction:agent.faction||'human',era:G.eraNames[G.era]||'Wood Age',
+        resources:{wood:Math.round(G.wood),stone:Math.round(G.stone),gold:Math.round(G.gold)},
+        biome:biomeName,settlementSize:sett?sett.buildings.length:0,
+        clan:agent.clan||null
+      })
+    });
+    if(!resp.ok){_aiProcessing=false;return}
+    const data=await resp.json();
+    if(data.blueprint){
+      let bps=agentBlueprints.get(agent.id);
+      if(!bps){bps=[];agentBlueprints.set(agent.id,bps)}
+      if(bps.length<8)bps.push(data.blueprint);
+      console.log(`[AI] ${agent.name} designed: "${data.blueprint.name}" (${data.blueprint.category})`);
+    }
+  }catch(e){console.warn('[AI] Building generation failed:',e.message)}
+  _aiProcessing=false;
+}
+
+// Pick an AI blueprint for an agent (returns null if none available)
+function pickAiBlueprint(agentId,neededCategory){
+  const bps=agentBlueprints.get(agentId);
+  if(!bps||bps.length===0)return null;
+  // Prefer matching category
+  if(neededCategory){
+    const match=bps.find(b=>b.category===neededCategory);
+    if(match)return match;
+  }
+  return bps[Math.floor(Math.random()*bps.length)];
+}
+
+// Simple renderer for custom grid buildings
+function drawCustomGridBuilding(c,b,bx,by,bw,bh,fr){
+  const grid=b.customGrid;
+  if(!grid||!grid.length)return;
+  const cellW=bw/b.width,cellH=bh/b.height;
+  // Shadow
+  c.fillStyle='rgba(0,0,0,0.2)';c.fillRect(bx+4,by+4,bw,bh);
+  // Draw each cell
+  for(let row=0;row<grid.length&&row<b.height;row++){
+    const rowData=grid[row];if(!rowData)continue;
+    for(let col=0;col<rowData.length&&col<b.width;col++){
+      const color=rowData[col];
+      if(!color)continue;
+      const cx2=bx+col*cellW,cy2=by+row*cellH;
+      c.fillStyle=color;c.fillRect(cx2,cy2,cellW+0.5,cellH+0.5);
+      // Subtle cell border for pixel-art feel
+      c.fillStyle='rgba(0,0,0,0.1)';
+      c.fillRect(cx2,cy2+cellH-1,cellW,1);
+      c.fillRect(cx2+cellW-1,cy2,1,cellH);
+    }
+  }
+  // Foundation
+  c.fillStyle='#4a3a28';c.fillRect(bx-2,by+bh-2,bw+4,4);
+  // Light edge
+  c.fillStyle='rgba(255,255,255,0.06)';c.fillRect(bx,by,2,bh);
+}
 
 // Track harvestable details — key: "tx,ty" -> {type,hp}
 const harvestables=new Map();
@@ -2864,6 +2977,35 @@ function updateAgentMovement(){
             continue;
           }
         }
+        // === AI BUILDING: 60% chance to use AI blueprint if available ===
+        const aiBps=agentBlueprints.get(a.id);
+        if(Math.random()<0.6&&aiBps&&aiBps.length>0){
+          const bp=pickAiBlueprint(a.id,null);
+          if(bp&&bp.cost&&canAfford(bp.cost)){
+            const site=pickBuildSite({w:bp.width,h:bp.height,pw:bp.width*16,ph:bp.height*16},a.id);
+            if(site){
+              const bpw=bp.width*16,bph=bp.height*16;
+              if(canPlaceAt(site.x,site.y,bpw,bph)){
+                clearDetailsAtBuilding(site.x,site.y,bpw,bph);
+                const cb={type:'custom',customName:bp.name,customDescription:bp.description,
+                  customGrid:bp.grid,category:bp.category,name:bp.name,abbr:bp.name.slice(0,2).toUpperCase(),
+                  x:site.x,y:site.y,progress:0,complete:false,faction:a.faction||'human',
+                  width:bp.width,height:bp.height,pw:bpw,ph:bph,tall:bp.height>=4,
+                  claimedBy:a.id,builder:a.name,settlement:site.settlement||null};
+                G.clientBuildings.push(cb);
+                G.wood-=(bp.cost.wood||0);G.stone-=(bp.cost.stone||0);G.gold-=(bp.cost.gold||0);
+                st.state='building';st.target=cb;st.timer=0;
+                v.tx=site.x/WW;v.ty=site.y/WH;
+                gameEvent(`${a.name} is building "${bp.name}" (AI-designed)`,'build_started');
+                continue;
+              }
+            }
+          }
+        }
+        // Request more AI blueprints for this agent (non-blocking)
+        if(!aiBps||aiBps.length<3)requestAiBuilding(a.id);
+
+        // === PREDEFINED BUILDING (existing logic) ===
         const next=getNextBuilding();
         if(next&&canAfford(next.cost)){
           // Check no one else is already building this type
@@ -5174,6 +5316,10 @@ let specPoints=parseInt(localStorage.getItem('specPoints')||'0');
 function addPoints(n){specPoints+=n;localStorage.setItem('specPoints',String(specPoints));document.getElementById('h-points').textContent=specPoints}
 // Passive +1 per 10 sec
 safeInterval(()=>addPoints(1),10000);
+// Process AI building queue every 5 seconds
+safeInterval(()=>processAiQueue(),5000);
+// Every 10 minutes, request a new AI blueprint for a random agent
+safeInterval(()=>{if(S.agents.length>0){const ra=S.agents[Math.floor(Math.random()*S.agents.length)];requestAiBuilding(ra.id)}},600000);
 
 // === Prediction Mini-Game ===
 let predState={active:false,type:null,question:'',answer:null,timer:0,choices:[],pick:null,correct:0,total:0};
@@ -5783,7 +5929,8 @@ function saveGame(){
     while(G.clientBuildings.length>50)G.clientBuildings.pop();
     const state={version:6,savedAt:Date.now(),tick:frame,era:G.era,
       wood:G.wood||0,stone:G.stone||0,gold:G.gold||0,food:G.food||0,
-      buildings:G.clientBuildings.slice(0,50).map(b=>({type:b.type,name:b.name,abbr:b.abbr,x:b.x,y:b.y,progress:b.progress,complete:b.complete,faction:b.faction,width:b.width,height:b.height,pw:b.pw,ph:b.ph,tall:b.tall,owner:b.owner,ownerName:b.ownerName,isHome:b.isHome,personalized:b.personalized,personalFaction:b.personalFaction,claimedBy:b.claimedBy,settlement:b.settlement})),
+      buildings:G.clientBuildings.slice(0,50).map(b=>({type:b.type,name:b.name,abbr:b.abbr,x:b.x,y:b.y,progress:b.progress,complete:b.complete,faction:b.faction,width:b.width,height:b.height,pw:b.pw,ph:b.ph,tall:b.tall,owner:b.owner,ownerName:b.ownerName,isHome:b.isHome,personalized:b.personalized,personalFaction:b.personalFaction,claimedBy:b.claimedBy,settlement:b.settlement,customName:b.customName,customDescription:b.customDescription,customGrid:b.customGrid,category:b.category,builder:b.builder})),
+      aiBlueprints:[...agentBlueprints.entries()].slice(0,20).map(([id,bps])=>({id,bps:bps.slice(0,8)})),
       harvested:[...harvestables.keys()].slice(0,500),
       goldDeposits:goldDeposits.slice(0,20).map(g=>({x:g.x,y:g.y,h:g.h,alive:g.alive})),
       clans:clans.slice(0,10).map(c2=>({name:c2.name,members:c2.members,faction:c2.faction})),
@@ -5821,7 +5968,9 @@ function loadGame(){
     if(s.worldStats)Object.assign(worldStats,s.worldStats);
     if(s.settlements){settlements.length=0;for(const s2 of s.settlements)settlements.push(s2)}
     if(s.eventLog){eventLog.length=0;for(const e of s.eventLog)eventLog.push(e)}
-    console.log('Game loaded from save, tick:',frame,'buildings:',G.clientBuildings.length);
+    // Restore AI blueprints
+    if(s.aiBlueprints){agentBlueprints.clear();for(const e of s.aiBlueprints)agentBlueprints.set(e.id,e.bps||[])}
+    console.log('Game loaded from save, tick:',frame,'buildings:',G.clientBuildings.length,'ai blueprints:',agentBlueprints.size);
     return true;
   }catch(e){console.warn('Load failed:',e);return false}
 }

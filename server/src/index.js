@@ -212,6 +212,93 @@ app.get('/api/agents/llm-status', (req, res) => {
   res.json({ agents: llmBrain.getRegisteredAgents() });
 });
 
+// ─── AI Building Generation Endpoint ───
+
+let _lastAiBuildCall = 0;
+let _aiBuildCount = 0;
+
+/**
+ * POST /api/generate-building
+ * Generate an AI-designed building blueprint via Anthropic API.
+ * Rate limited: 1 call per 30 seconds, max 200 per session.
+ */
+app.post('/api/generate-building', async (req, res) => {
+  // Rate limit
+  const now = Date.now();
+  if (now - _lastAiBuildCall < 30000) {
+    return res.status(429).json({ error: 'Rate limited. Wait 30 seconds between AI building requests.' });
+  }
+  if (_aiBuildCount >= 200) {
+    return res.status(429).json({ error: 'Session AI building limit reached (200).' });
+  }
+  if (!process.env.ANTHROPIC_API_KEY) {
+    return res.status(503).json({ error: 'No API key configured for AI building generation.' });
+  }
+
+  _lastAiBuildCall = now;
+  _aiBuildCount++;
+
+  try {
+    const { agentName, personality, faction, era, resources, biome, settlementSize, clan } = req.body;
+    const Anthropic = require('@anthropic-ai/sdk');
+    const client = new Anthropic();
+
+    const prompt = `You are a building architect in a pixel-art medieval/fantasy world. Design a small building for this character:
+
+Name: ${agentName || 'Unknown'}
+Personality: ${personality || 'balanced'}
+Faction: ${faction || 'human'}
+Era: ${era || 'Wood Age'}
+Available resources: Wood: ${resources?.wood || 0}, Stone: ${resources?.stone || 0}, Gold: ${resources?.gold || 0}
+Biome: ${biome || 'grassland'}
+Settlement size: ${settlementSize || 0} existing buildings
+Clan: ${clan || 'none'}
+
+RULES:
+- Building must fit in a grid between 3x3 minimum and 6x6 maximum cells
+- Each cell is one pixel-art "block" (rendered at 16px)
+- Use hex color codes for filled cells, null for empty/transparent cells
+- Bottom row is the front of the building (facing the viewer)
+- Use colors appropriate to resources:
+  * Wood: #8B6914, #A0782C, #6B4E12 (brown tones)
+  * Stone: #808080, #A0A0A0, #606060 (grey tones)
+  * Gold/wealthy: #F0C040, #C0A030 (gold accents only)
+  * Roofs: #8B0000, #654321, #2F4F4F, #4A4A4A (dark red, brown, slate, grey)
+  * Windows: #87CEEB, #FFD700 (light blue day, yellow glow)
+  * Doors: #4A3000, #2C1A00 (dark wood)
+- Reflect the character's personality in the design
+- Give the building a creative, unique name
+
+Respond with ONLY a JSON object, no markdown, no backticks:
+{"name":"Building Name","description":"One sentence","width":4,"height":4,"grid":[["#hex",null,...],...],"cost":{"wood":10,"stone":5,"gold":0},"category":"residential"}
+
+Category must be: residential, military, economic, cultural, or decorative`;
+
+    const response = await client.messages.create({
+      model: 'claude-haiku-4-5-20251001',
+      max_tokens: 800,
+      messages: [{ role: 'user', content: prompt }],
+    });
+
+    const text = response.content?.[0]?.text || '';
+    const clean = text.replace(/```json|```/g, '').trim();
+    const blueprint = JSON.parse(clean);
+
+    // Validate
+    if (!blueprint.grid || !blueprint.name ||
+        blueprint.width < 3 || blueprint.width > 6 ||
+        blueprint.height < 3 || blueprint.height > 6 ||
+        !Array.isArray(blueprint.grid)) {
+      return res.status(422).json({ error: 'Invalid blueprint structure' });
+    }
+
+    res.json({ blueprint, callsRemaining: 200 - _aiBuildCount });
+  } catch (err) {
+    console.error('[AI Building] Error:', err.message);
+    res.status(500).json({ error: 'AI building generation failed: ' + err.message });
+  }
+});
+
 // Fallback: landing page for root, viewer for /viewer/*
 app.get('*', (req, res) => {
   const fs = require('fs');
