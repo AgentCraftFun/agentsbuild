@@ -1185,79 +1185,51 @@ function drawBuildingPixelArt(c,b,bx,by,bw,bh,fr){
   // p>=0.95: close enough — draw final form (prevents stuck half-built visuals)
   if(p>=0.95){try{return drawCompletedBuilding(c,b,bx,by,bw,bh,fr)}catch(e){return}}
 
-  // === UNDER CONSTRUCTION — use natural building colors, not faction color ===
-  // Pick construction colors based on building type/era to match completed look
-  const type2=b.type||'';
-  const isStoneType=['stone_house','church','watchtower','town_hall','apartment','office','factory'].includes(type2);
-  const conWall=isStoneType?'#7a7680':'#6a4a28';// grey stone or brown wood
-  const conLight=isStoneType?'#9a9690':'#8a6a3a';// lighter variant
-  const wallH=bh*0.7;
-  const wallY=by+bh-wallH;
-  const roofH=bh*0.3;
+  // === PROGRESSIVE CONSTRUCTION — reveal the actual building bottom-up ===
+  // Use canvas clipping to progressively reveal the completed building from bottom to top
+  // Phase 1 (0-0.25): Foundation only
+  // Phase 2 (0.25-0.5): Walls rising to half height
+  // Phase 3 (0.5-0.75): Full walls, no roof
+  // Phase 4 (0.75-0.95): Roof being added, scaffolding removed
 
-  // STAGE 1 (p 0-0.1): Foundation only
-  c.fillStyle='#5a4a2a';c.fillRect(bx-2,by+bh-6,bw+4,6);
+  // Foundation always visible
+  c.fillStyle='#5a4a2a';c.fillRect(bx-2,by+bh-4,bw+10,6);
 
-  // STAGE 2 (p 0.1-0.5): Walls rising proportional to progress
-  if(p>0.1){
-    const wallProg=Math.min(1,(p-0.1)/0.4);// 0→1 over 0.1→0.5
-    const visWallH=wallH*wallProg;
-    const visWallY=by+bh-6-visWallH;
-    c.fillStyle=conWall;c.fillRect(bx,visWallY,bw,visWallH);
-    // Brick pattern on visible portion
-    c.fillStyle=conLight;
-    const maxR2=Math.min(Math.floor(visWallH/8),20);
-    for(let row=0;row<maxR2;row++){
-      const off=(row%2)*4;
-      for(let col=off;col<bw-2;col+=8)c.fillRect(bx+col+1,visWallY+row*8+1,6,6);
+  if(p>0.05){
+    // Calculate how much of the building to reveal (bottom-up clip)
+    const revealFrac=Math.min(1,p/0.95);// 0→1 over 0%→95%
+    const fullH=bh+20;// include roof overhang
+    const revealH=fullH*revealFrac;
+    const clipTop=by+bh-revealH+4;// clip from this Y downward
+
+    c.save();
+    c.beginPath();
+    c.rect(bx-10,clipTop,bw+30,revealH+10);
+    c.clip();
+    // Draw the completed building inside the clip region
+    try{drawCompletedBuilding(c,b,bx,by,bw,bh,fr)}catch(e){
+      // Fallback: simple brown/grey box
+      const isStoneType=['stone_house','church','watchtower','town_hall','apartment','office','factory'].includes(b.type||'');
+      c.fillStyle=isStoneType?'#7a7680':'#6a4a28';
+      c.fillRect(bx,by,bw,bh);
     }
-    // Scaffolding (visible during wall construction)
-    if(p<0.8){
+    c.restore();
+
+    // Scaffolding overlay (phases 1-3, removed in phase 4)
+    if(p<0.75){
       c.fillStyle='#8a6a30';
-      c.fillRect(bx+2,visWallY,2,visWallH);c.fillRect(bx+bw-4,visWallY,2,visWallH);
+      const scaffTop=Math.max(clipTop,by);
+      const scaffH=by+bh-scaffTop;
+      c.fillRect(bx-3,scaffTop,2,scaffH);c.fillRect(bx+bw+1,scaffTop,2,scaffH);
       c.fillStyle='#9a7a3a';
-      for(let sy3=visWallY;sy3<by+bh-6;sy3+=bh*0.15)c.fillRect(bx,sy3,bw,2);
+      for(let sy3=scaffTop;sy3<by+bh;sy3+=12)c.fillRect(bx-3,sy3,bw+6,1);
     }
-    // Mortar glow at top of wall (while building)
-    if(p<0.8){
-      c.fillStyle=`rgba(255,220,120,${0.2+0.15*Math.sin(fr*0.15)})`;
-      c.fillRect(bx,visWallY,bw,3);
-    }
-  }
-
-  // STAGE 3 (p 0.5-0.8): Roof appearing
-  if(p>0.5){
-    // Full walls now visible
-    c.fillStyle=conWall;c.fillRect(bx,wallY,bw,wallH);
-    const roofProg=Math.min(1,(p-0.5)/0.3);// 0→1 over 0.5→0.8
-    const roofC2=ROOF_COL[fc]||ROOF_COL.neutral;
-    if(tall){
-      const visRoofH=roofH*1.3*roofProg;
-      c.fillStyle=roofC2;c.beginPath();
-      c.moveTo(bx-4,wallY);c.lineTo(bx+bw/2,wallY-visRoofH);c.lineTo(bx+bw+4,wallY);c.fill();
-    }else{
-      c.fillStyle=roofC2;c.fillRect(bx-4,wallY-roofH*roofProg,bw+8,roofH*roofProg);
+    // Construction glow at the build edge
+    if(p<0.9){
+      c.fillStyle=`rgba(255,220,120,${0.15+0.1*Math.sin(fr*0.15)})`;
+      c.fillRect(bx-2,clipTop,bw+4,3);
     }
   }
-
-  // STAGE 4 (p 0.8-1.0): Details fading in (windows, door, flag — NOT complete yet)
-  if(p>0.8){
-    const detailAlpha=Math.min(1,(p-0.8)/0.2);
-    c.globalAlpha=detailAlpha;
-    // Door
-    c.fillStyle='#1a1a2a';
-    const dw3=Math.min(10,bw*0.2),dh3=Math.min(14,wallH*0.4);
-    c.fillRect(bx+bw/2-dw3/2,by+bh-6-dh3,dw3,dh3);
-    // Windows
-    if(bw>=24){
-      c.fillStyle='#aaccff';c.fillRect(bx+6,wallY+wallH*0.2,8,8);
-      if(bw>=48)c.fillRect(bx+bw-14,wallY+wallH*0.2,8,8);
-    }
-    c.globalAlpha=1;
-  }
-
-  // Border
-  c.strokeStyle='rgba(0,0,0,0.3)';c.lineWidth=1;c.strokeRect(bx+0.5,wallY+0.5,bw-1,wallH+5);
 }
 
 // === Special Building Renderers ===
@@ -1593,60 +1565,125 @@ function drawBrickHouse(c,bx,by,bw,bh,fr){
 }
 
 function drawApartment(c,bx,by,bw,bh,fr){
-  c.fillStyle='rgba(0,0,0,0.3)';c.fillRect(bx+5,by+5,bw,bh);
-  // Main building
-  c.fillStyle='#8a8490';c.fillRect(bx,by,bw,bh);
-  // 3D side
-  c.fillStyle='#6a6470';c.fillRect(bx+bw-5,by,5,bh);
-  // Window grid (4 floors)
-  const floors=4,cols2=Math.max(2,Math.floor(bw/14));
-  for(let fl=0;fl<floors;fl++){for(let wc=0;wc<cols2;wc++){
-    const wx=bx+4+wc*13,wy=by+6+fl*(bh/floors);
-    const winH=tileHash(wc,fl+fr/200|0);
-    c.fillStyle=(winH%3===0)?'#ffeeaa':(winH%3===1)?'#aaccff':'#2a2a3a';
-    c.fillRect(wx,wy,8,10);c.fillStyle='#6a6470';c.fillRect(wx+3,wy,1,10);c.fillRect(wx,wy+4,8,1);
+  const SD=6,SS=4;// 3D depth offset
+  // Shadow
+  c.fillStyle='rgba(0,0,0,0.25)';c.fillRect(bx+4,by+4,bw+SD,bh);
+  // Foundation
+  c.fillStyle='#4a3a2a';c.fillRect(bx-2,by+bh-4,bw+SD+4,6);
+  // Front wall — warm red-brown brick
+  const wallH=bh*0.85;const wallY=by+bh-wallH;
+  c.fillStyle='#8B4513';c.fillRect(bx,wallY,bw,wallH);
+  // Brick mortar lines
+  c.fillStyle='#a06030';
+  for(let row=0;row<Math.floor(wallH/6);row++){
+    const off=(row%2)*4;
+    for(let col=off;col<bw-2;col+=8)c.fillRect(bx+col+1,wallY+row*6+1,6,4);
+  }
+  // Right side wall (darker)
+  c.fillStyle='#6a3010';
+  c.beginPath();c.moveTo(bx+bw,wallY);c.lineTo(bx+bw+SD,wallY+SS);
+  c.lineTo(bx+bw+SD,wallY+wallH+SS);c.lineTo(bx+bw,wallY+wallH);c.fill();
+  // Windows — 3 floors, 3 per floor
+  const floors=3,wPerFloor=Math.min(3,Math.floor(bw/16));
+  const flH=wallH/floors;
+  for(let fl=0;fl<floors;fl++){for(let wi=0;wi<wPerFloor;wi++){
+    const wx=bx+4+wi*Math.floor((bw-8)/wPerFloor),wy=wallY+fl*flH+flH*0.25;
+    const lit=tileHash(wi,fl+fr/300|0)%3===0;
+    c.fillStyle=lit?'#ffe888':'#aaccee';c.fillRect(wx,wy,8,8);
+    c.fillStyle='#4a3020';c.fillRect(wx+3,wy,1,8);c.fillRect(wx,wy+3,8,1);
   }}
-  // Flat roof with AC units
-  c.fillStyle='#6a6670';c.fillRect(bx,by-4,bw,4);
-  c.fillStyle='#5a5a60';c.fillRect(bx+4,by-8,8,5);c.fillRect(bx+bw-14,by-8,8,5);
+  // Door
+  c.fillStyle='#3a2010';c.fillRect(bx+bw/2-5,by+bh-14,10,14);
+  c.fillStyle='#ccaa44';c.fillRect(bx+bw/2+2,by+bh-8,2,2);
+  // Flat roof
+  c.fillStyle='#5a4030';c.fillRect(bx-2,wallY-4,bw+4,4);
+  c.fillStyle='#4a3020';c.fillRect(bx+bw-2,wallY-4+SS,SD+2,4);
+  // Water tank on roof
+  c.fillStyle='#6a6a72';c.fillRect(bx+4,wallY-10,8,7);
+  // Left edge highlight
+  c.fillStyle='rgba(255,255,255,0.08)';c.fillRect(bx,wallY,2,wallH);
 }
 
 function drawOffice(c,bx,by,bw,bh,fr){
-  c.fillStyle='rgba(0,0,0,0.3)';c.fillRect(bx+5,by+5,bw,bh);
-  // Glass facade
-  c.fillStyle='#b8c8d8';c.fillRect(bx,by,bw,bh);
-  // Grid lines
-  c.strokeStyle='#8a9aa8';c.lineWidth=1;
-  for(let row=0;row<bh;row+=12){c.beginPath();c.moveTo(bx,by+row);c.lineTo(bx+bw,by+row);c.stroke()}
-  for(let col=0;col<bw;col+=10){c.beginPath();c.moveTo(bx+col,by);c.lineTo(bx+col,by+bh);c.stroke()}
-  // Reflective highlight
-  c.strokeStyle='rgba(255,255,255,0.4)';c.lineWidth=2;
-  c.beginPath();c.moveTo(bx+bw*0.2,by+bh);c.lineTo(bx+bw*0.7,by);c.stroke();c.lineWidth=1;
-  // Revolving door
-  c.fillStyle='#4a5a6a';c.fillRect(bx+bw/2-6,by+bh-10,12,10);
-  c.strokeStyle='#8a9aa8';c.beginPath();c.arc(bx+bw/2,by+bh-5,4,0,Math.PI*2);c.stroke();
+  const SD=6,SS=4;
+  // Shadow
+  c.fillStyle='rgba(0,0,0,0.25)';c.fillRect(bx+4,by+4,bw+SD,bh);
+  // Foundation
+  c.fillStyle='#4a4a52';c.fillRect(bx-2,by+bh-4,bw+SD+4,6);
+  // Front wall — blue-grey concrete
+  const wallH=bh*0.88;const wallY=by+bh-wallH;
+  c.fillStyle='#6a7888';c.fillRect(bx,wallY,bw,wallH);
+  // Stone block pattern
+  c.fillStyle='#7a8898';
+  for(let row=0;row<Math.floor(wallH/8);row++){
+    const off=(row%2)*5;
+    for(let col=off;col<bw-2;col+=10)c.fillRect(bx+col+1,wallY+row*8+1,8,6);
+  }
+  // Right side wall (darker)
+  c.fillStyle='#4a5868';
+  c.beginPath();c.moveTo(bx+bw,wallY);c.lineTo(bx+bw+SD,wallY+SS);
+  c.lineTo(bx+bw+SD,wallY+wallH+SS);c.lineTo(bx+bw,wallY+wallH);c.fill();
+  // Windows — 4 floors, 3 per floor, light blue with dark frames
+  const floors=4,wPerFloor=Math.min(3,Math.floor(bw/14));
+  const flH=wallH/floors;
+  for(let fl=0;fl<floors;fl++){for(let wi=0;wi<wPerFloor;wi++){
+    const wx=bx+4+wi*Math.floor((bw-8)/wPerFloor),wy=wallY+fl*flH+flH*0.2;
+    c.fillStyle='#3a4450';c.fillRect(wx-1,wy-1,10,9);// frame
+    const lit=tileHash(wi*3,fl+fr/250|0)%4===0;
+    c.fillStyle=lit?'#ffe888':'#8ab8dd';c.fillRect(wx,wy,8,7);
+    c.fillStyle='#5a6878';c.fillRect(wx+3,wy,1,7);c.fillRect(wx,wy+3,8,1);
+  }}
+  // Door
+  c.fillStyle='#2a3040';c.fillRect(bx+bw/2-6,by+bh-12,12,12);
+  c.fillStyle='#6a7a88';c.fillRect(bx+bw/2-1,by+bh-8,2,4);
   // Flat roof
-  c.fillStyle='#6a7a88';c.fillRect(bx,by-3,bw,3);
+  c.fillStyle='#5a6878';c.fillRect(bx-2,wallY-3,bw+4,3);
+  // Satellite dish on roof
+  c.fillStyle='#8a8a92';c.fillRect(bx+bw-12,wallY-8,3,6);
+  c.beginPath();c.arc(bx+bw-10,wallY-9,4,Math.PI,Math.PI*2);c.fillStyle='#9a9aa2';c.fill();
+  // Left edge highlight
+  c.fillStyle='rgba(255,255,255,0.08)';c.fillRect(bx,wallY,2,wallH);
 }
 
 function drawFactory(c,bx,by,bw,bh,fr){
-  c.fillStyle='rgba(0,0,0,0.3)';c.fillRect(bx+5,by+5,bw,bh);
-  // Corrugated walls
-  for(let col=0;col<bw;col+=4){c.fillStyle=col%8<4?'#7a7a80':'#6a6a70';c.fillRect(bx+col,by,4,bh)}
-  // Loading dock
-  c.fillStyle='#1a1a22';c.fillRect(bx+bw*0.6,by+bh*0.5,bw*0.35,bh*0.5);
-  // Chimney stack with smoke
-  c.fillStyle='#5a5a62';c.fillRect(bx+8,by-bh*0.5,10,bh*0.5+4);
-  c.fillStyle='#4a4a52';c.fillRect(bx+8,by-bh*0.5,10,3);
-  for(let i=0;i<4;i++){
-    const sy=by-bh*0.5-6-i*7-(fr%40)*0.2;
-    c.fillStyle=`rgba(120,120,130,${0.25-i*0.05})`;
-    c.beginPath();c.arc(bx+13+Math.sin(fr*0.02+i)*4,sy,3+i,0,Math.PI*2);c.fill();
+  const SD=6,SS=4;
+  // Shadow
+  c.fillStyle='rgba(0,0,0,0.25)';c.fillRect(bx+4,by+4,bw+SD,bh);
+  // Foundation
+  c.fillStyle='#3a3232';c.fillRect(bx-2,by+bh-4,bw+SD+4,6);
+  // Front wall — dark brick
+  const wallH=bh*0.8;const wallY=by+bh-wallH;
+  c.fillStyle='#5a3828';c.fillRect(bx,wallY,bw,wallH);
+  // Brick pattern
+  c.fillStyle='#6a4838';
+  for(let row=0;row<Math.floor(wallH/6);row++){
+    const off=(row%2)*4;
+    for(let col=off;col<bw-2;col+=8)c.fillRect(bx+col+1,wallY+row*6+1,6,4);
+  }
+  // Right side wall
+  c.fillStyle='#3a2018';
+  c.beginPath();c.moveTo(bx+bw,wallY);c.lineTo(bx+bw+SD,wallY+SS);
+  c.lineTo(bx+bw+SD,wallY+wallH+SS);c.lineTo(bx+bw,wallY+wallH);c.fill();
+  // Garage door
+  c.fillStyle='#2a2020';c.fillRect(bx+bw*0.5,wallY+wallH*0.35,bw*0.4,wallH*0.65);
+  c.fillStyle='#4a3828';// ridges
+  for(let gy=wallY+wallH*0.35;gy<wallY+wallH;gy+=5)c.fillRect(bx+bw*0.5,gy,bw*0.4,1);
+  // Small windows
+  c.fillStyle='#aacccc';c.fillRect(bx+6,wallY+8,8,6);c.fillRect(bx+18,wallY+8,8,6);
+  c.fillStyle='#3a3030';c.fillRect(bx+9,wallY+8,1,6);c.fillRect(bx+21,wallY+8,1,6);
+  // Smokestacks
+  c.fillStyle='#5a5a62';c.fillRect(bx+6,wallY-18,8,20);
+  c.fillStyle='#4a4a52';c.fillRect(bx+6,wallY-18,8,3);
+  // Smoke puffs
+  for(let i=0;i<3;i++){
+    const sy=wallY-22-i*6-(fr%40)*0.15;
+    c.fillStyle=`rgba(120,120,130,${0.2-i*0.05})`;
+    c.beginPath();c.arc(bx+10+Math.sin(fr*0.02+i)*3,sy,2+i,0,Math.PI*2);c.fill();
   }
   // Flat roof
-  c.fillStyle='#5a5a62';c.fillRect(bx,by-3,bw,3);
-  // Spark particles
-  if(fr%15<3){c.fillStyle='#ffaa33';c.fillRect(bx+bw*0.7+Math.random()*8,by+bh*0.5-2,2,2)}
+  c.fillStyle='#4a3828';c.fillRect(bx-2,wallY-3,bw+4,3);
+  // Left edge highlight
+  c.fillStyle='rgba(255,255,255,0.06)';c.fillRect(bx,wallY,2,wallH);
 }
 
 function drawBuilding(c,b,bx,by,bw,bh,fr){
@@ -3888,7 +3925,7 @@ for(const a of S.agents){
   if(isBuilding&&frame%30===0)spawnParticle(vx*ts+ts/2,vy*ts,'debris');
   agentRenderData.push({a,vx,vy,isWalking,faceLeft,isBuilding});
   // When building, sort agent slightly below the building so they render in front
-  const agentSortY=isBuilding?vy*ts+ts+8:vy*ts+ts;
+  const agentSortY=isBuilding?vy*ts+ts+20:vy*ts+ts;
   renderItems.push({type:'agent',idx:agentRenderData.length-1,sortY:agentSortY});
 }
 
