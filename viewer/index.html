@@ -3366,7 +3366,13 @@ for(const a of S.agents){
   }else{a._idleFrames=(a._idleFrames||0)+1}
   a._prevX=vx;a._prevY=vy;
   const isWalking=v&&(Math.abs(v.x-v.tx)>0.001||Math.abs(v.y-v.ty)>0.001);
-  const faceLeft=v&&(v.tx<v.x);
+  // Face toward task target (chopping/mining/building), not just movement
+  const ast3=agentState.get(a.id);
+  let faceLeft=v&&(v.tx<v.x);
+  if(ast3&&ast3.target&&(ast3.state==='chopping'||ast3.state==='mining'||ast3.state==='mining_gold'||ast3.state==='building')){
+    const tx2=ast3.target.x!=null?ast3.target.x/WW:v?v.tx:0;
+    faceLeft=tx2<(v?v.x:0);
+  }
   let isBuilding=false;
   for(const b of S.buildings){if(!b.complete&&b.progress!=null&&b.progress<1){if(Math.abs(vx-b.x)+Math.abs(vy-b.y)<4){isBuilding=true;break}}}
   // Only building gets rare particles (no walking/lazy spam)
@@ -3860,7 +3866,7 @@ function updateParticles(){
     if(frame%60===0){
       const rx=Math.floor(Math.random()*WW),ry=Math.floor(Math.random()*WH);
       if(tBiomes&&(tBiomes[ry*WW+rx]===0||tBiomes[ry*WW+rx]===1||tBiomes[ry*WW+rx]===10)){
-        const p2={x:rx*TS+Math.random()*TS,y:ry*TS+Math.random()*TS,type:'mist',life:0,maxLife:180,alpha:0.05,size:0,color:'#fff',vx:(Math.random()-0.5)*0.2,vy:-0.1,radius:8+Math.random()*4};
+        const p2={x:rx*TS+Math.random()*TS,y:ry*TS+Math.random()*TS,type:'mist',life:0,maxLife:30,alpha:0.05,size:0,color:'rgba(200,220,255,1)',vx:(Math.random()-0.5)*0.2,vy:-0.1,radius:6};
         if(particles.length<30)particles.push(p2);
       }
     }
@@ -3868,7 +3874,7 @@ function updateParticles(){
     if(frame%30===0){
       for(const b of G.clientBuildings){
         if(b.type==='campfire'&&b.complete){
-          const p2={x:b.x*TS+TS/2+(Math.random()-0.5)*8,y:b.y*TS+TS/2,type:'ember',life:0,maxLife:60,alpha:0.7,size:1+Math.round(Math.random()),color:'#ff8833',vx:(Math.random()-0.5)*0.3,vy:-0.4,radius:0};
+          const p2={x:b.x*TS+TS/2+(Math.random()-0.5)*8,y:b.y*TS+TS/2,type:'ember',life:0,maxLife:30,alpha:0.7,size:1+Math.round(Math.random()),color:'#ff8833',vx:(Math.random()-0.5)*0.3,vy:-0.5,radius:0};
           if(particles.length<30)particles.push(p2);
           break;// only 1 per frame
         }
@@ -3878,7 +3884,7 @@ function updateParticles(){
     if(frame%50===0){
       const rx=Math.floor(Math.random()*WW),ry=Math.floor(Math.random()*WH);
       if(tBiomes&&(tBiomes[ry*WW+rx]===4||tBiomes[ry*WW+rx]===5||tBiomes[ry*WW+rx]===3)){
-        const p2={x:rx*TS+Math.random()*TS,y:ry*TS+Math.random()*TS,type:'pollen',life:0,maxLife:150,alpha:0.2,size:1,color:'rgba(200,180,100,1)',vx:0.1,vy:0,radius:0};
+        const p2={x:rx*TS+Math.random()*TS,y:ry*TS+Math.random()*TS,type:'pollen',life:0,maxLife:30,alpha:0.15,size:1,color:'#c8b464',vx:0.1,vy:0,radius:0};
         if(particles.length<30)particles.push(p2);
       }
     }
