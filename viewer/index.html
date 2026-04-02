@@ -1685,29 +1685,29 @@ const G={
 
 const TECH_TREE=[
   // Era 0: Wood Age
-  {type:'campfire',name:'Campfire',abbr:'CF',w:2,h:1,pw:30,ph:20,tall:false,cost:{wood:3,stone:0,gold:0},era:0,faction:'neutral'},
-  {type:'wood_hut',name:'Wood Hut',abbr:'WH',w:3,h:2,pw:56,ph:48,tall:false,cost:{wood:8,stone:0,gold:0},era:0,faction:'human'},
-  {type:'log_cabin',name:'Log Cabin',abbr:'LC',w:3,h:3,pw:72,ph:56,tall:false,cost:{wood:15,stone:3,gold:0},era:0,faction:'human'},
-  {type:'lumber_mill',name:'Lumber Mill',abbr:'LM',w:4,h:3,pw:80,ph:60,tall:false,cost:{wood:20,stone:5,gold:0},era:0,faction:'dwarf'},
-  {type:'farm',name:'Farm',abbr:'FA',w:3,h:2,pw:64,ph:40,tall:false,cost:{wood:12,stone:3,gold:0},era:0,faction:'neutral'},
+  {type:'campfire',name:'Campfire',abbr:'CF',w:2,h:1,pw:30,ph:20,tall:false,cost:{wood:2,stone:0,gold:0},era:0,faction:'neutral'},
+  {type:'wood_hut',name:'Wood Hut',abbr:'WH',w:3,h:2,pw:56,ph:48,tall:false,cost:{wood:6,stone:0,gold:0},era:0,faction:'human'},
+  {type:'log_cabin',name:'Log Cabin',abbr:'LC',w:3,h:3,pw:72,ph:56,tall:false,cost:{wood:12,stone:2,gold:0},era:0,faction:'human'},
+  {type:'lumber_mill',name:'Lumber Mill',abbr:'LM',w:4,h:3,pw:80,ph:60,tall:false,cost:{wood:15,stone:4,gold:0},era:0,faction:'dwarf'},
+  {type:'farm',name:'Farm',abbr:'FA',w:3,h:2,pw:64,ph:40,tall:false,cost:{wood:9,stone:2,gold:0},era:0,faction:'neutral'},
   // Era 1: Stone Age
-  {type:'stone_house',name:'Stone House',abbr:'SH',w:3,h:3,pw:68,ph:56,tall:false,cost:{wood:8,stone:20,gold:0},era:1,faction:'human'},
-  {type:'quarry',name:'Quarry',abbr:'QR',w:4,h:3,pw:88,ph:52,tall:false,cost:{wood:10,stone:25,gold:0},era:1,faction:'dwarf'},
-  {type:'blacksmith',name:'Blacksmith',abbr:'BS',w:3,h:3,pw:72,ph:60,tall:false,cost:{wood:15,stone:30,gold:3},era:1,faction:'orc'},
-  {type:'watchtower',name:'Watchtower',abbr:'WT',w:2,h:4,pw:40,ph:96,tall:true,cost:{wood:8,stone:20,gold:0},era:1,faction:'human'},
-  {type:'well',name:'Well',abbr:'WL',w:1,h:1,pw:24,ph:28,tall:false,cost:{wood:5,stone:15,gold:0},era:1,faction:'neutral'},
+  {type:'stone_house',name:'Stone House',abbr:'SH',w:3,h:3,pw:68,ph:56,tall:false,cost:{wood:6,stone:15,gold:0},era:1,faction:'human'},
+  {type:'quarry',name:'Quarry',abbr:'QR',w:4,h:3,pw:88,ph:52,tall:false,cost:{wood:8,stone:18,gold:0},era:1,faction:'dwarf'},
+  {type:'blacksmith',name:'Blacksmith',abbr:'BS',w:3,h:3,pw:72,ph:60,tall:false,cost:{wood:12,stone:22,gold:2},era:1,faction:'orc'},
+  {type:'watchtower',name:'Watchtower',abbr:'WT',w:2,h:4,pw:40,ph:96,tall:true,cost:{wood:6,stone:15,gold:0},era:1,faction:'human'},
+  {type:'well',name:'Well',abbr:'WL',w:1,h:1,pw:24,ph:28,tall:false,cost:{wood:4,stone:10,gold:0},era:1,faction:'neutral'},
   // Era 2: Gold Age
-  {type:'town_hall',name:'Town Hall',abbr:'TH',w:5,h:4,pw:100,ph:80,tall:false,cost:{wood:25,stone:40,gold:10},era:2,faction:'human'},
-  {type:'barracks',name:'Barracks',abbr:'BK',w:4,h:3,pw:88,ph:64,tall:false,cost:{wood:20,stone:35,gold:5},era:2,faction:'orc'},
-  {type:'church',name:'Church',abbr:'CH',w:3,h:5,pw:72,ph:100,tall:true,cost:{wood:15,stone:30,gold:12},era:2,faction:'elf'},
-  {type:'market',name:'Market',abbr:'MK',w:4,h:3,pw:96,ph:56,tall:false,cost:{wood:20,stone:25,gold:15},era:2,faction:'dwarf'},
-  {type:'library',name:'Library',abbr:'LB',w:3,h:3,pw:68,ph:64,tall:false,cost:{wood:18,stone:28,gold:8},era:2,faction:'elf'},
+  {type:'town_hall',name:'Town Hall',abbr:'TH',w:5,h:4,pw:100,ph:80,tall:false,cost:{wood:18,stone:30,gold:8},era:2,faction:'human'},
+  {type:'barracks',name:'Barracks',abbr:'BK',w:4,h:3,pw:88,ph:64,tall:false,cost:{wood:15,stone:25,gold:4},era:2,faction:'orc'},
+  {type:'church',name:'Church',abbr:'CH',w:3,h:5,pw:72,ph:100,tall:true,cost:{wood:12,stone:22,gold:9},era:2,faction:'elf'},
+  {type:'market',name:'Market',abbr:'MK',w:4,h:3,pw:96,ph:56,tall:false,cost:{wood:15,stone:18,gold:10},era:2,faction:'dwarf'},
+  {type:'library',name:'Library',abbr:'LB',w:3,h:3,pw:68,ph:64,tall:false,cost:{wood:14,stone:20,gold:6},era:2,faction:'elf'},
   // Era 3: Modern
-  {type:'brick_house',name:'Brick House',abbr:'BH',w:3,h:3,pw:72,ph:60,tall:false,cost:{wood:15,stone:50,gold:5},era:3,faction:'human'},
-  {type:'apartment',name:'Apartment',abbr:'AP',w:3,h:5,pw:60,ph:110,tall:true,cost:{wood:20,stone:70,gold:15},era:3,faction:'human'},
-  {type:'office',name:'Office',abbr:'OF',w:3,h:5,pw:70,ph:120,tall:true,cost:{wood:15,stone:60,gold:25},era:3,faction:'elf'},
-  {type:'factory',name:'Factory',abbr:'FY',w:5,h:3,pw:110,ph:65,tall:false,cost:{wood:30,stone:80,gold:10},era:3,faction:'orc'},
-  {type:'monument',name:'Monument',abbr:'MN',w:2,h:3,pw:40,ph:70,tall:true,cost:{wood:10,stone:40,gold:30},era:3,faction:'neutral'},
+  {type:'brick_house',name:'Brick House',abbr:'BH',w:3,h:3,pw:72,ph:60,tall:false,cost:{wood:12,stone:38,gold:4},era:3,faction:'human'},
+  {type:'apartment',name:'Apartment',abbr:'AP',w:3,h:5,pw:60,ph:110,tall:true,cost:{wood:15,stone:50,gold:10},era:3,faction:'human'},
+  {type:'office',name:'Office',abbr:'OF',w:3,h:5,pw:70,ph:120,tall:true,cost:{wood:12,stone:45,gold:18},era:3,faction:'elf'},
+  {type:'factory',name:'Factory',abbr:'FY',w:5,h:3,pw:110,ph:65,tall:false,cost:{wood:22,stone:60,gold:8},era:3,faction:'orc'},
+  {type:'monument',name:'Monument',abbr:'MN',w:2,h:3,pw:40,ph:70,tall:true,cost:{wood:8,stone:30,gold:22},era:3,faction:'neutral'},
   // Decorative (always available after era 0)
   {type:'garden',name:'Garden',abbr:'GD',w:2,h:1,pw:36,ph:24,tall:false,cost:{wood:3,stone:0,gold:0},era:0,faction:'neutral',decorative:true},
   {type:'fence',name:'Fence',abbr:'FN',w:2,h:1,pw:40,ph:16,tall:false,cost:{wood:5,stone:0,gold:0},era:0,faction:'neutral',decorative:true},
@@ -1736,7 +1736,7 @@ function initHarvestables(){
   goldDeposits=[];
   const rng2=new SeededRNG(999);
   let count=0;
-  for(let i=0;i<500&&count<7;i++){
+  for(let i=0;i<500&&count<10;i++){
     const gx=Math.floor(rng2.next()*WW),gy=Math.floor(rng2.next()*WH);
     const bi=tBiomes[gy*WW+gx];
     if(BL[bi]==='mountain'||BL[bi]==='hills'){
@@ -2515,7 +2515,7 @@ function updateAgentMovement(){
     if(!st){st={state:'idle',target:null,timer:0,taskCooldown:0};agentState.set(a.id,st)}
 
     const isLazy=a.personality==='lazy';
-    const speed=isLazy?0.008:0.015;
+    const speed=isLazy?0.012:0.025;
     v.x+=(v.tx-v.x)*speed;
     v.y+=(v.ty-v.y)*speed;
     const atTarget=Math.abs(v.x-v.tx)<0.005&&Math.abs(v.y-v.ty)<0.005;
@@ -2524,8 +2524,8 @@ function updateAgentMovement(){
       st.taskCooldown--;
       if(st.taskCooldown>0)continue;
       // Lazy agents take short breaks, everyone else acts fast
-      if(isLazy){st.taskCooldown=90;if(Math.random()<0.3)continue}
-      else{st.taskCooldown=15}// ~0.25 sec decision time
+      if(isLazy){st.taskCooldown=45;if(Math.random()<0.3)continue}
+      else{st.taskCooldown=8}// instant decision
 
       const soc=getAgentSocial(a.id);
       // Needs override: hungry agents forage, exhausted agents rest
@@ -2660,17 +2660,17 @@ function updateAgentMovement(){
       st.timer-=(isLazy?0.5:1);
       // Fishing line visual: handled by fishing state check in render
       if(st.timer%300<5&&Math.random()<0.5){// catch attempt every ~5 sec
-        G.food+=3;
-        gameEvent(`${a.name} caught a fish! (+3 food)`,'build_complete');
+        G.food+=5;
+        gameEvent(`${a.name} caught a fish! (+5 food)`,'build_complete');
         spawnParticle(v.x*WW*TS,v.y*WH*TS+TS,'debris');
       }
       if(st.timer<=0){st.state='idle';st.taskCooldown=30}
     }
     else if(st.state==='walking_to_tree'||st.state==='walking_to_rock'||st.state==='walking_to_gold'){
       if(atTarget){
-        if(st.state==='walking_to_tree'){st.state='chopping';st.timer=hasLumberMill?120:200}// 2-3.3 sec
-        else if(st.state==='walking_to_rock'){st.state='mining';st.timer=hasQuarry?160:260}// 2.7-4.3 sec
-        else{st.state='mining_gold';st.timer=340}// ~5.7 sec
+        if(st.state==='walking_to_tree'){st.state='chopping';st.timer=hasLumberMill?80:130}// ~1.3-2.2 sec
+        else if(st.state==='walking_to_rock'){st.state='mining';st.timer=hasQuarry?100:170}// ~1.7-2.8 sec
+        else{st.state='mining_gold';st.timer=220}// ~3.7 sec
       }
     }
     else if(st.state==='chopping'){
@@ -2689,7 +2689,7 @@ function updateAgentMovement(){
       }
       if(st.timer<=0){
         const q2=getQuirk(a.name),gm=q2?q2.gatherMult:1,cm=q2?q2.chopMult||1:1;
-        const woodAmt=Math.round(5*gm*cm);
+        const woodAmt=Math.round(8*gm*cm);
         G.wood+=woodAmt;worldStats.totalWood+=woodAmt;
         const soc3=getAgentSocial(a.id);soc3.morale=Math.min(100,soc3.morale+5);soc3.stats.treesChopped++;
         milestones.trees++;checkMilestones();
@@ -2703,7 +2703,7 @@ function updateAgentMovement(){
           // Tree fall particles
           for(let i=0;i<6;i++)spawnParticle(st.target.x+TS/2+(Math.random()-0.5)*16,st.target.y+TS*0.4,'debris');
         }
-        st.state='idle';st.taskCooldown=15;
+        st.state='idle';st.taskCooldown=5;
       }
     }
     else if(st.state==='mining'){
@@ -2719,7 +2719,7 @@ function updateAgentMovement(){
         }
       }
       if(st.timer<=0){
-        G.stone+=3;worldStats.totalStone+=3;
+        G.stone+=5;worldStats.totalStone+=5;
         const soc4=getAgentSocial(a.id);soc4.morale=Math.min(100,soc4.morale+5);soc4.stats.stoneMined++;
         milestones.stones++;checkMilestones();
         // Batched in summary
@@ -2729,7 +2729,7 @@ function updateAgentMovement(){
           stumps.push({x:st.target.x,y:st.target.y,type:'rubble',timer:1200});
           for(let i=0;i<5;i++)spawnParticle(st.target.x+TS/2+(Math.random()-0.5)*14,st.target.y+TS/2,'debris');
         }
-        st.state='idle';st.taskCooldown=15;
+        st.state='idle';st.taskCooldown=5;
       }
     }
     else if(st.state==='mining_gold'){
@@ -2738,21 +2738,21 @@ function updateAgentMovement(){
         spawnParticle(st.target.x+TS/2,st.target.y+TS/2,'gold');
       }
       if(st.timer<=0){
-        G.gold+=1;worldStats.totalGold++;getAgentSocial(a.id).stats.goldMined++;
+        G.gold+=3;worldStats.totalGold+=3;getAgentSocial(a.id).stats.goldMined++;
         // Batched in summary
         if(st.target)st.target.alive=false;
-        st.state='idle';st.taskCooldown=15;
+        st.state='idle';st.taskCooldown=5;
       }
     }
     else if(st.state==='building'){
-      if(!st.target||st.target.complete){st.state='idle';st.taskCooldown=15;continue}
+      if(!st.target||st.target.complete){st.state='idle';st.taskCooldown=5;continue}
       if(!atTarget){v.tx=st.target.x/WW;v.ty=st.target.y/WH;continue}
       // Build speed: per-type construction time
-      const BUILD_TIMES={campfire:300,wood_hut:720,log_cabin:1080,lumber_mill:1080,farm:720,
-        stone_house:1500,quarry:1500,blacksmith:1500,watchtower:1500,well:480,
-        town_hall:2400,barracks:2400,church:2400,market:2400,library:1800,
-        brick_house:1800,apartment:2700,office:2700,factory:3000,monument:2400,
-        garden:300,fence:240,fountain:900,statue:1500,dock:600,bridge:900};
+      const BUILD_TIMES={campfire:180,wood_hut:420,log_cabin:660,lumber_mill:660,farm:420,
+        stone_house:900,quarry:900,blacksmith:900,watchtower:900,well:300,
+        town_hall:1500,barracks:1500,church:1500,market:1500,library:1080,
+        brick_house:1080,apartment:1680,office:1680,factory:1800,monument:1500,
+        garden:180,fence:150,fountain:540,statue:900,dock:360,bridge:540};
       const buildFrames=BUILD_TIMES[st.target.type]||1200;
       st.target.progress=Math.min(1,st.target.progress+1.0/buildFrames);
       // Building impact effects
@@ -2775,7 +2775,7 @@ function updateAgentMovement(){
         }else{
           gameEvent(`${a.name} completed ${st.target.name}!`,'build_complete');
         }
-        st.state='idle';st.taskCooldown=30;
+        st.state='idle';st.taskCooldown=8;
       }
     }
   }
@@ -3215,9 +3215,9 @@ for(const s of settlements){
     }
     // Progress wall construction: 1 segment at a time
     const nextSeg=s.wallSegs.find(ws=>ws.progress<1&&!ws.isGate);
-    if(nextSeg){nextSeg.progress=Math.min(1,nextSeg.progress+0.0003)}// ~55 sec per segment
+    if(nextSeg){nextSeg.progress=Math.min(1,nextSeg.progress+0.0008)}// ~20 sec per segment (2x faster)
     // Gate built last
-    if(!nextSeg){const gateSeg=s.wallSegs.find(ws=>ws.isGate&&ws.progress<1);if(gateSeg)gateSeg.progress=Math.min(1,gateSeg.progress+0.0003)}
+    if(!nextSeg){const gateSeg=s.wallSegs.find(ws=>ws.isGate&&ws.progress<1);if(gateSeg)gateSeg.progress=Math.min(1,gateSeg.progress+0.0008)}
     // Draw completed + in-progress segments
     for(const ws of s.wallSegs){
       if(ws.progress<=0)continue;
@@ -4979,16 +4979,16 @@ function regrowResources(){
   const rng2=new SeededRNG(frame+7777);
 
   // TREE REGROWTH: clear oldest harvest markers (trees regrow over time)
-  // Each call clears 10 entries — forests slowly return
+  // Each call clears 20 entries — forests return faster
   if(harvestables.size>0){
     let cleared=0;
-    for(const[key] of harvestables){if(cleared<10){harvestables.delete(key);cleared++}else break}
+    for(const[key] of harvestables){if(cleared<20){harvestables.delete(key);cleared++}else break}
   }
 
-  // GOLD DEPOSIT respawn: keep minimum 3, max 8
+  // GOLD DEPOSIT respawn: keep minimum 5, max 10
   const aliveGold=goldDeposits.filter(g=>g.alive).length;
-  if(aliveGold<3){
-    for(let i=0;i<(3-aliveGold);i++){
+  if(aliveGold<5){
+    for(let i=0;i<(5-aliveGold);i++){
       for(let attempt=0;attempt<20;attempt++){
         const gx=Math.floor(rng2.next()*WW),gy=Math.floor(rng2.next()*WH);
         if(tBiomes&&(BL[tBiomes[gy*WW+gx]]==='mountain'||BL[tBiomes[gy*WW+gx]]==='hills')){
@@ -4998,24 +4998,24 @@ function regrowResources(){
     }
   }
   // Revive dead gold deposits periodically
-  for(const g of goldDeposits){if(!g.alive&&Math.random()<0.1&&aliveGold<8)g.alive=true}
+  for(const g of goldDeposits){if(!g.alive&&Math.random()<0.15&&aliveGold<10)g.alive=true}
 
   // PASSIVE RESOURCE GENERATION from buildings
   const hasFarm=G.clientBuildings.some(b=>b.type==='farm'&&b.complete);
   const hasMarket=G.clientBuildings.some(b=>b.type==='market'&&b.complete);
   const hasFactory=G.clientBuildings.some(b=>b.type==='factory'&&b.complete);
-  if(hasFarm)G.food+=2;// +2 food per cycle from farm
-  if(hasMarket)G.gold+=1;// +1 gold per cycle from market
-  if(hasFactory){G.wood+=2;G.stone+=2}// +2 each from factory
+  if(hasFarm)G.food+=4;// +4 food per cycle from farm
+  if(hasMarket)G.gold+=2;// +2 gold per cycle from market
+  if(hasFactory){G.wood+=3;G.stone+=3}// +3 each from factory
 }
 
 // Resource abundance check: ensure minimums (called every 300 frames)
 function ensureResourceAbundance(){
   // Count available (non-harvested) trees and rocks by checking a sample
   // If harvestables has grown too large, the world is barren — clear extra
-  if(harvestables.size>80){// too many things harvested
+  if(harvestables.size>50){// too many things harvested — ensure forest stays lush
     let cleared=0;
-    for(const[key] of harvestables){if(cleared<30){harvestables.delete(key);cleared++}else break}
+    for(const[key] of harvestables){if(cleared<40){harvestables.delete(key);cleared++}else break}
     gameEvent('🌱 New growth spotted in the forest','tile_claimed');
   }
   // Ensure gold deposits
@@ -5179,7 +5179,7 @@ setTimeout(()=>{const io=document.getElementById('intro-overlay');if(io){io.clas
 requestAnimationFrame(render);connectWS();
 safeInterval(tickFood,10000);
 safeInterval(saveGame,30000);// save every 30 seconds
-safeInterval(regrowResources,120000);// regrow every 2 min
+safeInterval(regrowResources,60000);// regrow every 1 min (faster)
 window.addEventListener('beforeunload',saveGame);
 // Debug: reset world
 window.resetWorld=function(){localStorage.removeItem(SAVE_KEY);location.reload()}
