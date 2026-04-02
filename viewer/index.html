@@ -549,8 +549,18 @@ function getDetails(sx,sy,ex,ey){
   }
   // Filter out harvested details
   const filtered=D.filter(d=>!harvestables.has(`${d.x},${d.y}`));
-  filtered.sort((a,b2)=>a.sY-b2.sY);
-  return filtered;
+  // NUCLEAR: also filter out any detail inside ANY building footprint
+  const finalFiltered=filtered.filter(d=>{
+    for(const b3 of G.clientBuildings){
+      const bpx3=b3.x*TS,bpy3=b3.y*TS;
+      const bpw3=(b3.pw||(b3.width||1)*TS)+30;// 30px margin
+      const bph3=(b3.ph||(b3.height||1)*TS)+30;
+      if(d.x>=bpx3-15&&d.x<=bpx3+bpw3&&d.y>=bpy3-15&&d.y<=bpy3+bph3)return false;
+    }
+    return true;
+  });
+  finalFiltered.sort((a,b2)=>a.sY-b2.sY);
+  return finalFiltered;
 }
 
 // --- Draw functions ---
