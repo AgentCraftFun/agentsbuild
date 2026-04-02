@@ -2347,9 +2347,9 @@ function canPlaceAt(tx,ty,pw2,ph2){
 }
 
 function clearDetailsAtBuilding(tx,ty,pw2,ph2){
-  // Mark ALL tile positions within footprint + 2 tile margin as harvested
-  const margin=2;
-  const twid=Math.ceil(pw2/TS),thei=Math.ceil(ph2/TS);
+  // Mark ALL tile positions within footprint + 3 tile margin as harvested
+  const margin=3;
+  const twid=Math.ceil(pw2/TS)+1,thei=Math.ceil(ph2/TS)+1;
   for(let dy=-margin;dy<=thei+margin;dy++){
     for(let dx=-margin;dx<=twid+margin;dx++){
       harvestables.set(`${(tx+dx)*TS},${(ty+dy)*TS}`,true);
@@ -2540,8 +2540,21 @@ function updateAgentMovement(){
           if(!existing){
             const site=pickBuildSite(next,a.id);
             if(site){
+              const bpw=next.pw||next.w*TS,bph=next.ph||next.h*TS;
+              // FINAL OVERLAP GUARD right before push
+              if(!canPlaceAt(site.x,site.y,bpw,bph)){
+                // Try 15 nearby offsets
+                let placed=false;
+                for(let att=0;att<15&&!placed;att++){
+                  const ox2=site.x+Math.round((Math.random()-0.5)*8);
+                  const oy2=site.y+Math.round((Math.random()-0.5)*6);
+                  if(canPlaceAt(ox2,oy2,bpw,bph)){site.x=ox2;site.y=oy2;placed=true}
+                }
+                if(!placed){action='chop';continue}// SKIP — no valid spot
+              }
+              clearDetailsAtBuilding(site.x,site.y,bpw,bph);
               const cb={type:next.type,name:next.name,abbr:next.abbr,x:site.x,y:site.y,
-                progress:0,complete:false,faction:next.faction,width:next.w,height:next.h,pw:next.pw,ph:next.ph,tall:next.tall,claimedBy:a.id,settlement:site.settlement||null};
+                progress:0,complete:false,faction:next.faction,width:next.w,height:next.h,pw:bpw,ph:bph,tall:next.tall,claimedBy:a.id,settlement:site.settlement||null};
               if(G.clientBuildings.length>=40){action='chop';continue}// building cap
               G.clientBuildings.push(cb);
               G.wood-=next.cost.wood;G.stone-=next.cost.stone;G.gold-=next.cost.gold;
@@ -4818,19 +4831,25 @@ try{
     console.log('Restored saved game');
     // Clear trees from all existing building footprints
     for(const b of G.clientBuildings){if(b.complete)clearDetailsAtBuilding(b.x,b.y,b.pw||TS*2,b.ph||TS*2)}
-    // ONE-TIME CLEANUP: remove overlapping buildings from saved state
+    // ONE-TIME CLEANUP: remove overlapping buildings + clear ALL trees
     for(let i=G.clientBuildings.length-1;i>=0;i--){
       const bi2=G.clientBuildings[i];
+      if(!bi2||!isFinite(bi2.x)||!isFinite(bi2.y)){G.clientBuildings.splice(i,1);continue}
       const pw3=bi2.pw||(bi2.width||1)*TS,ph3=bi2.ph||(bi2.height||1)*TS;
       const cx3=bi2.x*TS+pw3/2,cy3=bi2.y*TS+ph3/2;
       for(let j=0;j<i;j++){
         const bj=G.clientBuildings[j];
         const pw4=bj.pw||(bj.width||1)*TS,ph4=bj.ph||(bj.height||1)*TS;
         const cx4=bj.x*TS+pw4/2,cy4=bj.y*TS+ph4/2;
-        if(Math.abs(cx3-cx4)<(pw3+pw4)/2+20&&Math.abs(cy3-cy4)<(ph3+ph4)/2+20){
-          G.clientBuildings.splice(i,1);break;// remove newer overlapping building
+        if(Math.abs(cx3-cx4)<(pw3+pw4)/2+30&&Math.abs(cy3-cy4)<(ph3+ph4)/2+30){
+          G.clientBuildings.splice(i,1);break;
         }
       }
+    }
+    // Clear trees around ALL buildings
+    for(const b of G.clientBuildings){
+      const pw5=b.pw||(b.width||1)*TS,ph5=b.ph||(b.height||1)*TS;
+      clearDetailsAtBuilding(b.x,b.y,pw5,ph5);
     }
     // Re-clear settlement zones on load
     for(const s of settlements){if(s.clearRadius)clearSettlementZone(s.cx,s.cy,s.clearRadius)}
