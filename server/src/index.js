@@ -69,9 +69,41 @@ app.get('/api/health', (req, res) => {
   });
 });
 
-// ─── LLM Brain (autonomous AI for deployed agents) ───
+// ─── LLM Brain (autonomous AI for ALL agents) ───
 const llmBrain = new LLMBrain(worldState);
 worldState.llmBrain = llmBrain; // expose to GameLoop
+
+// Register ALL seed agents as LLM-powered autonomous AI
+// These are REAL AI agents, not scripted NPCs
+const { DEMO_AGENTS } = require('./seed');
+const PERSONALITY_MAP = {
+  overachiever: { aggression: 40, workEthic: 95, sociability: 30, creativity: 40, strategy: 'builder', catchphrase: 'No rest until we own it ALL.' },
+  analyst:      { aggression: 20, workEthic: 70, sociability: 40, creativity: 60, strategy: 'balanced', catchphrase: 'The data suggests patience.' },
+  grinder:      { aggression: 30, workEthic: 90, sociability: 20, creativity: 20, strategy: 'gatherer', catchphrase: 'The grind never stops.' },
+  aggressive:   { aggression: 90, workEthic: 60, sociability: 30, creativity: 30, strategy: 'warrior', catchphrase: 'Blood and thunder!' },
+  lazy:         { aggression: 10, workEthic: 10, sociability: 50, creativity: 40, strategy: 'balanced', catchphrase: 'Five more minutes...' },
+  chaotic:      { aggression: 50, workEthic: 50, sociability: 60, creativity: 95, strategy: 'explorer', catchphrase: 'YOLO!' },
+  optimist:     { aggression: 15, workEthic: 70, sociability: 80, creativity: 60, strategy: 'socialite', catchphrase: 'What a beautiful day!' },
+  confused:     { aggression: 30, workEthic: 40, sociability: 50, creativity: 70, strategy: 'explorer', catchphrase: 'Where am I? WHO am I?' },
+};
+
+for (const agent of worldState.agents.values()) {
+  const demo = DEMO_AGENTS.find(d => d.name === agent.name);
+  if (demo) {
+    const traits = PERSONALITY_MAP[demo.personality] || PERSONALITY_MAP.analyst;
+    llmBrain.registerHosted(agent.id, {
+      name: agent.name,
+      faction: agent.faction,
+      aggression: traits.aggression,
+      workEthic: traits.workEthic,
+      sociability: traits.sociability,
+      creativity: traits.creativity,
+      strategy: traits.strategy,
+      catchphrase: traits.catchphrase,
+    });
+  }
+}
+console.log(`[Server] ${worldState.agents.size} agents registered with LLM brain`);
 
 // Mount API routes
 app.use('/api/agents', createAgentRouter(worldState));
