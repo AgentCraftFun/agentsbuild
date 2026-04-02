@@ -1542,25 +1542,25 @@ const G={
 
 const TECH_TREE=[
   // Era 0: Wood Age — pw/ph are pixel dimensions for rendering
-  {type:'campfire',name:'Campfire',abbr:'CF',w:2,h:1,pw:30,ph:20,tall:false,cost:{wood:5,stone:0,gold:0},era:0,faction:'neutral'},
-  {type:'wood_hut',name:'Wood Hut',abbr:'WH',w:3,h:2,pw:56,ph:48,tall:false,cost:{wood:15,stone:0,gold:0},era:0,faction:'human'},
-  {type:'log_cabin',name:'Log Cabin',abbr:'LC',w:3,h:3,pw:72,ph:56,tall:false,cost:{wood:25,stone:5,gold:0},era:0,faction:'human'},
-  {type:'lumber_mill',name:'Lumber Mill',abbr:'LM',w:4,h:3,pw:80,ph:60,tall:false,cost:{wood:30,stone:10,gold:0},era:0,faction:'dwarf'},
+  {type:'campfire',name:'Campfire',abbr:'CF',w:2,h:1,pw:30,ph:20,tall:false,cost:{wood:3,stone:0,gold:0},era:0,faction:'neutral'},
+  {type:'wood_hut',name:'Wood Hut',abbr:'WH',w:3,h:2,pw:56,ph:48,tall:false,cost:{wood:10,stone:0,gold:0},era:0,faction:'human'},
+  {type:'log_cabin',name:'Log Cabin',abbr:'LC',w:3,h:3,pw:72,ph:56,tall:false,cost:{wood:18,stone:3,gold:0},era:0,faction:'human'},
+  {type:'lumber_mill',name:'Lumber Mill',abbr:'LM',w:4,h:3,pw:80,ph:60,tall:false,cost:{wood:20,stone:7,gold:0},era:0,faction:'dwarf'},
   // Era 1: Stone Age
-  {type:'stone_house',name:'Stone House',abbr:'SH',w:3,h:3,pw:68,ph:56,tall:false,cost:{wood:10,stone:30,gold:0},era:1,faction:'human'},
-  {type:'quarry',name:'Quarry',abbr:'QR',w:4,h:3,pw:88,ph:52,tall:false,cost:{wood:15,stone:40,gold:0},era:1,faction:'dwarf'},
-  {type:'blacksmith',name:'Blacksmith',abbr:'BS',w:3,h:3,pw:72,ph:60,tall:false,cost:{wood:20,stone:50,gold:5},era:1,faction:'orc'},
-  {type:'watchtower',name:'Watchtower',abbr:'WT',w:2,h:4,pw:40,ph:96,tall:true,cost:{wood:10,stone:35,gold:0},era:1,faction:'human'},
+  {type:'stone_house',name:'Stone House',abbr:'SH',w:3,h:3,pw:68,ph:56,tall:false,cost:{wood:7,stone:20,gold:0},era:1,faction:'human'},
+  {type:'quarry',name:'Quarry',abbr:'QR',w:4,h:3,pw:88,ph:52,tall:false,cost:{wood:10,stone:28,gold:0},era:1,faction:'dwarf'},
+  {type:'blacksmith',name:'Blacksmith',abbr:'BS',w:3,h:3,pw:72,ph:60,tall:false,cost:{wood:14,stone:35,gold:3},era:1,faction:'orc'},
+  {type:'watchtower',name:'Watchtower',abbr:'WT',w:2,h:4,pw:40,ph:96,tall:true,cost:{wood:7,stone:24,gold:0},era:1,faction:'human'},
   // Era 2: Iron Age
-  {type:'town_hall',name:'Town Hall',abbr:'TH',w:5,h:4,pw:100,ph:80,tall:false,cost:{wood:40,stone:60,gold:15},era:2,faction:'human'},
-  {type:'barracks',name:'Barracks',abbr:'BK',w:4,h:3,pw:88,ph:64,tall:false,cost:{wood:30,stone:50,gold:10},era:2,faction:'orc'},
-  {type:'church',name:'Church',abbr:'CH',w:3,h:5,pw:72,ph:100,tall:true,cost:{wood:25,stone:45,gold:20},era:2,faction:'elf'},
-  {type:'market',name:'Market',abbr:'MK',w:4,h:3,pw:96,ph:56,tall:false,cost:{wood:35,stone:40,gold:25},era:2,faction:'dwarf'},
+  {type:'town_hall',name:'Town Hall',abbr:'TH',w:5,h:4,pw:100,ph:80,tall:false,cost:{wood:28,stone:42,gold:10},era:2,faction:'human'},
+  {type:'barracks',name:'Barracks',abbr:'BK',w:4,h:3,pw:88,ph:64,tall:false,cost:{wood:20,stone:35,gold:7},era:2,faction:'orc'},
+  {type:'church',name:'Church',abbr:'CH',w:3,h:5,pw:72,ph:100,tall:true,cost:{wood:18,stone:32,gold:14},era:2,faction:'elf'},
+  {type:'market',name:'Market',abbr:'MK',w:4,h:3,pw:96,ph:56,tall:false,cost:{wood:24,stone:28,gold:18},era:2,faction:'dwarf'},
   // Era 3: Modern
-  {type:'brick_house',name:'Brick House',abbr:'BH',w:3,h:3,pw:72,ph:60,tall:false,cost:{wood:20,stone:80,gold:10},era:3,faction:'human'},
-  {type:'apartment',name:'Apartment',abbr:'AP',w:3,h:5,pw:60,ph:110,tall:true,cost:{wood:30,stone:100,gold:30},era:3,faction:'human'},
-  {type:'office',name:'Office',abbr:'OF',w:3,h:5,pw:70,ph:120,tall:true,cost:{wood:25,stone:90,gold:40},era:3,faction:'elf'},
-  {type:'factory',name:'Factory',abbr:'FA',w:5,h:3,pw:110,ph:65,tall:false,cost:{wood:50,stone:120,gold:20},era:3,faction:'orc'},
+  {type:'brick_house',name:'Brick House',abbr:'BH',w:3,h:3,pw:72,ph:60,tall:false,cost:{wood:14,stone:56,gold:7},era:3,faction:'human'},
+  {type:'apartment',name:'Apartment',abbr:'AP',w:3,h:5,pw:60,ph:110,tall:true,cost:{wood:20,stone:70,gold:20},era:3,faction:'human'},
+  {type:'office',name:'Office',abbr:'OF',w:3,h:5,pw:70,ph:120,tall:true,cost:{wood:18,stone:63,gold:28},era:3,faction:'elf'},
+  {type:'factory',name:'Factory',abbr:'FA',w:5,h:3,pw:110,ph:65,tall:false,cost:{wood:35,stone:84,gold:14},era:3,faction:'orc'},
 ];
 
 // Track harvestable details — key: "tx,ty" -> {type,hp}
@@ -1593,19 +1593,27 @@ function initHarvestables(){
 }
 
 function getNextBuilding(){
-  const built=new Set(G.clientBuildings.map(b=>b.type));
-  for(const b of TECH_TREE){
-    if(b.era>G.era)continue;
-    if(!built.has(b.type))return b;
-  }
-  // All current era built — check next era
+  const builtTypes=new Set(G.clientBuildings.map(b=>b.type));
+  const builtComplete=G.clientBuildings.filter(b=>b.complete);
+  // Check era advancement
   if(G.era<3){
-    // Unlock next era if all required buildings of current era are built
     const eraBuildings=TECH_TREE.filter(b=>b.era===G.era);
-    const allBuilt=eraBuildings.every(b=>built.has(b.type));
+    const allBuilt=eraBuildings.every(b=>builtTypes.has(b.type));
     if(allBuilt){G.era++;document.getElementById('h-era').textContent=G.eraNames[G.era]}
-    return TECH_TREE.find(b=>b.era<=G.era&&!built.has(b.type))||null;
   }
+  // Priority 1: unbuilt types in current era (cheapest first)
+  const unbuilt=TECH_TREE.filter(b=>b.era<=G.era&&!builtTypes.has(b.type))
+    .sort((a2,b2)=>(a2.cost.wood+a2.cost.stone+a2.cost.gold)-(b2.cost.wood+b2.cost.stone+b2.cost.gold));
+  if(unbuilt.length>0)return unbuilt[0];
+  // Priority 2: build duplicates of useful buildings (homes, resource buildings)
+  const dupTargets=['wood_hut','log_cabin','stone_house','lumber_mill','quarry','campfire'];
+  for(const dt of dupTargets){
+    const def=TECH_TREE.find(t2=>t2.type===dt);
+    if(def&&def.era<=G.era&&G.clientBuildings.filter(b=>b.type===dt).length<3)return def;
+  }
+  // Priority 3: any building from current era (variety)
+  const anyEra=TECH_TREE.filter(b=>b.era<=G.era);
+  if(anyEra.length>0)return anyEra[Math.floor(Math.random()*anyEra.length)];
   return null;
 }
 
@@ -1812,9 +1820,9 @@ function tickPersonalization(){
 
 // === Building Upgrades ===
 const UPGRADES={
-  wood_hut:{to:'log_cabin',cost:{wood:10,stone:5,gold:0}},
-  log_cabin:{to:'stone_house',cost:{wood:5,stone:25,gold:0}},
-  stone_house:{to:'brick_house',cost:{wood:0,stone:20,gold:10}},
+  wood_hut:{to:'log_cabin',cost:{wood:7,stone:3,gold:0}},
+  log_cabin:{to:'stone_house',cost:{wood:3,stone:18,gold:0}},
+  stone_house:{to:'brick_house',cost:{wood:0,stone:14,gold:7}},
 };
 
 function tryUpgrade(agent,building){
@@ -1836,20 +1844,23 @@ function tryUpgrade(agent,building){
 }
 
 function findNearestDetail(vx,vy,types){
-  // Search visible details for nearest matching type
-  let best=null,bestD=Infinity;
-  const sx2=Math.max(0,Math.floor(vx*WW)-8),sy2=Math.max(0,Math.floor(vy*WH)-8);
-  const ex2=Math.min(WW,Math.ceil(vx*WW)+8),ey2=Math.min(WH,Math.ceil(vy*WH)+8);
-  const dets=getDetails(sx2,sy2,ex2,ey2);
-  for(const d of dets){
-    if(!types.includes(d.t))continue;
-    const key=`${d.x},${d.y}`;
-    if(harvestables.has(key))continue;// already being harvested
-    const dx=d.x/WW/TS-vx,dy=d.y/WH/TS-vy;
-    const dist=dx*dx+dy*dy;
-    if(dist<bestD){bestD=dist;best=d}
+  // Progressive search: start nearby, expand if nothing found
+  for(const radius of [10,25,50,WW]){
+    let best=null,bestD=Infinity;
+    const sx2=Math.max(0,Math.floor(vx*WW)-radius),sy2=Math.max(0,Math.floor(vy*WH)-radius);
+    const ex2=Math.min(WW,Math.ceil(vx*WW)+radius),ey2=Math.min(WH,Math.ceil(vy*WH)+radius);
+    const dets=getDetails(sx2,sy2,ex2,ey2);
+    for(const d of dets){
+      if(!types.includes(d.t))continue;
+      const key=`${d.x},${d.y}`;
+      if(harvestables.has(key))continue;
+      const dx=d.x/WW/TS-vx,dy=d.y/WH/TS-vy;
+      const dist=dx*dx+dy*dy;
+      if(dist<bestD){bestD=dist;best=d}
+    }
+    if(best)return best;
   }
-  return best;
+  return null;
 }
 
 function pickBuildSite(bdef,agentId){
@@ -1970,7 +1981,7 @@ function updateAgentMovement(){
             if(site){
               const cb={type:next.type,name:next.name,abbr:next.abbr,x:site.x,y:site.y,
                 progress:0,complete:false,faction:next.faction,width:next.w,height:next.h,pw:next.pw,ph:next.ph,tall:next.tall,claimedBy:a.id};
-              if(G.clientBuildings.length>=30){action='chop';continue}// building cap
+              if(G.clientBuildings.length>=40){action='chop';continue}// building cap
               G.clientBuildings.push(cb);
               G.wood-=next.cost.wood;G.stone-=next.cost.stone;G.gold-=next.cost.gold;
               st.state='building';st.target=cb;st.timer=0;
@@ -2228,6 +2239,13 @@ if(panTarget&&panFrames>0){
 }
 if(panHighlight&&panHighlight.timer>0)panHighlight.timer--;
 updateAgentMovement();
+// Agent watchdog: force idle agents to act (every 30 frames)
+if(frame%30===0){
+  for(const a of S.agents){
+    const st=agentState.get(a.id);
+    if(st&&st.state==='idle'&&st.taskCooldown<=0){st.taskCooldown=1}// force immediate re-evaluation
+  }
+}
 // Social/needs systems (throttled)
 if(frame%60===0)tickNeeds();
 if(frame%90===0)checkSocialInteractions();
@@ -3216,20 +3234,91 @@ function smoothResources(){
 const _stars=[];
 for(let i=0;i<35;i++)_stars.push({x:Math.random()*2000,y:Math.random()*1200,sz:1+(Math.random()>0.7?1:0),rate:0.02+Math.random()*0.04,off:Math.random()*100});
 
+// === Save/Load System ===
+const SAVE_KEY='agentsAtWork_save';
+function saveGame(){
+  try{
+    const state={version:2,savedAt:Date.now(),tick:frame,era:G.era,
+      wood:G.wood,stone:G.stone,gold:G.gold,food:G.food,
+      buildings:G.clientBuildings.map(b=>({type:b.type,name:b.name,abbr:b.abbr,x:b.x,y:b.y,progress:b.progress,complete:b.complete,faction:b.faction,width:b.width,height:b.height,pw:b.pw,ph:b.ph,tall:b.tall,owner:b.owner,ownerName:b.ownerName,isHome:b.isHome,personalized:b.personalized,personalFaction:b.personalFaction,claimedBy:b.claimedBy})),
+      harvested:[...harvestables.keys()],
+      goldDeposits:goldDeposits.map(g=>({x:g.x,y:g.y,h:g.h,alive:g.alive})),
+      clans:clans.map(c2=>({name:c2.name,members:c2.members,faction:c2.faction})),
+      villages:villages.map(v2=>({name:v2.name,cx:v2.cx,cy:v2.cy,faction:v2.faction})),
+      social:[...agentSocial.entries()].map(([k,v2])=>({id:k,data:v2})),
+      milestones:{...milestones}
+    };
+    localStorage.setItem(SAVE_KEY,JSON.stringify(state));
+    // Flash save indicator
+    const le=document.getElementById('last-event');
+    if(le){const old=le.textContent;le.textContent='💾 Saved';setTimeout(()=>{le.textContent=old},1500)}
+  }catch(e){console.warn('Save failed:',e)}
+}
+function loadGame(){
+  try{
+    const raw=localStorage.getItem(SAVE_KEY);
+    if(!raw)return false;
+    const s=JSON.parse(raw);
+    if(!s||s.version<2)return false;
+    G.era=s.era||0;G.wood=s.wood||0;G.stone=s.stone||0;G.gold=s.gold||0;G.food=s.food||0;
+    frame=s.tick||0;
+    G.clientBuildings.length=0;
+    for(const b of (s.buildings||[]))G.clientBuildings.push(b);
+    harvestables.clear();for(const k of (s.harvested||[]))harvestables.set(k,true);
+    if(s.goldDeposits)goldDeposits=s.goldDeposits;
+    clans.length=0;for(const c2 of (s.clans||[]))clans.push(c2);
+    villages.length=0;for(const v2 of (s.villages||[]))villages.push(v2);
+    agentSocial.clear();for(const e of (s.social||[]))agentSocial.set(e.id,e.data);
+    if(s.milestones)Object.assign(milestones,s.milestones);
+    console.log('Game loaded from save, tick:',frame,'buildings:',G.clientBuildings.length);
+    return true;
+  }catch(e){console.warn('Load failed:',e);return false}
+}
+
+// === Resource Regrowth ===
+function regrowResources(){
+  // Tree regrowth: clear 8 harvest markers in forest/grass areas
+  if(harvestables.size>3){
+    let cleared=0;
+    for(const[key] of harvestables){if(cleared<8){harvestables.delete(key);cleared++}}
+  }
+  // Rock regrowth: nothing to do (rocks are generated from hash, clearing harvestables restores them)
+  // Gold deposit regrowth
+  if(goldDeposits.filter(g=>g.alive).length<5){
+    const rng2=new SeededRNG(frame);
+    for(let i=0;i<3;i++){
+      const gx=Math.floor(rng2.next()*WW),gy=Math.floor(rng2.next()*WH);
+      if(tBiomes&&(BL[tBiomes[gy*WW+gx]]==='mountain'||BL[tBiomes[gy*WW+gx]]==='hills')){
+        goldDeposits.push({x:gx*TS,y:gy*TS,h:tileHash(gx,gy),alive:true});break;
+      }
+    }
+  }
+}
+
 // === Init ===
-window.addEventListener('resize',()=>{resize()});// terrain cache is static, no need to rebuild on resize
+window.addEventListener('resize',()=>{resize()});
 resize();genTerrain();renderTBuf();generateBoulders();initHarvestables();initCreatures();initCursors();
+// Try loading saved game
+const didLoad=loadGame();
+if(didLoad){console.log('Restored saved game')}
 // Center camera on agents if available, otherwise center of world
 if(S.agents.length>0){
   let avgX=0,avgY=0;for(const a of S.agents){avgX+=a.x;avgY+=a.y}
   avgX/=S.agents.length;avgY/=S.agents.length;
   vpX=canvasEl.width/(2*zoom)-avgX*TS-TS/2;vpY=canvasEl.height/(2*zoom)-avgY*TS-TS/2;
 }else{vpX=canvasEl.width/(2*zoom)-(WW*TS)/2;vpY=canvasEl.height/(2*zoom)-(WH*TS)/2}
-// Intro fade
-setTimeout(()=>{document.getElementById('intro-overlay').classList.add('fade')},2500);
-setTimeout(()=>{const io=document.getElementById('intro-overlay');if(io)io.remove()},4500);
+// Intro fade (skip if loaded save)
+if(!didLoad){
+  setTimeout(()=>{document.getElementById('intro-overlay').classList.add('fade')},2500);
+  setTimeout(()=>{const io=document.getElementById('intro-overlay');if(io)io.remove()},4500);
+}else{const io=document.getElementById('intro-overlay');if(io)io.remove()}
 requestAnimationFrame(render);connectWS();
 safeInterval(tickFood,10000);
+safeInterval(saveGame,30000);// save every 30 seconds
+safeInterval(regrowResources,120000);// regrow every 2 min
+window.addEventListener('beforeunload',saveGame);
+// Debug: reset world
+window.resetWorld=function(){localStorage.removeItem(SAVE_KEY);location.reload()}
 </script>
 </body>
 </html>
