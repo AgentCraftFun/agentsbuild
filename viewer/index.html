@@ -1198,20 +1198,17 @@ function drawBuildingPixelArt(c,b,bx,by,bw,bh,fr){
   if(p>0.05){
     // Calculate how much of the building to reveal (bottom-up clip)
     const revealFrac=Math.min(1,p/0.95);// 0→1 over 0%→95%
-    const fullH=bh+20;// include roof overhang
+    const fullH=bh+30;// include roof overhang
     const revealH=fullH*revealFrac;
     const clipTop=by+bh-revealH+4;// clip from this Y downward
 
     c.save();
     c.beginPath();
-    c.rect(bx-10,clipTop,bw+30,revealH+10);
+    c.rect(bx-12,clipTop,bw+40,revealH+12);
     c.clip();
-    // Draw the completed building inside the clip region
-    try{drawCompletedBuilding(c,b,bx,by,bw,bh,fr)}catch(e){
-      // Fallback: simple brown/grey box
-      const isStoneType=['stone_house','church','watchtower','town_hall','apartment','office','factory'].includes(b.type||'');
-      c.fillStyle=isStoneType?'#7a7680':'#6a4a28';
-      c.fillRect(bx,by,bw,bh);
+    // Draw the ACTUAL type-specific finished building inside the clip region
+    try{_drawFinishedByType(c,b,bx,by,bw,bh,fr)}catch(e){
+      try{drawCompletedBuilding(c,b,bx,by,bw,bh,fr)}catch(e2){}
     }
     c.restore();
 
@@ -1230,6 +1227,29 @@ function drawBuildingPixelArt(c,b,bx,by,bw,bh,fr){
       c.fillRect(bx-2,clipTop,bw+4,3);
     }
   }
+}
+// Helper: draw the correct finished building by type (ignoring progress)
+function _drawFinishedByType(c,b,bx,by,bw,bh,fr){
+  const type=b.type||'';
+  if(type==='mine_shaft')return drawGoldMine(c,bx,by,bw,bh,1,fr);
+  if(type==='moonwell')return drawLighthouse(c,bx,by,bw,bh,1,fr);
+  if(type==='stone_wall')return drawRuins(c,bx,by,bw,bh);
+  if(type==='runeforge')return drawQuarry(c,bx,by,bw,bh,1);
+  if(type==='tree_palace'||type==='grove'||type==='sentinel_tree')return drawTreeShrine(c,bx,by,bw,bh,1,fr);
+  if(type==='campfire')return drawCampfire(c,bx,by,bw,bh,fr);
+  if(type==='wood_hut')return drawWoodHut(c,bx,by,bw,bh,fr);
+  if(type==='log_cabin')return drawLogCabin(c,bx,by,bw,bh,fr);
+  if(type==='lumber_mill')return drawLumberMill(c,bx,by,bw,bh,fr);
+  if(type==='stone_house')return drawStoneHouse(c,bx,by,bw,bh,fr);
+  if(type==='watchtower')return drawWatchtower(c,bx,by,bw,bh,fr);
+  if(type==='town_hall')return drawTownHall(c,bx,by,bw,bh,fr);
+  if(type==='church')return drawChurch(c,bx,by,bw,bh,fr);
+  if(type==='brick_house')return drawBrickHouse(c,bx,by,bw,bh,fr);
+  if(type==='apartment')return drawApartment(c,bx,by,bw,bh,fr);
+  if(type==='office')return drawOffice(c,bx,by,bw,bh,fr);
+  if(type==='factory')return drawFactory(c,bx,by,bw,bh,fr);
+  // Fallback: generic completed building
+  drawCompletedBuilding(c,b,bx,by,bw,bh,fr);
 }
 
 // === Special Building Renderers ===
@@ -3919,13 +3939,13 @@ for(const a of S.agents){
     const tx2=ast3.target.x!=null?ast3.target.x/WW:v?v.tx:0;
     faceLeft=tx2<(v?v.x:0);
   }
-  let isBuilding=false;
-  for(const b of S.buildings){if(!b.complete&&b.progress!=null&&b.progress<1){if(Math.abs(vx-b.x)+Math.abs(vy-b.y)<4){isBuilding=true;break}}}
+  // Check if agent is actively building (use agent state machine, not proximity)
+  let isBuilding=!!(ast3&&ast3.state==='building'&&ast3.target&&!ast3.target.complete);
   // Only building gets rare particles (no walking/lazy spam)
   if(isBuilding&&frame%30===0)spawnParticle(vx*ts+ts/2,vy*ts,'debris');
   agentRenderData.push({a,vx,vy,isWalking,faceLeft,isBuilding});
-  // When building, sort agent slightly below the building so they render in front
-  const agentSortY=isBuilding?vy*ts+ts+20:vy*ts+ts;
+  // When building, sort agent well below the building so they always render in front
+  const agentSortY=isBuilding?vy*ts+ts+40:vy*ts+ts;
   renderItems.push({type:'agent',idx:agentRenderData.length-1,sortY:agentSortY});
 }
 
