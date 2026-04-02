@@ -1881,6 +1881,7 @@ function checkSocialInteractions(){
           // Actually transfer from global resources (simplified)
           s1.relationships[a2.id]=(s1.relationships[a2.id]||0)+10;
           s2.relationships[a1.id]=(s2.relationships[a1.id]||0)+10;
+          if(s1.clan&&s2.clan&&s1.clan!==s2.clan)modTension(s1.clan,s2.clan,-10);
           gameEvent(`${a1.name} traded with ${a2.name}`,'agent_message');
           addBubble(a1,'traded!');addBubble(a2,'thanks!');
         }
@@ -1898,6 +1899,8 @@ function checkSocialInteractions(){
         const penalty=a1.personality==='aggressive'?-25:-15;
         s1.relationships[a2.id]=(s1.relationships[a2.id]||0)+penalty;
         s2.relationships[a1.id]=(s2.relationships[a1.id]||0)+penalty;
+        // Increase clan tension
+        if(s1.clan&&s2.clan&&s1.clan!==s2.clan)modTension(s1.clan,s2.clan,8);
         gameEvent(`${a1.name} and ${a2.name} had a disagreement`,'raid_success');
         addBubble(a1,'Hey!');addBubble(a2,'Back off!');
       }
@@ -1933,6 +1936,113 @@ function checkClanFormation(){
         if(clan&&!clan.members.includes(a2.id)){
           clan.members.push(a2.id);s2.clan=s1.clan;
           gameEvent(`${a2.name} joined the ${s1.clan}`,'tile_claimed');
+        }
+      }
+    }
+  }
+}
+
+// === Clan Tension & Conflict System ===
+const clanTension=new Map();// "clan1|clan2" -> {tension:0, peaceTimer:0, warActive:false}
+function getTension(c1,c2){
+  if(!c1||!c2||c1===c2)return null;
+  const key=[c1,c2].sort().join('|');
+  if(!clanTension.has(key))clanTension.set(key,{tension:0,peaceTimer:0,warActive:false,raidCooldown:0});
+  return clanTension.get(key);
+}
+
+function modTension(c1,c2,amt){
+  const t=getTension(c1,c2);if(!t)return;
+  if(t.peaceTimer>0&&amt>0)return;// peace treaty blocks tension increase
+  t.tension=Math.max(0,Math.min(100,t.tension+amt));
+}
+
+function updateConflicts(){
+  // Decay tension over time (-1 per min = -1 per 3600 frames)
+  for(const[,t] of clanTension){
+    if(t.peaceTimer>0){t.peaceTimer--;t.tension=Math.max(0,t.tension-0.01)}
+    else{t.tension=Math.max(0,t.tension-0.0003)}// ~-1/min
+    if(t.raidCooldown>0)t.raidCooldown--;
+  }
+
+  // Check proximity tensions and trigger actions
+  for(const a1 of S.agents){
+    const s1=getAgentSocial(a1.id);if(!s1.clan)continue;
+    const v1=agentVisual.get(a1.id);if(!v1)continue;
+    for(const a2 of S.agents){
+      if(a1.id===a2.id)continue;
+      const s2=getAgentSocial(a2.id);if(!s2.clan||s2.clan===s1.clan)continue;
+      const v2=agentVisual.get(a2.id);if(!v2)continue;
+      const dist=Math.abs(v1.x-v2.x)+Math.abs(v1.y-v2.y);
+      if(dist>0.08)continue;// too far apart
+
+      const t=getTension(s1.clan,s2.clan);if(!t)continue;
+
+      // Proximity increases tension slightly
+      if(Math.random()<0.005)modTension(s1.clan,s2.clan,2);
+
+      // COLD WAR (30-50): suspicious, no trading
+      if(t.tension>=30&&t.tension<50&&Math.random()<0.002){
+        addBubble(a1,`I don't trust those ${s2.clan}...`);
+      }
+
+      // BORDER SKIRMISH (50-70): chase rivals, occasional raids
+      if(t.tension>=50&&t.tension<70&&Math.random()<0.003){
+        // Chase rival away
+        const st2=agentState.get(a1.id);
+        if(st2&&st2.state==='idle'){
+          v1.tx=v2.x;v1.ty=v2.y;// charge toward rival
+          addBubble(a1,'Get out!');
+          gameEvent(`⚔️ Border skirmish: ${a1.name} vs ${a2.name}!`,'raid_success');
+          addPoints(10);
+        }
+      }
+
+      // RAIDS (70-90): organized attacks on buildings
+      if(t.tension>=70&&t.raidCooldown<=0&&Math.random()<0.001){
+        t.raidCooldown=60*120;// 2 min between raids
+        // Find a rival building to raid
+        const rivalBuildings=G.clientBuildings.filter(b=>b.complete&&b.faction===a2.faction);
+        if(rivalBuildings.length>0){
+          const target=rivalBuildings[Math.floor(Math.random()*rivalBuildings.length)];
+          target.progress=Math.max(0.3,target.progress-0.3);// damage building
+          target.complete=false;
+          gameEvent(`🔥 ${s1.clan} raided ${target.name} in ${s2.clan} territory!`,'raid_success');
+          showDramaBanner(`🔥 RAID: ${s1.clan} attacks ${s2.clan}!`);
+          addPoints(10);
+          // Spawn damage particles
+          for(let i=0;i<5;i++)spawnParticle(target.x*TS+Math.random()*30,target.y*TS+Math.random()*20,'debris');
+        }
+      }
+
+      // FULL WAR (90-100): destroy buildings
+      if(t.tension>=90&&!t.warActive&&Math.random()<0.0005){
+        t.warActive=true;
+        showDramaBanner(`☠️ WAR: ${s1.clan} vs ${s2.clan}!`);
+        gameEvent(`☠️ FULL WAR between ${s1.clan} and ${s2.clan}!`,'raid_success');
+        addPoints(10);
+      }
+      if(t.warActive&&Math.random()<0.002){
+        // Agents attack rival buildings
+        const rb=G.clientBuildings.filter(b=>b.complete&&b.faction===a2.faction);
+        if(rb.length>0){
+          const tgt=rb[Math.floor(Math.random()*rb.length)];
+          tgt.progress=Math.max(0,tgt.progress-0.15);
+          if(tgt.progress<=0){
+            // Building destroyed!
+            const idx=G.clientBuildings.indexOf(tgt);
+            if(idx>=0)G.clientBuildings.splice(idx,1);
+            gameEvent(`💀 ${tgt.name} was destroyed by ${s1.clan}!`,'raid_success');
+            for(let i=0;i<8;i++)spawnParticle(tgt.x*TS+Math.random()*40,tgt.y*TS+Math.random()*30,'debris');
+          }else{tgt.complete=false}
+        }
+        // Check ceasefire: if either side lost 50% buildings
+        const c1b=G.clientBuildings.filter(b=>b.faction===a1.faction).length;
+        const c2b=G.clientBuildings.filter(b=>b.faction===a2.faction).length;
+        if(c1b<=1||c2b<=1){
+          t.warActive=false;t.tension=20;t.peaceTimer=60*300;// 5 min peace
+          showDramaBanner(`☮️ CEASEFIRE: ${s1.clan} and ${s2.clan} stopped fighting!`);
+          gameEvent(`☮️ Ceasefire between ${s1.clan} and ${s2.clan}!`,'build_complete');
         }
       }
     }
@@ -2415,6 +2525,7 @@ if(frame%30===0){
 if(frame%60===0)tickNeeds();
 if(frame%90===0)checkSocialInteractions();
 socialCheckTimer--;if(socialCheckTimer<=0){socialCheckTimer=600;checkClanFormation();checkVillages()}
+if(frame%30===0)updateConflicts();
 // Drama events
 dramaTimer--;if(dramaTimer<=0){dramaTimer=60*(90+Math.random()*30);triggerDramaEvent()}
 // Spotlight
@@ -2450,6 +2561,27 @@ const ex=Math.min(WW,Math.ceil((-vpX+cw/zoom)/ts+1)),ey=Math.min(WH,Math.ceil((-
 
 // Terrain
 if(tCanvas)ctx.drawImage(tCanvas,sx*ts,sy*ts,(ex-sx)*ts,(ey-sy)*ts,sx*ts,sy*ts,(ex-sx)*ts,(ey-sy)*ts);
+
+// Clan territory borders + war zones
+for(const clan of clans){
+  const clanBuildings=G.clientBuildings.filter(b=>b.faction===clan.faction&&b.complete);
+  if(clanBuildings.length<2)continue;
+  let cx2=0,cy2=0;for(const b of clanBuildings){cx2+=b.x;cy2+=b.y}
+  cx2/=clanBuildings.length;cy2/=clanBuildings.length;
+  const radius=Math.max(3,clanBuildings.length*2)*ts;
+  ctx.strokeStyle=FC[clan.faction]||'#888';ctx.lineWidth=1;ctx.setLineDash([6,6]);
+  ctx.globalAlpha=0.25;
+  ctx.beginPath();ctx.arc(cx2*ts+ts/2,cy2*ts+ts/2,radius,0,Math.PI*2);ctx.stroke();
+  ctx.setLineDash([]);ctx.globalAlpha=1;
+  // War zone red pulse
+  for(const[key,t] of clanTension){
+    if(!key.includes(clan.name))continue;
+    if(t.tension>=70){
+      ctx.fillStyle=`rgba(255,0,0,${0.03+0.02*Math.sin(frame*0.05)})`;
+      ctx.beginPath();ctx.arc(cx2*ts+ts/2,cy2*ts+ts/2,radius,0,Math.PI*2);ctx.fill();
+    }
+  }
+}
 
 // Village names and borders
 for(const vl of villages){
