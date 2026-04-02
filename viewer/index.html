@@ -72,7 +72,7 @@ canvas{display:block;image-rendering:pixelated;image-rendering:crisp-edges}
 // FAILSAFE: remove intro no matter what after 4 seconds
 setTimeout(function(){var io=document.getElementById('intro-overlay');if(io)io.remove()},4000);
 </script>
-<div id="era-announce"></div>
+<!-- era-announce removed — using drama banner system -->
 <div id="app">
   <div id="header">
     <h1>Agents at Work</h1>
@@ -812,10 +812,15 @@ window.addEventListener('mousemove',e=>{if(dragging){vpX=dvx+(e.clientX-dsx)/zoo
 window.addEventListener('mouseup',()=>{dragging=false;setCursor('normal')});
 let targetZoom=1;
 wrap.addEventListener('wheel',e=>{e.preventDefault();lastInputFrame=frame;if(tvMode)tvMode=false;
-  targetZoom*=e.deltaY<0?1.15:1/1.15;targetZoom=Math.max(0.5,Math.min(3,targetZoom));
-  const r=canvasEl.getBoundingClientRect(),px2=e.clientX-r.left,py2=e.clientY-r.top;
-  const oz=zoom;zoom+=(targetZoom-zoom)*0.3;
-  vpX+=px2/zoom-px2/oz;vpY+=py2/zoom-py2/oz;
+  const r=canvasEl.getBoundingClientRect(),mx3=e.clientX-r.left,my3=e.clientY-r.top;
+  // World point under mouse BEFORE zoom
+  const worldMx=mx3/zoom-vpX,worldMy=my3/zoom-vpY;
+  // Apply zoom
+  const oldZoom=zoom;
+  targetZoom*=e.deltaY<0?1.1:1/1.1;targetZoom=Math.max(0.5,Math.min(3,targetZoom));
+  zoom+=(targetZoom-zoom)*0.3;
+  // Adjust camera so world point stays under mouse
+  vpX=-(worldMx-mx3/zoom);vpY=-(worldMy-my3/zoom);
 },{passive:false});
 // Double-click to zoom in/out
 wrap.addEventListener('dblclick',e=>{lastInputFrame=frame;if(tvMode)tvMode=false;
@@ -3704,8 +3709,8 @@ if(tvMode){
   ctx.fillText('\uD83D\uDCFA TV MODE',cw2-12,12);
 }
 // World clock overlay (top-left of canvas)
-// World clock + header updates (once per second to prevent flickering)
-if(frame%60===0){
+// World clock + header updates (once per second, resilient)
+if(frame%60===0){try{
   const totalSec=Math.floor(frame/60);
   const days=Math.floor(totalSec/300);
   const dayProgress=(totalSec%300)/300;
@@ -3715,7 +3720,8 @@ if(frame%60===0){
   document.getElementById('h-agents').textContent=S.agents.length;
   document.getElementById('h-era').textContent=G.eraNames[G.era];
   document.getElementById('h-era-icon').textContent=ERA_ICONS[G.era];
-}
+  document.getElementById('h-points').textContent=specPoints;
+}catch(e){}}
 
 // Ambient audio indicators (visual cues in world space — need to draw before restore)
 // These are drawn in screen space as subtle corner indicators
@@ -4377,12 +4383,10 @@ function updateWorldEvents(){
 let lastEra=-1;
 function checkEraAnnounce(){
   if(G.era!==lastEra&&lastEra>=0){
-    const el=document.getElementById('era-announce');
-    el.textContent=`\u2B50 ${G.eraNames[G.era].toUpperCase()} UNLOCKED \u2B50`;
-    el.style.opacity='1';
-    document.getElementById('app').style.borderColor='#f0c040';
-    showNotification(`⭐ ${G.eraNames[G.era]} Unlocked! ⭐`);
-    setTimeout(()=>{el.style.opacity='0';document.getElementById('app').style.borderColor=''},3000);
+    // Use drama banner (no persistent canvas text)
+    showDramaBanner(`⭐ ${G.eraNames[G.era].toUpperCase()} UNLOCKED ⭐`);
+    try{document.getElementById('app').style.borderColor='#f0c040';
+    setTimeout(()=>{document.getElementById('app').style.borderColor=''},3000)}catch(e){}
   }
   lastEra=G.era;
 }
