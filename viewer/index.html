@@ -3169,30 +3169,75 @@ for(const s of settlements){
     ctx.fillStyle='#6a4a20';ctx.fillRect(scx-1,scy-8,3,4);// bucket
     ctx.strokeStyle='#aaa';ctx.lineWidth=1;ctx.beginPath();ctx.moveTo(scx,scy-14);ctx.lineTo(scx,scy-8);ctx.stroke();
   }
-  // Settlement border (subtle dotted line, skips water)
-  if(s.buildings.length>=3){
+  // PROGRESSIVE WALL SEGMENTS (4+ buildings)
+  if(s.buildings.length>=4){
     const wallR=s.radius*ts+15;
-    const fc2=FC[s.faction]||'#888';
-    ctx.strokeStyle=fc2;ctx.lineWidth=1.5;ctx.setLineDash([6,4]);
-    ctx.globalAlpha=0.3;
-    ctx.beginPath();
-    let started=false;
-    for(let a2=0;a2<Math.PI*2;a2+=0.1){
-      const wx2=scx+Math.cos(a2)*wallR,wy2=scy+Math.sin(a2)*wallR;
-      const wtx=Math.floor(wx2/ts),wty=Math.floor(wy2/ts);
-      const onWater=wtx>=0&&wtx<WW&&wty>=0&&wty<WH&&(tBiomes[wty*WW+wtx]===0||tBiomes[wty*WW+wtx]===1||tBiomes[wty*WW+wtx]===10);
-      if(onWater){started=false;continue}
-      if(!started){ctx.moveTo(wx2,wy2);started=true}else{ctx.lineTo(wx2,wy2)}
-    }
-    ctx.stroke();ctx.setLineDash([]);ctx.globalAlpha=1;ctx.lineWidth=1;
-    // Gate posts at entrance
     const gateAngle=Math.atan2(scy-WH*ts/2,scx-WW*ts/2)+Math.PI;
-    for(const off2 of [-0.2,0.2]){
-      const gx3=scx+Math.cos(gateAngle+off2)*wallR,gy3=scy+Math.sin(gateAngle+off2)*wallR;
-      const gtx=Math.floor(gx3/ts),gty=Math.floor(gy3/ts);
-      if(gtx>=0&&gtx<WW&&gty>=0&&gty<WH&&tBiomes[gty*WW+gtx]!==0&&tBiomes[gty*WW+gtx]!==1){
-        ctx.fillStyle='#5a3a18';ctx.fillRect(gx3-3,gy3-8,6,16);
+    const isStone=G.era>=2;
+    // Generate wall segments if not yet created
+    if(!s.wallSegs){
+      s.wallSegs=[];
+      const segCount=Math.max(8,Math.min(20,s.buildings.length*2));
+      for(let wi=0;wi<segCount;wi++){
+        const a2=wi*(Math.PI*2/segCount),a3=(wi+1)*(Math.PI*2/segCount);
+        const gDiff=Math.abs(((a2-gateAngle+Math.PI*3)%(Math.PI*2))-Math.PI);
+        s.wallSegs.push({
+          x1:scx+Math.cos(a2)*wallR,y1:scy+Math.sin(a2)*wallR,
+          x2:scx+Math.cos(a3)*wallR,y2:scy+Math.sin(a3)*wallR,
+          progress:0,isGate:gDiff<0.35
+        });
       }
+    }
+    // Progress wall construction: 1 segment at a time
+    const nextSeg=s.wallSegs.find(ws=>ws.progress<1&&!ws.isGate);
+    if(nextSeg){nextSeg.progress=Math.min(1,nextSeg.progress+0.0003)}// ~55 sec per segment
+    // Gate built last
+    if(!nextSeg){const gateSeg=s.wallSegs.find(ws=>ws.isGate&&ws.progress<1);if(gateSeg)gateSeg.progress=Math.min(1,gateSeg.progress+0.0003)}
+    // Draw completed + in-progress segments
+    for(const ws of s.wallSegs){
+      if(ws.progress<=0)continue;
+      // Check water
+      const wtx1=Math.floor(ws.x1/ts),wty1=Math.floor(ws.y1/ts);
+      if(wtx1>=0&&wtx1<WW&&wty1>=0&&wty1<WH&&(tBiomes[wty1*WW+wtx1]===0||tBiomes[wty1*WW+wtx1]===1))continue;
+      if(ws.isGate&&ws.progress>=1){
+        // Gate: two tall posts + crossbar
+        ctx.fillStyle='#5a3a18';
+        ctx.fillRect(ws.x1-3,ws.y1-10,6,18);ctx.fillRect(ws.x2-3,ws.y2-10,6,18);
+        ctx.fillStyle='#6a4a28';ctx.fillRect(Math.min(ws.x1,ws.x2),Math.min(ws.y1,ws.y2)-10,Math.abs(ws.x2-ws.x1)||4,3);
+      }else{
+        // Wall segment: draw proportional to progress
+        const mx3=ws.x1+(ws.x2-ws.x1)*ws.progress,my3=ws.y1+(ws.y2-ws.y1)*ws.progress;
+        const segLen=Math.sqrt((mx3-ws.x1)**2+(my3-ws.y1)**2);
+        const dx3=(mx3-ws.x1)/Math.max(1,segLen),dy3=(my3-ws.y1)/Math.max(1,segLen);
+        // Draw logs/blocks along the built portion
+        const logSpacing=isStone?8:6;
+        const logCount=Math.floor(segLen/logSpacing);
+        for(let li=0;li<logCount&&li<30;li++){
+          const lx=ws.x1+dx3*li*logSpacing,ly=ws.y1+dy3*li*logSpacing;
+          if(isStone){
+            ctx.fillStyle='#7a7680';ctx.fillRect(lx-3,ly-8,6,16);
+            ctx.fillStyle='#9a9690';ctx.fillRect(lx-3,ly-3,6,1);ctx.fillRect(lx-3,ly+2,6,1);
+          }else{
+            ctx.fillStyle='#5a3a18';ctx.fillRect(lx-2,ly-7,5,14);
+            ctx.fillStyle='#3a2008';ctx.fillRect(lx+2,ly-7,1,14);
+            ctx.fillStyle='#5a3a18';ctx.beginPath();ctx.moveTo(lx-2,ly-7);ctx.lineTo(lx,ly-10);ctx.lineTo(lx+3,ly-7);ctx.fill();
+          }
+        }
+        // Scaffolding at construction tip if in progress
+        if(ws.progress<1){
+          ctx.fillStyle='#9a7a3a';ctx.fillRect(mx3-4,my3-12,2,14);ctx.fillRect(mx3+2,my3-12,2,14);
+          ctx.fillRect(mx3-4,my3-6,8,2);
+        }
+        // Posts at segment endpoints
+        ctx.fillStyle=isStone?'#6a6672':'#4a2a10';
+        ctx.fillRect(ws.x1-3,ws.y1-9,6,16);
+      }
+    }
+    // Check if all complete for celebration
+    if(s.wallSegs.every(ws=>ws.progress>=1)&&!s.wallsComplete){
+      s.wallsComplete=true;
+      showDramaBanner(`🏰 ${s.name} walls are complete!`);
+      gameEvent(`🏰 ${s.name} walls are complete!`,'build_complete');
     }
   }
   // Central plaza (3+ buildings)
