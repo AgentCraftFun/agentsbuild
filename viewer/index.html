@@ -4094,30 +4094,38 @@ function showOfflineSummary(summary){
 
 // === Init ===
 window.addEventListener('resize',()=>{resize()});
-resize();genTerrain();renderTBuf();generateBoulders();initHarvestables();initCreatures();initCursors();initInfluence();
-document.getElementById('h-points').textContent=specPoints;
-// Try loading saved game
-const didLoad=loadGame();
-let offlineSummary=null;
-if(didLoad){
-  console.log('Restored saved game');
-  offlineSummary=runOfflineSim();
-  if(offlineSummary)saveGame();// save the caught-up state
+let didLoad=false;
+try{
+  resize();genTerrain();renderTBuf();generateBoulders();initHarvestables();initCreatures();
+  try{initCursors()}catch(e){console.warn('Cursor init failed:',e)}
+  try{initInfluence()}catch(e){console.warn('Influence init failed:',e)}
+  try{document.getElementById('h-points').textContent=specPoints}catch(e){}
+  // Try loading saved game
+  didLoad=loadGame();
+  let offlineSummary=null;
+  if(didLoad){
+    console.log('Restored saved game');
+    try{offlineSummary=runOfflineSim();if(offlineSummary)saveGame()}catch(e){console.warn('Offline sim failed:',e)}
+  }
+  // Center camera
+  if(S.agents.length>0){
+    let avgX=0,avgY=0;for(const a of S.agents){avgX+=a.x;avgY+=a.y}
+    avgX/=S.agents.length;avgY/=S.agents.length;
+    vpX=canvasEl.width/(2*zoom)-avgX*TS-TS/2;vpY=canvasEl.height/(2*zoom)-avgY*TS-TS/2;
+  }else{vpX=canvasEl.width/(2*zoom)-(WW*TS)/2;vpY=canvasEl.height/(2*zoom)-(WH*TS)/2}
+  // Intro or offline summary
+  if(!didLoad){
+    setTimeout(()=>{const io=document.getElementById('intro-overlay');if(io)io.classList.add('fade')},2500);
+    setTimeout(()=>{const io=document.getElementById('intro-overlay');if(io)io.remove()},4500);
+  }else{
+    const io=document.getElementById('intro-overlay');if(io)io.remove();
+    if(offlineSummary)try{showOfflineSummary(offlineSummary)}catch(e){}
+  }
+}catch(e){
+  console.error('Init error:',e);
 }
-// Center camera on agents if available, otherwise center of world
-if(S.agents.length>0){
-  let avgX=0,avgY=0;for(const a of S.agents){avgX+=a.x;avgY+=a.y}
-  avgX/=S.agents.length;avgY/=S.agents.length;
-  vpX=canvasEl.width/(2*zoom)-avgX*TS-TS/2;vpY=canvasEl.height/(2*zoom)-avgY*TS-TS/2;
-}else{vpX=canvasEl.width/(2*zoom)-(WW*TS)/2;vpY=canvasEl.height/(2*zoom)-(WH*TS)/2}
-// Intro or offline summary
-if(!didLoad){
-  setTimeout(()=>{document.getElementById('intro-overlay').classList.add('fade')},2500);
-  setTimeout(()=>{const io=document.getElementById('intro-overlay');if(io)io.remove()},4500);
-}else{
-  const io=document.getElementById('intro-overlay');if(io)io.remove();
-  if(offlineSummary)showOfflineSummary(offlineSummary);
-}
+// ALWAYS remove intro overlay after 5 seconds no matter what
+setTimeout(()=>{const io=document.getElementById('intro-overlay');if(io){io.classList.add('fade');setTimeout(()=>{if(io.parentNode)io.remove()},2000)}},5000);
 requestAnimationFrame(render);connectWS();
 safeInterval(tickFood,10000);
 safeInterval(saveGame,30000);// save every 30 seconds
