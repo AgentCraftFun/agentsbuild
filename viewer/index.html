@@ -1185,7 +1185,12 @@ function drawBuildingPixelArt(c,b,bx,by,bw,bh,fr){
   // p>=0.95: close enough — draw final form (prevents stuck half-built visuals)
   if(p>=0.95){try{return drawCompletedBuilding(c,b,bx,by,bw,bh,fr)}catch(e){return}}
 
-  // === UNDER CONSTRUCTION — visual driven by SAME p value as progress bar ===
+  // === UNDER CONSTRUCTION — use natural building colors, not faction color ===
+  // Pick construction colors based on building type/era to match completed look
+  const type2=b.type||'';
+  const isStoneType=['stone_house','church','watchtower','town_hall','apartment','office','factory'].includes(type2);
+  const conWall=isStoneType?'#7a7680':'#6a4a28';// grey stone or brown wood
+  const conLight=isStoneType?'#9a9690':'#8a6a3a';// lighter variant
   const wallH=bh*0.7;
   const wallY=by+bh-wallH;
   const roofH=bh*0.3;
@@ -1198,9 +1203,9 @@ function drawBuildingPixelArt(c,b,bx,by,bw,bh,fr){
     const wallProg=Math.min(1,(p-0.1)/0.4);// 0→1 over 0.1→0.5
     const visWallH=wallH*wallProg;
     const visWallY=by+bh-6-visWallH;
-    c.fillStyle=cols.color;c.fillRect(bx,visWallY,bw,visWallH);
+    c.fillStyle=conWall;c.fillRect(bx,visWallY,bw,visWallH);
     // Brick pattern on visible portion
-    c.fillStyle=cols.light;
+    c.fillStyle=conLight;
     const maxR2=Math.min(Math.floor(visWallH/8),20);
     for(let row=0;row<maxR2;row++){
       const off=(row%2)*4;
@@ -1223,7 +1228,7 @@ function drawBuildingPixelArt(c,b,bx,by,bw,bh,fr){
   // STAGE 3 (p 0.5-0.8): Roof appearing
   if(p>0.5){
     // Full walls now visible
-    c.fillStyle=cols.color;c.fillRect(bx,wallY,bw,wallH);
+    c.fillStyle=conWall;c.fillRect(bx,wallY,bw,wallH);
     const roofProg=Math.min(1,(p-0.5)/0.3);// 0→1 over 0.5→0.8
     const roofC2=ROOF_COL[fc]||ROOF_COL.neutral;
     if(tall){
@@ -3882,7 +3887,9 @@ for(const a of S.agents){
   // Only building gets rare particles (no walking/lazy spam)
   if(isBuilding&&frame%30===0)spawnParticle(vx*ts+ts/2,vy*ts,'debris');
   agentRenderData.push({a,vx,vy,isWalking,faceLeft,isBuilding});
-  renderItems.push({type:'agent',idx:agentRenderData.length-1,sortY:vy*ts+ts});
+  // When building, sort agent slightly below the building so they render in front
+  const agentSortY=isBuilding?vy*ts+ts+8:vy*ts+ts;
+  renderItems.push({type:'agent',idx:agentRenderData.length-1,sortY:agentSortY});
 }
 
 // World objects (ruins, craters, merchants) in Y-sort
