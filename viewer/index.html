@@ -2396,68 +2396,58 @@ function pickBuildSite(bdef,agentId){
   const rng3=new SeededRNG(frame+G.clientBuildings.length*7);
   const pw2=bdef.pw||bdef.w*TS,ph2=bdef.ph||bdef.h*TS;
 
-  // Find or create settlement for this agent
   let sett=getSettlementForAgent(agentId);
   if(!sett){
-    // Pick a good location for new settlement (grass, not water, near center-ish)
     for(let i=0;i<30;i++){
       const sx2=Math.floor(0.15*WW+rng3.next()*0.7*WW),sy2=Math.floor(0.15*WH+rng3.next()*0.7*WH);
-      const bi=tBiomes[sy2*WW+sx2];
-      if(bi!==0&&bi!==1&&bi!==10){sett=createSettlement(agentId,sx2,sy2);break}
+      if(tBiomes[sy2*WW+sx2]!==0&&tBiomes[sy2*WW+sx2]!==1&&tBiomes[sy2*WW+sx2]!==10){
+        sett=createSettlement(agentId,sx2,sy2);break}
     }
     if(!sett)return null;
   }
 
-  // MAIN ROAD LAYOUT: buildings along a road from gate toward center
-  const settBlds=G.clientBuildings.filter(b=>b.settlement===sett.name);
-  const bldIdx=settBlds.length;
-  // Road direction: from settlement center toward map center
-  const roadAngle=Math.atan2(WH/2-sett.cy,WW/2-sett.cx);
-  const roadDx=Math.cos(roadAngle),roadDy=Math.sin(roadAngle);
-  // Perpendicular for side placement
-  const perpDx=-roadDy,perpDy=roadDx;
-
-  // Determine zone: public=near center, residential=mid, industrial=far
+  // GRID PLOT SYSTEM: buildings placed along N/S/E/W roads from center
+  const plotDist=Math.ceil(75/TS);// 75px between plot centers in tiles
+  const sideOff=Math.ceil(45/TS);// offset from road center to building
   const isPublic=RING1_TYPES.has(bdef.type);
-  const isResidential=RING2_TYPES.has(bdef.type);
   const isIndustrial=RING3_TYPES.has(bdef.type);
 
-  for(let attempt=0;attempt<30;attempt++){
-    let dist,side;
-    if(isPublic){
-      // Near center, close to road
-      dist=2+rng3.next()*3;side=(rng3.next()-0.5)*3;
-    }else if(isResidential){
-      // Mid distance, alternating sides of road in rows
-      const row=Math.floor(bldIdx/2)+attempt;
-      dist=4+row*2+rng3.next();
-      side=(row%2===0?1:-1)*(2+rng3.next());// alternate sides
-    }else if(isIndustrial){
-      // Far from center, opposite direction from gate
-      dist=-(5+rng3.next()*5);// negative = away from gate direction
-      side=(rng3.next()-0.5)*6;
-    }else{
-      // Decorative/defense: outer ring
-      dist=6+rng3.next()*6;side=(rng3.next()-0.5)*8;
-    }
-    const tx=Math.max(2,Math.min(WW-3,Math.round(sett.cx+roadDx*dist+perpDx*side)));
-    const ty=Math.max(2,Math.min(WH-3,Math.round(sett.cy+roadDy*dist+perpDy*side)));
-    if(canPlaceAt(tx,ty,pw2,ph2)){
-      clearDetailsAtBuilding(tx,ty,pw2,ph2);
-      return{x:tx,y:ty,settlement:sett.name};
+  // 4 road directions: N, S, E, W
+  const dirs=[[0,-1],[0,1],[-1,0],[1,0]];
+
+  // Public buildings: ring 0-1 (close to center)
+  // Residential: ring 2-4
+  // Industrial: ring 4-6
+  const minRing=isPublic?1:isIndustrial?4:2;
+  const maxRing=isPublic?2:isIndustrial?6:4;
+
+  for(let ring=minRing;ring<=maxRing;ring++){
+    for(const[dx2,dy2] of dirs){
+      for(const side of [-1,1]){
+        // Plot position: along road + offset to side
+        const px3=Math.round(sett.cx+dx2*ring*plotDist+dy2*side*sideOff);
+        const py3=Math.round(sett.cy+dy2*ring*plotDist+dx2*side*sideOff);
+        const tx=Math.max(2,Math.min(WW-3,px3));
+        const ty=Math.max(2,Math.min(WH-3,py3));
+        if(canPlaceAt(tx,ty,pw2,ph2)){
+          clearDetailsAtBuilding(tx,ty,pw2,ph2);
+          return{x:tx,y:ty,settlement:sett.name};
+        }
+      }
     }
   }
-  // Fallback: EXPANDING SPIRAL from settlement center (guaranteed no overlap)
-  for(let ring=1;ring<=10;ring++){
-    const radius=ring*Math.ceil(45/TS);// 45px between rings in tile units
-    const spots=ring*6;
-    for(let i=0;i<spots;i++){
-      const angle=(i/spots)*Math.PI*2;
-      const tx=Math.max(2,Math.min(WW-3,Math.round(sett.cx+Math.cos(angle)*radius+(rng3.next()-0.5)*2)));
-      const ty=Math.max(2,Math.min(WH-3,Math.round(sett.cy+Math.sin(angle)*radius+(rng3.next()-0.5)*2)));
-      if(canPlaceAt(tx,ty,pw2,ph2)){
-        clearDetailsAtBuilding(tx,ty,pw2,ph2);
-        return{x:tx,y:ty,settlement:sett.name};
+  // Fallback: try any open ring
+  for(let ring=1;ring<=8;ring++){
+    for(const[dx2,dy2] of dirs){
+      for(const side of [-1,1]){
+        const px3=Math.round(sett.cx+dx2*ring*plotDist+dy2*side*sideOff+(rng3.next()-0.5)*2);
+        const py3=Math.round(sett.cy+dy2*ring*plotDist+dx2*side*sideOff+(rng3.next()-0.5)*2);
+        const tx=Math.max(2,Math.min(WW-3,px3));
+        const ty=Math.max(2,Math.min(WH-3,py3));
+        if(canPlaceAt(tx,ty,pw2,ph2)){
+          clearDetailsAtBuilding(tx,ty,pw2,ph2);
+          return{x:tx,y:ty,settlement:sett.name};
+        }
       }
     }
   }
@@ -3045,29 +3035,50 @@ for(const s of settlements){
     ctx.fillStyle='rgba(140,120,90,0.06)';
     ctx.beginPath();ctx.arc(bpx2,bpy2,60,0,Math.PI*2);ctx.fill();
   }
-  // Settlement center packed earth
-  ctx.fillStyle='rgba(130,110,80,0.15)';
-  ctx.beginPath();ctx.arc(scx,scy,Math.min(50,s.radius*ts*0.4),0,Math.PI*2);ctx.fill();
+  // CENTRAL PLAZA — 80px cleared dirt patch
+  ctx.fillStyle='rgba(154,138,104,0.2)';
+  ctx.beginPath();ctx.arc(scx,scy,40,0,Math.PI*2);ctx.fill();
+  ctx.fillStyle='rgba(130,110,80,0.12)';
+  ctx.beginPath();ctx.arc(scx,scy,55,0,Math.PI*2);ctx.fill();
 
-  // WINDING PATHS — Bezier curves between buildings and center
-  ctx.fillStyle='#8a7a58';ctx.globalAlpha=0.25;
-  const pathHash=tileHash(Math.round(s.cx),Math.round(s.cy));
+  // CROSSROADS — N/S and E/W roads through center
+  const roadW=10,roadLen2=s.radius*ts+30;
+  ctx.fillStyle='rgba(138,122,88,0.2)';
+  ctx.fillRect(scx-roadW/2,scy-roadLen2,roadW,roadLen2*2);// N-S road
+  ctx.fillRect(scx-roadLen2,scy-roadW/2,roadLen2*2,roadW);// E-W road
+
+  // BRANCH PATHS from each building to nearest road
+  ctx.fillStyle='#8a7a58';ctx.globalAlpha=0.2;
   for(const b2 of settBlds2){
-    const bpx2=b2.x*ts+(b2.pw||ts)/2,bpy2=b2.y*ts+(b2.ph||ts);
-    // Bezier control point (curved path)
-    const mx=(scx+bpx2)/2,my=(scy+bpy2)/2;
-    const offx=((tileHash(b2.x,b2.y)%60)-30),offy=((tileHash(b2.y,b2.x)%40)-20);
-    const steps=Math.min(40,Math.max(5,Math.floor(Math.sqrt((bpx2-scx)**2+(bpy2-scy)**2)/4)));
-    for(let pi=0;pi<steps;pi++){
-      const t2=pi/steps,t2i=1-t2;
-      const ppx=t2i*t2i*bpx2+2*t2i*t2*(mx+offx)+t2*t2*scx;
-      const ppy=t2i*t2i*bpy2+2*t2i*t2*(my+offy)+t2*t2*scy;
-      ctx.fillRect(ppx-2,ppy-1,4,3);
-      // Edge variation
-      if((pi+pathHash)%3===0){ctx.fillStyle='#7a6a48';ctx.fillRect(ppx-3,ppy-2,2,2);ctx.fillStyle='#8a7a58'}
+    const bpx2=b2.x*ts+(b2.pw||ts)/2,bpy2=b2.y*ts+(b2.ph||ts)/2;
+    // Connect to nearest axis (horizontal or vertical road)
+    const toNS=Math.abs(bpx2-scx),toEW=Math.abs(bpy2-scy);
+    if(toNS<toEW){// closer to N-S road: draw horizontal path to it
+      const sy3=bpy2,sx3=Math.min(bpx2,scx),ex3=Math.max(bpx2,scx);
+      for(let px4=sx3;px4<ex3;px4+=3)ctx.fillRect(px4,sy3-2,4,4);
+    }else{// closer to E-W road: draw vertical path
+      const sx3=bpx2,sy3=Math.min(bpy2,scy),ey3=Math.max(bpy2,scy);
+      for(let py4=sy3;py4<ey3;py4+=3)ctx.fillRect(sx3-2,py4,4,4);
     }
   }
   ctx.globalAlpha=1;
+
+  // ROAD INTERSECTION DETAIL — wider square at center crossroads
+  ctx.fillStyle='rgba(138,122,88,0.15)';
+  ctx.fillRect(scx-12,scy-12,24,24);
+
+  // TORCHES at road intersections (every 80px along roads)
+  if(settBlds2.length>=4){
+    for(let td=-3;td<=3;td++){
+      if(td===0)continue;
+      for(const[dx3,dy3] of [[1,0],[0,1]]){
+        const tpx=scx+dx3*td*80*ts/TS,tpy=scy+dy3*td*80*ts/TS;
+        ctx.fillStyle='#4a3020';ctx.fillRect(tpx-1,tpy-8,2,10);
+        ctx.fillStyle='#ff8833';ctx.fillRect(tpx-1,tpy-9,3,3);
+        if(window._isNight){ctx.fillStyle='rgba(255,180,80,0.06)';ctx.beginPath();ctx.arc(tpx,tpy-6,15,0,Math.PI*2);ctx.fill()}
+      }
+    }
+  }
 
   // DECORATIVE DETAILS
   for(const b2 of settBlds2){
