@@ -2874,6 +2874,7 @@ if(frame%90===0)checkSocialInteractions();
 socialCheckTimer--;if(socialCheckTimer<=0){socialCheckTimer=600;checkClanFormation();checkVillages()}
 if(frame%30===0)updateConflicts();
 if(frame%300===0){ensureResourceAbundance();batchResourceSummary()}
+if(frame%3===0)try{updateWildlife()}catch(e){}// wildlife every 3 frames
 // Drama events
 dramaTimer--;if(dramaTimer<=0){dramaTimer=60*(90+Math.random()*30);triggerDramaEvent()}
 // Spotlight
@@ -3255,6 +3256,12 @@ for(const a of S.agents){
   renderItems.push({type:'agent',idx:agentRenderData.length-1,sortY:vy*ts+ts});
 }
 
+// Wild animals in Y-sort
+for(const an of wildAnimals){
+  if(an.wx<sx-2||an.wx>ex+2||an.wy<sy-2||an.wy>ey+2)continue;
+  renderItems.push({type:'animal',an,sortY:an.wy*ts+ts});
+}
+
 // Agent Z-fighting: offset agents within 5px of each other
 for(let i=0;i<agentRenderData.length;i++){
   for(let j=i+1;j<agentRenderData.length;j++){
@@ -3359,6 +3366,28 @@ for(const item of renderItems){
       const hAlpha=0.3+0.3*Math.sin(frame*0.15);
       ctx.strokeStyle=`rgba(255,204,68,${hAlpha})`;ctx.lineWidth=2;
       ctx.beginPath();ctx.arc(ax,ay-10,20,0,Math.PI*2);ctx.stroke();ctx.lineWidth=1;
+    }
+  }else if(item.type==='animal'){
+    const an=item.an,apx=an.wx*ts,apy=an.wy*ts;
+    if(an.type==='deer'){
+      ctx.fillStyle='rgba(0,0,0,0.15)';ctx.beginPath();ctx.ellipse(apx,apy+4,6,2,0,0,Math.PI*2);ctx.fill();
+      ctx.fillStyle='#8a6a3a';ctx.beginPath();ctx.ellipse(apx,apy,5,3,0,0,Math.PI*2);ctx.fill();
+      ctx.fillStyle='#b09060';ctx.fillRect(apx-4,apy,8,2);
+      ctx.fillStyle='#8a6a3a';ctx.beginPath();ctx.arc(apx+(an.vx>0?5:-5),apy-3,2.5,0,Math.PI*2);ctx.fill();
+      ctx.fillStyle='#6a4a28';for(let li=0;li<4;li++)ctx.fillRect(apx-3+li*2,apy+3,1,3);
+      if(an.hasAntlers){ctx.strokeStyle='#6a5a3a';ctx.lineWidth=1;const hx=apx+(an.vx>0?6:-6),hy=apy-5;ctx.beginPath();ctx.moveTo(hx,hy);ctx.lineTo(hx-2,hy-4);ctx.moveTo(hx,hy);ctx.lineTo(hx+2,hy-4);ctx.stroke()}
+    }else if(an.type==='rabbit'){
+      ctx.fillStyle='#b09868';ctx.beginPath();ctx.ellipse(apx,apy,3,2,0,0,Math.PI*2);ctx.fill();
+      ctx.fillStyle='#c0a878';ctx.fillRect(apx-1,apy-4,2,3);ctx.fillRect(apx+1,apy-4,2,3);
+    }else if(an.type==='wolf'){
+      ctx.fillStyle='rgba(0,0,0,0.15)';ctx.beginPath();ctx.ellipse(apx,apy+3,5,2,0,0,Math.PI*2);ctx.fill();
+      ctx.fillStyle='#5a5a5a';ctx.beginPath();ctx.ellipse(apx,apy,4,2.5,0,0,Math.PI*2);ctx.fill();
+      ctx.fillStyle='#4a4a4a';ctx.beginPath();ctx.arc(apx+(an.vx>0?4:-4),apy-2,2,0,Math.PI*2);ctx.fill();
+      ctx.fillStyle='#5a5a5a';ctx.beginPath();ctx.moveTo(apx+(an.vx>0?3:-3),apy-3);ctx.lineTo(apx+(an.vx>0?5:-5),apy-6);ctx.lineTo(apx+(an.vx>0?6:-6),apy-2);ctx.fill();
+    }else if(an.type==='chicken'){
+      ctx.fillStyle='#e8e0d0';ctx.beginPath();ctx.ellipse(apx,apy,2,1.5,0,0,Math.PI*2);ctx.fill();
+      ctx.fillStyle='#cc3333';ctx.fillRect(apx,apy-2,1,1);
+      ctx.fillStyle='#cc8833';ctx.fillRect(apx+2,apy-1,1,1);
     }
   }
 }
@@ -3960,7 +3989,85 @@ function setCursor(type){
 
 // === Ambient Creatures ===
 const ambientBirds=[];
-const deerHerd=[];// {wx,wy,vx,phase,life}
+const deerHerd=[];
+// === Wildlife System ===
+const wildAnimals=[];// {type:'deer'|'rabbit'|'wolf'|'chicken'|'cow',wx,wy,vx,vy,phase,life,fleeing,farmId}
+let animalInitDone=false;
+function initWildlife(){
+  if(animalInitDone)return;animalInitDone=true;
+  const rng4=new SeededRNG(4444);
+  // Spawn 3 deer groups on grassland
+  for(let g=0;g<3;g++){
+    for(let i=0;i<20;i++){// try 20 times to find grass
+      const dx=Math.floor(rng4.next()*WW),dy=Math.floor(rng4.next()*WH);
+      if(tBiomes&&BL[tBiomes[dy*WW+dx]]==='grassland'){
+        for(let d=0;d<4;d++)wildAnimals.push({type:'deer',wx:dx+(rng4.next()-0.5)*4,wy:dy+(rng4.next()-0.5)*3,vx:(rng4.next()-0.5)*0.02,vy:(rng4.next()-0.5)*0.01,phase:rng4.next()*10,life:99999,fleeing:0,hasAntlers:d===0});
+        break;
+      }
+    }
+  }
+  // Spawn 8 rabbits near forest edges
+  for(let r2=0;r2<8;r2++){
+    for(let i=0;i<20;i++){
+      const rx=Math.floor(rng4.next()*WW),ry=Math.floor(rng4.next()*WH);
+      if(tBiomes&&(BL[tBiomes[ry*WW+rx]]==='grassland'||BL[tBiomes[ry*WW+rx]]==='forest')){
+        wildAnimals.push({type:'rabbit',wx:rx,wy:ry,vx:0,vy:0,phase:rng4.next()*100,life:99999,fleeing:0,hopTimer:30+Math.floor(rng4.next()*60)});break;
+      }
+    }
+  }
+  // Spawn 1 wolf pack in forest
+  for(let i=0;i<30;i++){
+    const wx2=Math.floor(rng4.next()*WW),wy2=Math.floor(rng4.next()*WH);
+    if(tBiomes&&BL[tBiomes[wy2*WW+wx2]]==='forest'){
+      for(let w=0;w<3;w++)wildAnimals.push({type:'wolf',wx:wx2+(rng4.next()-0.5)*3,wy:wy2+(rng4.next()-0.5)*2,vx:(rng4.next()-0.5)*0.03,vy:(rng4.next()-0.5)*0.02,phase:rng4.next()*10,life:99999,fleeing:0});
+      break;
+    }
+  }
+}
+function updateWildlife(){
+  for(const an of wildAnimals){
+    if(an.type==='deer'){
+      // Wander slowly, flee from nearby agents
+      if(an.fleeing>0){an.fleeing--;an.wx+=an.vx*3;an.wy+=an.vy*3}
+      else{an.wx+=an.vx;an.wy+=an.vy}
+      if(frame%300===Math.floor(an.phase*30)%300){an.vx=(Math.random()-0.5)*0.02;an.vy=(Math.random()-0.5)*0.01}
+      // Flee from agents
+      for(const a of S.agents){const v=agentVisual.get(a.id);if(!v)continue;
+        if(Math.abs(v.x*WW-an.wx)+Math.abs(v.y*WH-an.wy)<2){
+          an.vx=an.wx>v.x*WW?0.04:-0.04;an.vy=an.wy>v.y*WH?0.03:-0.03;an.fleeing=60;break;
+      }}
+    }else if(an.type==='rabbit'){
+      an.hopTimer--;
+      if(an.hopTimer<=0){an.wx+=(Math.random()-0.5)*0.6;an.wy+=(Math.random()-0.5)*0.4;an.hopTimer=40+Math.floor(Math.random()*40)}
+      // Flee faster
+      for(const a of S.agents){const v=agentVisual.get(a.id);if(!v)continue;
+        if(Math.abs(v.x*WW-an.wx)+Math.abs(v.y*WH-an.wy)<3){an.wx+=(an.wx>v.x*WW?0.5:-0.5);an.wy+=(an.wy>v.y*WH?0.3:-0.3);break}}
+    }else if(an.type==='wolf'){
+      an.wx+=an.vx;an.wy+=an.vy;
+      if(frame%200===Math.floor(an.phase*20)%200){an.vx=(Math.random()-0.5)*0.03;an.vy=(Math.random()-0.5)*0.02}
+      // Hunt deer
+      for(const d2 of wildAnimals){if(d2.type==='deer'&&Math.abs(d2.wx-an.wx)+Math.abs(d2.wy-an.wy)<1){d2.life=0;G.food+=2;break}}
+      // Alert settlements
+      for(const s of settlements){if(Math.abs(an.wx-s.cx)+Math.abs(an.wy-s.cy)<10&&frame%600===0){
+        gameEvent(`🐺 Wolves spotted near ${s.name}!`,'agent_message')}}
+    }else if(an.type==='chicken'){
+      // Wander near farm
+      an.wx+=Math.sin(frame*0.01+an.phase)*0.003;an.wy+=Math.cos(frame*0.013+an.phase)*0.002;
+    }
+    // Clamp to world
+    an.wx=Math.max(1,Math.min(WW-1,an.wx));an.wy=Math.max(1,Math.min(WH-1,an.wy));
+  }
+  // Remove dead
+  for(let i=wildAnimals.length-1;i>=0;i--)if(wildAnimals[i].life<=0)wildAnimals.splice(i,1);
+  // Spawn chickens for farms
+  for(const b of G.clientBuildings){
+    if(b.type==='farm'&&b.complete&&!wildAnimals.find(a2=>a2.farmId===b.x+','+b.y)){
+      for(let ci=0;ci<3;ci++)wildAnimals.push({type:'chicken',wx:b.x+Math.random()*2,wy:b.y+Math.random()*2,vx:0,vy:0,phase:Math.random()*10,life:99999,fleeing:0,farmId:b.x+','+b.y});
+    }
+  }
+  // Cap
+  while(wildAnimals.length>40)wildAnimals.shift();
+}
 const ambientButterflies=[];
 const ambientLeaves=[];
 let fishJumpTimer=400+Math.floor(Math.random()*200);
@@ -4591,6 +4698,7 @@ let didLoad=false;
 try{
   resize();genTerrain();renderTBuf();generateBoulders();initHarvestables();initCreatures();
   try{initCursors()}catch(e){console.warn('Cursor init failed:',e)}
+  try{initWildlife()}catch(e){console.warn('Wildlife init failed:',e)}
   try{initInfluence()}catch(e){console.warn('Influence init failed:',e)}
   try{document.getElementById('h-points').textContent=specPoints}catch(e){}
   // Try loading saved game
