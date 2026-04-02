@@ -838,14 +838,9 @@ window.addEventListener('mouseup',()=>{
 });
 let targetZoom=1;
 let zoomAnchorX=0,zoomAnchorY=0;// world point to keep under mouse during zoom
+let _pendingWheelEvents=[];// queue wheel events for start-of-frame processing
 wrap.addEventListener('wheel',e=>{e.preventDefault();lastInputFrame=frame;if(tvMode)tvMode=false;
-  const r=canvasEl.getBoundingClientRect();
-  zoomAnchorX=e.clientX-r.left;zoomAnchorY=e.clientY-r.top;
-  targetZoom*=e.deltaY<0?1.08:1/1.08;
-  // Minimum zoom: never see beyond world edges
-  const minZoomX2=canvasEl.width/(WW*TS),minZoomY2=canvasEl.height/(WH*TS);
-  const minZoom2=Math.max(minZoomX2,minZoomY2,0.4);
-  targetZoom=Math.max(minZoom2,Math.min(3,targetZoom));
+  _pendingWheelEvents.push({deltaY:e.deltaY,clientX:e.clientX,clientY:e.clientY});
 },{passive:false});
 // Double-click to zoom in/out
 wrap.addEventListener('dblclick',e=>{lastInputFrame=frame;if(tvMode)tvMode=false;
@@ -2996,6 +2991,19 @@ if(frame%(60*60)===30){
   for(let i=impactTexts.length-1;i>=0;i--)if(!impactTexts[i]||impactTexts[i].life>=impactTexts[i].maxLife)impactTexts.splice(i,1);
   for(let i=footprints.length-1;i>=0;i--)if(!footprints[i]||footprints[i].life<=0)footprints.splice(i,1);
 }
+// Process queued wheel events (zoom input) — all at frame start, before any rendering
+if(_pendingWheelEvents.length>0){
+  for(const we of _pendingWheelEvents){
+    const r2=canvasEl.getBoundingClientRect();
+    zoomAnchorX=we.clientX-r2.left;zoomAnchorY=we.clientY-r2.top;
+    targetZoom*=we.deltaY<0?1.08:1/1.08;
+  }
+  _pendingWheelEvents.length=0;
+  // Clamp targetZoom
+  const minZoomX2=canvasEl.width/(WW*TS),minZoomY2=canvasEl.height/(WH*TS);
+  const minZoom2=Math.max(minZoomX2,minZoomY2,0.4);
+  targetZoom=Math.max(minZoom2,Math.min(3,targetZoom));
+}
 // Smooth pan animation
 if(panTarget&&panFrames>0){
   vpX+=(panTarget.vpX-vpX)*0.12;vpY+=(panTarget.vpY-vpY)*0.12;
@@ -3006,10 +3014,10 @@ if(panTarget&&panFrames>0){
 if(!dragging&&(Math.abs(panVelX)>0.1||Math.abs(panVelY)>0.1)){
   vpX+=panVelX;vpY+=panVelY;panVelX*=0.92;panVelY*=0.92;
 }
-// Smooth zoom with mouse anchor
+// Smooth zoom with mouse anchor — faster lerp for buttery feel
 if(Math.abs(zoom-targetZoom)>0.005){
   const worldBefore=zoomAnchorX/zoom-vpX;const worldBeforeY=zoomAnchorY/zoom-vpY;
-  zoom+=(targetZoom-zoom)*0.1;
+  zoom+=(targetZoom-zoom)*0.15;
   vpX=-(worldBefore-zoomAnchorX/zoom);vpY=-(worldBeforeY-zoomAnchorY/zoom);
 }
 // Follow agent mode — smooth lock onto tracked agent
