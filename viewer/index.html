@@ -1698,6 +1698,139 @@ function tickNeeds(){
   }
 }
 
+// === Agent Quirks ===
+const AGENT_QUIRKS={
+  Aldric:{title:'The Perfectionist',gatherMult:1,buildMult:0.8,
+    speeches:['This wall angle is 2 degrees off.','I could do this better. Watch me.','Precision is everything.']},
+  Bomrik:{title:'The Hoarder',gatherMult:2,buildMult:1,
+    speeches:['Mine. All mine.','You can\'t have any.','I gathered this MYSELF.']},
+  Faelith:{title:'The Explorer',gatherMult:1,buildMult:1,explorePct:0.3,
+    speeches:['I wonder what\'s over that hill...','Found a great spot!','Adventure awaits!']},
+  Grimshaw:{title:'The Politician',gatherMult:1,buildMult:1,socializePct:0.2,
+    speeches:['Mutually beneficial arrangements.','Nothing personal.','Let\'s make a deal.']},
+  Grukk:{title:'The Berserker',gatherMult:1.5,buildMult:1,chopMult:2,
+    speeches:['CHOP CHOP CHOP!','Get OUT of my forest!','RAAAGH!']},
+  Sylara:{title:'The Gardener',gatherMult:1,buildMult:1,regrows:true,
+    speeches:['Everything grows in time.','Sorry little tree.','Nature provides.']},
+  Thorin:{title:'The Architect',gatherMult:1,buildMult:1.3,
+    speeches:['Structural integrity is paramount.','This will stand forever.','A fine design.']},
+  Zog:{title:'The Sleepwalker',gatherMult:0.5,buildMult:0.5,sleepChance:0.0013,
+    speeches:['...huh? Where am I?','Five more minutes...','*snore*']},
+};
+
+function getQuirk(name){
+  for(const[k,v] of Object.entries(AGENT_QUIRKS)){if(name.includes(k))return v}
+  return null;
+}
+
+function applyQuirks(agent,st,v){
+  const q=getQuirk(agent.name);if(!q)return;
+  // Sylara plants saplings after chopping
+  if(q.regrows&&st.state==='idle'&&st.target&&harvestables.has(`${st.target.x},${st.target.y}`)){
+    setTimeout(()=>{harvestables.delete(`${st.target.x},${st.target.y}`)},60000);// regrow in 60s
+  }
+  // Faelith explores
+  if(q.explorePct&&st.state==='idle'&&Math.random()<q.explorePct){
+    v.tx=0.05+Math.random()*0.9;v.ty=0.05+Math.random()*0.9;
+    addBubble(agent,q.speeches[Math.floor(Math.random()*q.speeches.length)]);
+  }
+  // Grimshaw socializes
+  if(q.socializePct&&st.state==='idle'&&Math.random()<q.socializePct&&S.agents.length>1){
+    const other=S.agents[Math.floor(Math.random()*S.agents.length)];
+    if(other.id!==agent.id){const v2=agentVisual.get(other.id);if(v2){v.tx=v2.x;v.ty=v2.y}}
+    addBubble(agent,q.speeches[Math.floor(Math.random()*q.speeches.length)]);
+  }
+  // Zog falls asleep
+  if(q.sleepChance&&Math.random()<q.sleepChance&&st.state!=='idle'){
+    st.state='idle';st.taskCooldown=900;// 15 sec sleep
+    addBubble(agent,'*zzzzzzz*');
+    // 30% sleepwalk
+    if(Math.random()<0.3){v.tx=Math.random();v.ty=Math.random()}
+  }
+  // Random quirk speech (rare)
+  if(Math.random()<0.001&&q.speeches){addBubble(agent,q.speeches[Math.floor(Math.random()*q.speeches.length)])}
+}
+
+// === Drama Events (every 90-120 sec) ===
+let dramaTimer=60*90;
+function triggerDramaEvent(){
+  if(S.agents.length<2)return;
+  const roll=Math.random();
+
+  if(roll<0.25){// RIVALRY
+    const pairs=[];
+    for(let i=0;i<S.agents.length;i++)for(let j=i+1;j<S.agents.length;j++){
+      const s1=getAgentSocial(S.agents[i].id),rel=s1.relationships[S.agents[j].id]||0;
+      if(rel<20)pairs.push([S.agents[i],S.agents[j],rel]);
+    }
+    if(pairs.length>0){
+      const[a1,a2]=pairs[Math.floor(Math.random()*pairs.length)];
+      const outcome=Math.random();
+      if(outcome<0.7){
+        addBubble(a1,'Back off!');addBubble(a2,'You back off!');
+        getAgentSocial(a1.id).relationships[a2.id]=(getAgentSocial(a1.id).relationships[a2.id]||0)-10;
+        gameEvent(`${a1.name} and ${a2.name} argued!`,'raid_success');
+      }else if(outcome<0.9){
+        G.wood=Math.max(0,G.wood-3);
+        gameEvent(`⚡ ${a1.name} stole resources from ${a2.name}!`,'raid_success');
+        addBubble(a1,'Mine now!');
+      }else{
+        getAgentSocial(a1.id).relationships[a2.id]=(getAgentSocial(a1.id).relationships[a2.id]||0)+25;
+        getAgentSocial(a2.id).relationships[a1.id]=(getAgentSocial(a2.id).relationships[a1.id]||0)+25;
+        gameEvent(`🤝 ${a1.name} and ${a2.name} made peace!`,'build_complete');
+        showNotification(`🤝 Unexpected friendship: ${a1.name} & ${a2.name}!`);
+      }
+    }
+  }else if(roll<0.5){// DISCOVERY
+    const a=S.agents[Math.floor(Math.random()*S.agents.length)];
+    const discoveries=[
+      {msg:`🏺 ${a.name} found ancient pottery!`,gold:50,wood:0},
+      {msg:`💎 ${a.name} struck a diamond vein!`,gold:80,wood:0},
+      {msg:`📦 ${a.name} found an abandoned supply cache!`,gold:10,wood:30},
+    ];
+    const d=discoveries[Math.floor(Math.random()*discoveries.length)];
+    G.gold+=d.gold;G.wood+=d.wood;
+    gameEvent(d.msg,'build_complete');showNotification(d.msg);
+    const vi=agentVisual.get(a.id);
+    if(vi)for(let i=0;i<8;i++)spawnParticle(vi.x*WW*TS+(Math.random()-0.5)*20,vi.y*WH*TS-10+Math.random()*10,'gold');
+  }else if(roll<0.7){// BOND
+    const pairs2=[];
+    for(let i=0;i<S.agents.length;i++)for(let j=i+1;j<S.agents.length;j++){
+      const rel=(getAgentSocial(S.agents[i].id).relationships[S.agents[j].id]||0);
+      if(rel>50)pairs2.push([S.agents[i],S.agents[j]]);
+    }
+    if(pairs2.length>0){
+      const[a1,a2]=pairs2[Math.floor(Math.random()*pairs2.length)];
+      gameEvent(`❤️ ${a1.name} and ${a2.name} have become close companions`,'build_complete');
+      showNotification(`❤️ ${a1.name} & ${a2.name} — companions!`);
+    }
+  }else if(roll<0.85){// BETRAYAL
+    const candidates=S.agents.filter(a=>{const s=getAgentSocial(a.id);return s.clan&&s.morale<50});
+    if(candidates.length>0){
+      const a=candidates[Math.floor(Math.random()*candidates.length)];
+      const s=getAgentSocial(a.id);
+      const oldClan=s.clan;s.clan=null;
+      G.wood=Math.max(0,G.wood-20);
+      gameEvent(`⚡ ${a.name} BETRAYED the ${oldClan}! Stole 20 wood!`,'raid_success');
+      showNotification(`⚡ BETRAYAL: ${a.name} left ${oldClan}!`);
+      // Drop relationships with former clanmates
+      for(const a2 of S.agents){
+        const s2=getAgentSocial(a2.id);
+        if(s2.clan===oldClan)s2.relationships[a.id]=-50;
+      }
+    }
+  }else{// HEROIC MOMENT
+    const a=S.agents[Math.floor(Math.random()*S.agents.length)];
+    const b=G.clientBuildings.find(b2=>b2.complete);
+    if(b){
+      gameEvent(`🦸 ${a.name} heroically reinforced ${b.name}!`,'build_complete');
+      showNotification(`🦸 ${a.name} — HERO!`);
+      for(const a2 of S.agents)getAgentSocial(a2.id).relationships[a.id]=(getAgentSocial(a2.id).relationships[a.id]||0)+15;
+      getAgentSocial(a.id).morale=100;
+    }
+  }
+}
+
 function checkSocialInteractions(){
   for(let i=0;i<S.agents.length;i++){
     const a1=S.agents[i],v1=agentVisual.get(a1.id);if(!v1)continue;
@@ -2034,9 +2167,12 @@ function updateAgentMovement(){
         }
       }
       if(st.timer<=0){
-        G.wood+=5;getAgentSocial(a.id).morale=Math.min(100,getAgentSocial(a.id).morale+5);
+        const q2=getQuirk(a.name),gm=q2?q2.gatherMult:1,cm=q2?q2.chopMult||1:1;
+        const woodAmt=Math.round(5*gm*cm);
+        G.wood+=woodAmt;getAgentSocial(a.id).morale=Math.min(100,getAgentSocial(a.id).morale+5);
         milestones.trees++;checkMilestones();
-        gameEvent(`${a.name} chopped a tree (+5 wood)`,'build_complete');
+        if(q2&&q2.regrows&&st.target){const rk=`${st.target.x},${st.target.y}`;setTimeout(()=>harvestables.delete(rk),60000)}
+        gameEvent(`${a.name} chopped a tree (+${woodAmt} wood)`,'build_complete');
         if(st.target){
           const key2=`${st.target.x},${st.target.y}`;
           harvestables.set(key2,true);harvestAnim.delete(key2);
@@ -2250,6 +2386,10 @@ if(frame%30===0){
 if(frame%60===0)tickNeeds();
 if(frame%90===0)checkSocialInteractions();
 socialCheckTimer--;if(socialCheckTimer<=0){socialCheckTimer=600;checkClanFormation();checkVillages()}
+// Drama events
+dramaTimer--;if(dramaTimer<=0){dramaTimer=60*(90+Math.random()*30);triggerDramaEvent()}
+// Agent quirks (every 60 frames)
+if(frame%60===0){for(const a of S.agents){const st2=agentState.get(a.id),v2=agentVisual.get(a.id);if(st2&&v2)applyQuirks(a,st2,v2)}}
 if(frame%300===0)tickPersonalization();
 updateGameUI();
 updateWorldEvents();
