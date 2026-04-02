@@ -6204,18 +6204,14 @@ function runOfflineSim(){
   // Process in chunks
   for(let t=0;t<offlineTicks;t+=1000){
     const chunk=Math.min(1000,offlineTicks-t);
-    // Resource gathering (each agent gathers per tick)
-    for(let c2=0;c2<chunk;c2++){
-      // Each agent gathers a bit each tick
-      const gatherRoll=Math.random();
-      if(gatherRoll<0.4){G.wood+=1;summary.trees+=0.2}
-      else if(gatherRoll<0.7){G.stone+=1;summary.stones+=0.33}
-      else if(gatherRoll<0.8){G.gold+=1;summary.gold++}
-      else{G.food+=1}
-    }
-    // Scale by agent count
-    G.wood=Math.round(G.wood*Math.min(agentCount,8)/8);
-    G.stone=Math.round(G.stone*Math.min(agentCount,8)/8);
+    // Resource gathering — scale by agent count (applied per-chunk, not cumulative)
+    const agentScale=Math.min(agentCount,8)/8;
+    const woodGain=Math.round(chunk*0.4*agentScale);
+    const stoneGain=Math.round(chunk*0.3*agentScale);
+    const goldGain=Math.round(chunk*0.1*agentScale);
+    const foodGain=Math.round(chunk*0.2*agentScale);
+    G.wood+=woodGain;G.stone+=stoneGain;G.gold+=goldGain;G.food+=foodGain;
+    summary.trees+=woodGain;summary.stones+=stoneGain;summary.gold+=goldGain;
     // Building progress
     for(const b of G.clientBuildings){
       if(!b.complete&&b.progress!=null){
