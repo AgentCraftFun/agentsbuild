@@ -2279,19 +2279,26 @@ function findNearestDetail(vx,vy,types){
 }
 
 function canPlaceAt(tx,ty,pw2,ph2){
-  // Check biome at center and corners
+  // tx,ty are TILE coordinates. pw2,ph2 are PIXEL dimensions.
+  // Convert to pixel center for overlap check
+  const ncx=tx*TS+pw2/2,ncy=ty*TS+ph2/2;
+  // Check biome at center and corners (in tile coords)
   const twid=Math.ceil(pw2/TS),thei=Math.ceil(ph2/TS);
   for(const[px2,py2] of [[tx,ty],[tx,ty+thei],[tx+twid,ty],[tx+twid,ty+thei]]){
     if(px2<0||px2>=WW||py2<0||py2>=WH)return false;
     const bi=tBiomes[py2*WW+px2];
-    if(bi===0||bi===1||bi===10)return false;// deep_water, shallow_water, river
+    if(bi===0||bi===1||bi===10)return false;
   }
-  // Check overlap: pixel center-to-center distance with 25px margin
-  const ncx=tx*TS+pw2/2,ncy=ty*TS+ph2/2;
+  // Check overlap with ALL existing buildings — 35px margin (GENEROUS)
+  const MARGIN=35;
   for(const eb of G.clientBuildings){
-    const ebw=eb.pw||(eb.width||1)*TS,ebh=eb.ph||(eb.height||1)*TS;
-    const ecx=eb.x*TS+ebw/2,ecy=eb.y*TS+ebh/2;
-    if(Math.abs(ncx-ecx)<(pw2+ebw)/2+25&&Math.abs(ncy-ecy)<(ph2+ebh)/2+25)return false;
+    const ebw=eb.pw||(eb.width||1)*TS;
+    const ebh=eb.ph||(eb.height||1)*TS;
+    const ecx=eb.x*TS+ebw/2;
+    const ecy=eb.y*TS+ebh/2;
+    const overlapX=Math.abs(ncx-ecx)<(pw2+ebw)/2+MARGIN;
+    const overlapY=Math.abs(ncy-ecy)<(ph2+ebh)/2+MARGIN;
+    if(overlapX&&overlapY)return false;
   }
   return true;
 }
@@ -2384,16 +2391,21 @@ function pickBuildSite(bdef,agentId){
       return{x:tx,y:ty,settlement:sett.name};
     }
   }
-  // Fallback: random near settlement
-  for(let i=0;i<15;i++){
-    const tx=Math.max(2,Math.min(WW-3,Math.round(sett.cx+(rng3.next()-0.5)*20)));
-    const ty=Math.max(2,Math.min(WH-3,Math.round(sett.cy+(rng3.next()-0.5)*16)));
-    if(canPlaceAt(tx,ty,pw2,ph2)){
-      clearDetailsAtBuilding(tx,ty,pw2,ph2);
-      return{x:tx,y:ty,settlement:sett.name};
+  // Fallback: EXPANDING SPIRAL from settlement center (guaranteed no overlap)
+  for(let ring=1;ring<=10;ring++){
+    const radius=ring*Math.ceil(45/TS);// 45px between rings in tile units
+    const spots=ring*6;
+    for(let i=0;i<spots;i++){
+      const angle=(i/spots)*Math.PI*2;
+      const tx=Math.max(2,Math.min(WW-3,Math.round(sett.cx+Math.cos(angle)*radius+(rng3.next()-0.5)*2)));
+      const ty=Math.max(2,Math.min(WH-3,Math.round(sett.cy+Math.sin(angle)*radius+(rng3.next()-0.5)*2)));
+      if(canPlaceAt(tx,ty,pw2,ph2)){
+        clearDetailsAtBuilding(tx,ty,pw2,ph2);
+        return{x:tx,y:ty,settlement:sett.name};
+      }
     }
   }
-  return null;
+  return null;// No valid spot — agent should gather instead
 }
 
 function updateAgentMovement(){
@@ -4713,6 +4725,20 @@ try{
     console.log('Restored saved game');
     // Clear trees from all existing building footprints
     for(const b of G.clientBuildings){if(b.complete)clearDetailsAtBuilding(b.x,b.y,b.pw||TS*2,b.ph||TS*2)}
+    // ONE-TIME CLEANUP: remove overlapping buildings from saved state
+    for(let i=G.clientBuildings.length-1;i>=0;i--){
+      const bi2=G.clientBuildings[i];
+      const pw3=bi2.pw||(bi2.width||1)*TS,ph3=bi2.ph||(bi2.height||1)*TS;
+      const cx3=bi2.x*TS+pw3/2,cy3=bi2.y*TS+ph3/2;
+      for(let j=0;j<i;j++){
+        const bj=G.clientBuildings[j];
+        const pw4=bj.pw||(bj.width||1)*TS,ph4=bj.ph||(bj.height||1)*TS;
+        const cx4=bj.x*TS+pw4/2,cy4=bj.y*TS+ph4/2;
+        if(Math.abs(cx3-cx4)<(pw3+pw4)/2+20&&Math.abs(cy3-cy4)<(ph3+ph4)/2+20){
+          G.clientBuildings.splice(i,1);break;// remove newer overlapping building
+        }
+      }
+    }
     // Re-clear settlement zones on load
     for(const s of settlements){if(s.clearRadius)clearSettlementZone(s.cx,s.cy,s.clearRadius)}
     try{offlineSummary=runOfflineSim();if(offlineSummary)saveGame()}catch(e){console.warn('Offline sim failed:',e)}
