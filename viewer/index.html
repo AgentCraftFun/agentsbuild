@@ -102,6 +102,10 @@ canvas{display:block;image-rendering:pixelated;image-rendering:crisp-edges}
       <div class="section-title">Villages</div>
       <div id="village-list" style="padding:4px 12px;font-size:10px"></div>
     </div>
+    <div id="leaderboard-section" style="border-bottom:1px solid var(--border)">
+      <div class="section-title" style="cursor:pointer" onclick="document.getElementById('lb-content').style.display=document.getElementById('lb-content').style.display==='none'?'':'none'">🏆 Leaderboard ▾</div>
+      <div id="lb-content" style="padding:4px 12px;font-size:9px;max-height:120px;overflow-y:auto;display:none"></div>
+    </div>
     <div id="event-section">
       <div class="section-title">Event Feed</div>
       <div id="event-feed"></div>
@@ -1671,6 +1675,8 @@ function showNotification(msg){
 }
 
 function gameEvent(msg,cls){
+  // Log to persistent event log with drama score
+  logEvent(msg);
   // Spectator points for witnessing events
   if(msg.includes('completed'))addPoints(5);
   if(msg.includes('BETRAY')||msg.includes('fought')||msg.includes('💎')||msg.includes('🏺'))addPoints(10);
@@ -1717,13 +1723,25 @@ let socialCheckTimer=0;
 
 function getAgentSocial(id){
   let s=agentSocial.get(id);
-  if(!s){s={inventory:{wood:0,stone:0,gold:0,food:0},relationships:{},clan:null,reputation:50,hunger:100,energy:100,morale:70,home:null,builtCount:0};agentSocial.set(id,s)}
+  if(!s){s={inventory:{wood:0,stone:0,gold:0,food:0},relationships:{},clan:null,reputation:50,hunger:100,energy:100,morale:70,home:null,builtCount:0,
+    // Lifetime stats
+    stats:{treesChopped:0,stoneMined:0,goldMined:0,buildingsBuilt:0,buildingsUpgraded:0,tradesCompleted:0,fightsWon:0,fightsLost:0,discoveries:0,clanHistory:[],ticksAlive:0,quirkEvents:0}
+  };agentSocial.set(id,s)}
+  // Ensure stats exists on loaded saves
+  if(!s.stats)s.stats={treesChopped:0,stoneMined:0,goldMined:0,buildingsBuilt:0,buildingsUpgraded:0,tradesCompleted:0,fightsWon:0,fightsLost:0,discoveries:0,clanHistory:[],ticksAlive:0,quirkEvents:0};
   return s;
+}
+function agentFameScore(s){
+  const st=s.stats||{};
+  return(st.treesChopped||0)*2+(st.stoneMined||0)*3+(st.goldMined||0)*10+(st.buildingsBuilt||0)*15+(st.tradesCompleted||0)*5+(st.discoveries||0)*20+(st.fightsWon||0)*8;
 }
 
 function tickNeeds(){
+  worldStats.worldAge=frame;
+  if(S.agents.length>worldStats.peakPopulation)worldStats.peakPopulation=S.agents.length;
+  specData.timeWatching++;
   for(const a of S.agents){
-    const s=getAgentSocial(a.id);
+    const s=getAgentSocial(a.id);s.stats.ticksAlive++;
     const st=agentState.get(a.id);
     const working=st&&st.state!=='idle';
     s.hunger=Math.max(0,s.hunger-0.3);
@@ -2331,7 +2349,8 @@ function updateAgentMovement(){
       if(st.timer<=0){
         const q2=getQuirk(a.name),gm=q2?q2.gatherMult:1,cm=q2?q2.chopMult||1:1;
         const woodAmt=Math.round(5*gm*cm);
-        G.wood+=woodAmt;getAgentSocial(a.id).morale=Math.min(100,getAgentSocial(a.id).morale+5);
+        G.wood+=woodAmt;worldStats.totalWood+=woodAmt;
+        const soc3=getAgentSocial(a.id);soc3.morale=Math.min(100,soc3.morale+5);soc3.stats.treesChopped++;
         milestones.trees++;checkMilestones();
         if(q2&&q2.regrows&&st.target){const rk=`${st.target.x},${st.target.y}`;setTimeout(()=>harvestables.delete(rk),60000)}
         gameEvent(`${a.name} chopped a tree (+${woodAmt} wood)`,'build_complete');
@@ -2361,7 +2380,8 @@ function updateAgentMovement(){
         }
       }
       if(st.timer<=0){
-        G.stone+=3;getAgentSocial(a.id).morale=Math.min(100,getAgentSocial(a.id).morale+5);
+        G.stone+=3;worldStats.totalStone+=3;
+        const soc4=getAgentSocial(a.id);soc4.morale=Math.min(100,soc4.morale+5);soc4.stats.stoneMined++;
         milestones.stones++;checkMilestones();
         gameEvent(`${a.name} mined stone (+3 stone)`,'build_complete');
         if(st.target){
@@ -2380,7 +2400,7 @@ function updateAgentMovement(){
         impactTexts.push({x:st.target.x+TS/2,y:st.target.y+TS*0.3,text:'clink!',color:'#ffd700',life:0,maxLife:18});
       }
       if(st.timer<=0){
-        G.gold+=1;
+        G.gold+=1;worldStats.totalGold++;getAgentSocial(a.id).stats.goldMined++;
         gameEvent(`${a.name} found gold (+1 gold)`,'build_complete');
         if(st.target)st.target.alive=false;
         st.state='idle';st.taskCooldown=15;
@@ -2406,7 +2426,7 @@ function updateAgentMovement(){
         st.target.owner=a.id;st.target.ownerName=a.name;
         st.target.ownedSince=frame;st.target.personalized=false;
         const soc=getAgentSocial(a.id);soc.builtCount++;soc.morale=Math.min(100,soc.morale+10);
-        milestones.builds++;checkMilestones();
+        milestones.builds++;worldStats.buildingsEverBuilt++;soc.stats.buildingsBuilt++;checkMilestones();
         // Assign as home if shelter type and no home yet
         const shelters=['wood_hut','log_cabin','stone_house','brick_house','apartment'];
         if(!soc.home&&shelters.includes(st.target.type)){
@@ -2474,6 +2494,20 @@ function updateGameUI(){
   // Playtime
   const secs=Math.floor(frame/60);
   document.getElementById('h-playtime').textContent=`${Math.floor(secs/60)}:${String(secs%60).padStart(2,'0')}`;
+  // Leaderboard (update every 5 seconds)
+  if(frame%300===0){
+    const lb=getLeaderboards();
+    const lbEl=document.getElementById('lb-content');
+    if(lbEl&&lb.fame.length>0){
+      lbEl.innerHTML=
+        `<div style="color:var(--dim);margin-bottom:2px">🏆 Most Famous</div>`+
+        lb.fame.slice(0,3).map((a2,i)=>`<div style="color:${FC[a2.faction]||'#ccc'}">${i+1}. ${a2.name} — ${a2.fame}pts</div>`).join('')+
+        `<div style="color:var(--dim);margin-top:4px">🏗️ Best Builder</div>`+
+        lb.builder.slice(0,2).map((a2,i)=>`<div style="color:${FC[a2.faction]||'#ccc'}">${i+1}. ${a2.name} — ${a2.builder} built</div>`).join('')+
+        `<div style="color:var(--dim);margin-top:4px">⚔️ Most Aggressive</div>`+
+        lb.aggressive.slice(0,2).map((a2,i)=>`<div style="color:${FC[a2.faction]||'#ccc'}">${i+1}. ${a2.name}</div>`).join('');
+    }
+  }
   // Minimap
   updateMinimap();
 }
@@ -3284,6 +3318,7 @@ function panToWorld(wx,wy,targetZoom,frames){
 function selAg(id){
   const a=agentById(id);selAgent=a||null;lastInputFrame=frame;
   if(tvMode){tvMode=false}
+  trackAgentClick(id);
   if(a){
     const v=agentVisual.get(a.id);
     const tx=v?v.x*WW:a.x,ty=v?v.y*WH:a.y;
@@ -3723,6 +3758,83 @@ if(_gameEventOrig){
   // Can't reassign const, so we'll use the event feed directly to detect events
 }
 
+// === World Statistics ===
+const worldStats={
+  buildingsEverBuilt:0,buildingsDestroyed:0,
+  totalWood:0,totalStone:0,totalGold:0,totalFood:0,
+  totalTrades:0,totalWars:0,totalClansFormed:0,totalClansDestroyed:0,
+  peakPopulation:0,worldAge:0,
+  mostDramaticEvent:{msg:'',score:0}
+};
+
+// === Persistent Event Log (last 200 events with drama score) ===
+const eventLog=[];// {msg, tick, dramaScore, timestamp}
+const DRAMA_SCORES={
+  'chopped':5,'mined':5,'found gold':8,'gathered':5,
+  'completed':15,'started building':10,
+  'traded':10,'helped':12,
+  'disagreement':30,'argued':30,'fought':35,
+  'discovered':40,'Found':40,'ancient':40,
+  'formed':50,'joined':25,
+  'WAR':80,'RAID':60,'raided':60,
+  'BETRAY':70,'BETRAYED':70,'defected':65,
+  'UNLOCKED':90,'Era':85,
+  'Village':50,'village':45,
+  'companion':35,'peace':40,
+  'heroic':55
+};
+
+function getDramaScore(msg){
+  let score=5;// baseline
+  for(const[key,val] of Object.entries(DRAMA_SCORES)){if(msg.includes(key)&&val>score)score=val}
+  return score;
+}
+
+function logEvent(msg){
+  const score=getDramaScore(msg);
+  eventLog.push({msg,tick:frame,dramaScore:score,timestamp:Date.now()});
+  if(eventLog.length>200)eventLog.shift();
+  if(score>worldStats.mostDramaticEvent.score){worldStats.mostDramaticEvent={msg,score}}
+}
+
+// === Clan Statistics ===
+function getClanStats(clanName){
+  const clan=clans.find(c2=>c2.name===clanName);if(!clan)return null;
+  const buildings=G.clientBuildings.filter(b=>clan.members.includes(b.owner));
+  return{
+    name:clanName,members:clan.members.length,
+    buildings:buildings.length,completedBuildings:buildings.filter(b=>b.complete).length,
+    faction:clan.faction,
+    powerScore:clan.members.length*10+buildings.filter(b=>b.complete).length*20
+  };
+}
+
+// === Spectator Data ===
+let specData={timeWatching:0,favoriteClicks:{},predictionAccuracy:0,predictionTotal:0};
+try{const sd=localStorage.getItem('specData');if(sd)specData=JSON.parse(sd)}catch(e){}
+function saveSpecData(){try{localStorage.setItem('specData',JSON.stringify(specData))}catch(e){}}
+function trackAgentClick(id){specData.favoriteClicks[id]=(specData.favoriteClicks[id]||0)+1;saveSpecData()}
+
+// === Leaderboard ===
+function getLeaderboards(){
+  const agents=S.agents.map(a=>{const s=getAgentSocial(a.id);const st=s.stats||{};return{
+    name:a.name,faction:a.faction,id:a.id,
+    productive:(st.treesChopped||0)+(st.stoneMined||0)+(st.goldMined||0),
+    aggressive:(st.fightsWon||0)*3+(st.fightsLost||0),
+    social:(st.tradesCompleted||0)*2,
+    builder:(st.buildingsBuilt||0),
+    fame:agentFameScore(s),
+    lazy:a.personality==='lazy'?1000:(st.ticksAlive||1)/Math.max(1,(st.treesChopped||0)+(st.buildingsBuilt||0)),
+  }});
+  return{
+    productive:[...agents].sort((a2,b2)=>b2.productive-a2.productive),
+    aggressive:[...agents].sort((a2,b2)=>b2.aggressive-a2.aggressive),
+    social:[...agents].sort((a2,b2)=>b2.social-a2.social),
+    builder:[...agents].sort((a2,b2)=>b2.builder-a2.builder),
+    fame:[...agents].sort((a2,b2)=>b2.fame-a2.fame),
+  };
+}
+
 // === Save/Load System ===
 const SAVE_KEY='agentsAtWork_save';
 function saveGame(){
@@ -3735,7 +3847,9 @@ function saveGame(){
       clans:clans.map(c2=>({name:c2.name,members:c2.members,faction:c2.faction})),
       villages:villages.map(v2=>({name:v2.name,cx:v2.cx,cy:v2.cy,faction:v2.faction})),
       social:[...agentSocial.entries()].map(([k,v2])=>({id:k,data:v2})),
-      milestones:{...milestones}
+      milestones:{...milestones},
+      worldStats:{...worldStats},
+      eventLog:eventLog.slice(-100)// save last 100 events
     };
     localStorage.setItem(SAVE_KEY,JSON.stringify(state));
     // Flash save indicator
@@ -3759,6 +3873,8 @@ function loadGame(){
     villages.length=0;for(const v2 of (s.villages||[]))villages.push(v2);
     agentSocial.clear();for(const e of (s.social||[]))agentSocial.set(e.id,e.data);
     if(s.milestones)Object.assign(milestones,s.milestones);
+    if(s.worldStats)Object.assign(worldStats,s.worldStats);
+    if(s.eventLog){eventLog.length=0;for(const e of s.eventLog)eventLog.push(e)}
     console.log('Game loaded from save, tick:',frame,'buildings:',G.clientBuildings.length);
     return true;
   }catch(e){console.warn('Load failed:',e);return false}
