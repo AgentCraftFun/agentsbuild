@@ -2461,6 +2461,8 @@ function updateAgentMovement(){
       if(frame%20===0)spawnParticle(st.target.x*TS+TS+(Math.random()-0.5)*10,st.target.y*TS+TS-5,'debris');
       if(st.target.progress>=1){
         st.target.complete=true;st.target.claimedBy=null;
+        // Clear trees from building footprint on completion
+        clearDetailsAtBuilding(st.target.x,st.target.y,st.target.pw||TS*2,st.target.ph||TS*2);
         st.target.owner=a.id;st.target.ownerName=a.name;
         st.target.ownedSince=frame;st.target.personalized=false;
         const soc=getAgentSocial(a.id);soc.builtCount++;soc.morale=Math.min(100,soc.morale+10);
@@ -2842,10 +2844,16 @@ for(const t of S.tiles){if(t.x<sx||t.x>=ex||t.y<sy||t.y>=ey)continue;if(t.owner)
 
 // Building progress now driven by agent AI state machine
 
-// Layer 4-6: Merge buildings, standing details, and agents into one Y-sorted list
+// Layer 4-6: UNIFIED Y-SORT — all standing objects in one list
 const renderItems=[];
-// Standing details (trees, bushes, boulders, rocks, cacti, dead trees, pines)
-for(const d of details){if(!groundTypes.has(d.t))renderItems.push({type:'detail',d,sortY:d.sY})}
+// Standing details with proper sort keys (bottom/ground contact point)
+const treeLikeTypes=new Set(['deciduous','oak','pine','birch','deadtree']);
+for(const d of details){
+  if(groundTypes.has(d.t))continue;
+  // Sort by ground contact: trees sort by trunk base, others by bottom
+  const sortOffset=treeLikeTypes.has(d.t)?TS+4:TS;// trees sort slightly further back
+  renderItems.push({type:'detail',d,sortY:d.y+sortOffset});
+}
 // Buildings
 const sortedBuildings=[...S.buildings];
 for(const b of sortedBuildings){
@@ -2882,10 +2890,26 @@ for(let i=0;i<agentRenderData.length;i++){
   }
 }
 
-// Sort everything by Y
+// Sort everything by Y (bottom/ground contact point)
 renderItems.sort((a2,b2)=>a2.sortY-b2.sortY);
 
-// Draw all items in order
+// PASS 1: Draw ALL shadows first (under everything)
+for(const item of renderItems){
+  if(item.type==='building'){
+    const b=item.b;if(!b||!isFinite(b.x)||!isFinite(b.y))continue;
+    const bw=b.pw||(b.width||1)*ts,bh=b.ph||(b.height||1)*ts;
+    ctx.fillStyle='rgba(0,0,0,0.2)';
+    ctx.beginPath();ctx.ellipse(b.x*ts+bw/2+5,b.y*ts+4,bw/2,6,0,0,Math.PI*2);ctx.fill();
+  }else if(item.type==='agent'){
+    const ad=agentRenderData[item.idx];
+    if(!ad||!isFinite(ad.vx)||!isFinite(ad.vy))continue;
+    ctx.fillStyle='rgba(0,0,0,0.25)';
+    ctx.beginPath();ctx.ellipse(ad.vx*ts+ts/2+3,ad.vy*ts+ts+2,10,4,0,0,Math.PI*2);ctx.fill();
+  }
+  // Tree/rock shadows are baked into drawDeciduous etc — no extra pass needed
+}
+
+// PASS 2: Draw all items in Y-sorted order
 for(const item of renderItems){
   if(item.type==='detail'){
     drawDetail(ctx,item.d,frame);
@@ -4105,6 +4129,8 @@ try{
   let offlineSummary=null;
   if(didLoad){
     console.log('Restored saved game');
+    // Clear trees from all existing building footprints
+    for(const b of G.clientBuildings){if(b.complete)clearDetailsAtBuilding(b.x,b.y,b.pw||TS*2,b.ph||TS*2)}
     try{offlineSummary=runOfflineSim();if(offlineSummary)saveGame()}catch(e){console.warn('Offline sim failed:',e)}
   }
   // Center camera
