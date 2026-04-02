@@ -140,10 +140,6 @@ setTimeout(function(){var io=document.getElementById('intro-overlay');if(io)io.r
       <div class="section-title">Active Agents</div>
       <div id="agent-list"></div>
     </div>
-    <div id="build-section" style="border-top:1px solid var(--border);border-bottom:1px solid var(--border)">
-      <div class="section-title">Available Builds</div>
-      <div id="build-preview" style="padding:4px 12px;font-size:10px;max-height:100px;overflow-y:auto"></div>
-    </div>
     <div id="village-section" style="border-bottom:1px solid var(--border);display:none">
       <div class="section-title">Villages</div>
       <div id="village-list" style="padding:4px 12px;font-size:10px"></div>
@@ -2998,43 +2994,6 @@ function updateGameUI(){
   const built=new Set(G.clientBuildings.filter(b=>b.complete).map(b=>b.type));
   const eraProg=eraBuildings.length?eraBuildings.filter(b=>built.has(b.type)).length/eraBuildings.length:0;
   document.getElementById('era-fill').style.width=`${Math.round(eraProg*100)}%`;
-  // Available builds (show all affordable in current era)
-  const bp=document.getElementById('build-preview');
-  const builtTypes=new Set(G.clientBuildings.map(b=>b.type));
-  const available=TECH_TREE.filter(b=>b.era<=G.era&&!builtTypes.has(b.type));
-  if(available.length>0){
-    bp.innerHTML=available.slice(0,4).map(b=>{
-      const c=b.cost,aff=canAfford(c);
-      const builder=S.agents.find(a2=>{const st2=agentState.get(a2.id);return st2&&st2.state==='building'&&st2.target&&st2.target.type===b.type});
-      const inProg=G.clientBuildings.find(cb=>cb.type===b.type&&!cb.complete);
-      const badge=aff?'<span style="color:#aaffaa;font-size:8px"> ✓Ready</span>':'';
-      const progTxt=inProg?` <span style="color:#ff8844">${Math.round(inProg.progress*100)}%</span>`:'';
-      const builderTxt=builder?`<span style="color:var(--dim)"> 🔨${builder.name}</span>`:'';
-      return`<div style="margin-bottom:3px"><b style="color:#ddd">${b.name}</b>${badge}${progTxt}${builderTxt}<br><span style="font-size:9px">🪵<span style="color:${G.wood>=c.wood?'#aaffaa':'#ff6644'}">${c.wood}</span> 🪨<span style="color:${G.stone>=c.stone?'#aaffaa':'#ff6644'}">${c.stone}</span> 🪙<span style="color:${G.gold>=c.gold?'#aaffaa':'#ff6644'}">${c.gold}</span></span></div>`;
-    }).join('');
-  }else{
-    // Show upgrades + decoratives + expansion options
-    let opts=[];
-    // Upgrades
-    for(const b of G.clientBuildings){
-      if(!b.complete)continue;
-      const up=UPGRADES[b.type];
-      if(up){
-        const c2=up.cost,aff2=canAfford(c2);
-        opts.push(`<div style="margin-bottom:3px">⬆️ <b style="color:#ddd">${BNames[b.type]||b.type} → ${BNames[up.to]||up.to}</b>${aff2?' <span style="color:#aaffaa">✓</span>':''}<br><span style="font-size:9px">🪵${c2.wood} 🪨${c2.stone} 🪙${c2.gold}</span></div>`);
-      }
-    }
-    // Decoratives
-    const decoT=TECH_TREE.filter(t2=>t2.decorative&&t2.era<=G.era);
-    for(const d of decoT.slice(0,2)){
-      const c2=d.cost;
-      opts.push(`<div style="margin-bottom:3px">🎨 <b style="color:#ddd">${d.name}</b><br><span style="font-size:9px">🪵${c2.wood} 🪨${c2.stone} 🪙${c2.gold}</span></div>`);
-    }
-    // Expansion
-    const next2=getNextBuilding();
-    if(next2)opts.push(`<div style="margin-bottom:3px">🏗 <b style="color:#ddd">Expand: ${next2.name}</b></div>`);
-    bp.innerHTML=opts.length>0?opts.slice(0,4).join(''):'<span style="color:#aaffaa">Thriving settlement!</span>';
-  }
   // Village list
   const vs=document.getElementById('village-section');
   const vl2=document.getElementById('village-list');
