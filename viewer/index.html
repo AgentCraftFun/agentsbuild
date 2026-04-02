@@ -3197,8 +3197,20 @@ for(const s of settlements){
   // PROGRESSIVE WALL SEGMENTS (4+ buildings)
   if(s.buildings.length>=4){
     const wallR=s.radius*ts+15;
+    // Regenerate walls when building count changes significantly
+    if(s.wallSegs&&s._wallBldCount&&Math.abs(s.buildings.length-s._wallBldCount)>=3){s.wallSegs=null}
+    s._wallBldCount=s.buildings.length;
     const gateAngle=Math.atan2(scy-WH*ts/2,scx-WW*ts/2)+Math.PI;
     const isStone=G.era>=2;
+    // Wall-building overlap check
+    function isWallPositionValid(wx,wy){
+      for(const b3 of G.clientBuildings){
+        const bx3=b3.x*ts,by3=b3.y*ts;
+        const bw3=b3.pw||(b3.width||1)*ts,bh3=b3.ph||(b3.height||1)*ts;
+        if(wx>bx3-40&&wx<bx3+bw3+40&&wy>by3-40&&wy<by3+bh3+40)return false;
+      }
+      return true;
+    }
     // Generate wall segments if not yet created
     if(!s.wallSegs){
       s.wallSegs=[];
@@ -3206,10 +3218,14 @@ for(const s of settlements){
       for(let wi=0;wi<segCount;wi++){
         const a2=wi*(Math.PI*2/segCount),a3=(wi+1)*(Math.PI*2/segCount);
         const gDiff=Math.abs(((a2-gateAngle+Math.PI*3)%(Math.PI*2))-Math.PI);
+        const wx1=scx+Math.cos(a2)*wallR,wy1=scy+Math.sin(a2)*wallR;
+        const wx2=scx+Math.cos(a3)*wallR,wy2=scy+Math.sin(a3)*wallR;
+        // Skip segments that would overlap buildings
+        const midX=(wx1+wx2)/2,midY=(wy1+wy2)/2;
+        const nearBuilding=!isWallPositionValid(midX,midY)||!isWallPositionValid(wx1,wy1)||!isWallPositionValid(wx2,wy2);
         s.wallSegs.push({
-          x1:scx+Math.cos(a2)*wallR,y1:scy+Math.sin(a2)*wallR,
-          x2:scx+Math.cos(a3)*wallR,y2:scy+Math.sin(a3)*wallR,
-          progress:0,isGate:gDiff<0.35
+          x1:wx1,y1:wy1,x2:wx2,y2:wy2,
+          progress:0,isGate:gDiff<0.35||nearBuilding
         });
       }
     }
