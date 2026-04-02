@@ -488,10 +488,52 @@ class AgentBrain {
   }
 
   _findOwnedTileWithoutBuilding() {
-    const { tiles } = this.world;
+    const { tiles, buildingsList, width, height } = this.world;
+
+    // 4. FACTION ZONES
+    const zones = {
+      human:  { xMin: 0.05, xMax: 0.40, yMin: 0.05, yMax: 0.35 },
+      orc:    { xMin: 0.55, xMax: 0.90, yMin: 0.55, yMax: 0.85 },
+      dwarf:  { xMin: 0.40, xMax: 0.60, yMin: 0.08, yMax: 0.30 },
+      elf:    { xMin: 0.70, xMax: 0.95, yMin: 0.10, yMax: 0.40 },
+    };
+    const zone = zones[this.agent.faction];
+    const MIN_DIST = 5; // minimum tiles from any other building
+
+    // 3. SETTLEMENT LAYOUT: Try to find a spread-out position in faction zone
+    if (zone) {
+      for (let attempt = 0; attempt < 15; attempt++) {
+        const rx = Math.floor((zone.xMin + Math.random() * (zone.xMax - zone.xMin)) * width);
+        const ry = Math.floor((zone.yMin + Math.random() * (zone.yMax - zone.yMin)) * height);
+        const tid = `${rx},${ry}`;
+        const t = tiles.get(tid);
+        if (!t) continue;
+        if (t.building) continue;
+        // 5. NO WATER
+        if (['deep_water', 'shallow_water', 'river'].includes(t.biome)) continue;
+        // 2. MINIMUM SPACING
+        let tooClose = false;
+        for (const b of (buildingsList || [])) {
+          if (Math.abs(b.x - rx) + Math.abs(b.y - ry) < MIN_DIST) { tooClose = true; break; }
+        }
+        if (tooClose) continue;
+        // Claim tile if unowned
+        if (!t.owner) { t.owner = this.agent.id; this.agent.addTile(tid); }
+        return t;
+      }
+    }
+
+    // Fallback: find any owned tile without building that passes spacing check
     for (const tileId of this.agent.owned_tiles) {
       const tile = tiles.get(tileId);
-      if (tile && !tile.building) return tile;
+      if (tile && !tile.building) {
+        if (['deep_water', 'shallow_water', 'river'].includes(tile.biome)) continue;
+        let tooClose = false;
+        for (const b of (buildingsList || [])) {
+          if (Math.abs(b.x - tile.x) + Math.abs(b.y - tile.y) < MIN_DIST) { tooClose = true; break; }
+        }
+        if (!tooClose) return tile;
+      }
     }
     return null;
   }

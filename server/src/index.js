@@ -12,6 +12,7 @@ const { WebSocketServer } = require('ws');
 
 const WorldGen = require('./services/WorldGen');
 const GameLoop = require('./services/GameLoop');
+const LLMBrain = require('./services/LLMBrain');
 const { seedAgents } = require('./seed');
 const { sendWorldState } = require('./ws/broadcast');
 const createAgentRouter = require('./routes/agents');
@@ -49,9 +50,13 @@ const app = express();
 app.use(cors());
 app.use(express.json());
 
-// Serve static viewer files
+// Serve landing page at root
+const landingPath = path.resolve(__dirname, '..', '..', 'landing');
+app.use(express.static(landingPath));
+
+// Serve game viewer files under /viewer/
 const viewerPath = path.resolve(__dirname, '..', '..', 'viewer');
-app.use(express.static(viewerPath));
+app.use('/viewer', express.static(viewerPath));
 
 // Health check
 app.get('/api/health', (req, res) => {
@@ -64,14 +69,155 @@ app.get('/api/health', (req, res) => {
   });
 });
 
+// ─── LLM Brain (autonomous AI for ALL agents) ───
+const llmBrain = new LLMBrain(worldState);
+worldState.llmBrain = llmBrain; // expose to GameLoop
+
+// Register ALL seed agents as LLM-powered autonomous AI
+// These are REAL AI agents, not scripted NPCs
+const { DEMO_AGENTS } = require('./seed');
+const PERSONALITY_MAP = {
+  overachiever: { aggression: 40, workEthic: 95, sociability: 30, creativity: 40, strategy: 'builder', catchphrase: 'No rest until we own it ALL.' },
+  analyst:      { aggression: 20, workEthic: 70, sociability: 40, creativity: 60, strategy: 'balanced', catchphrase: 'The data suggests patience.' },
+  grinder:      { aggression: 30, workEthic: 90, sociability: 20, creativity: 20, strategy: 'gatherer', catchphrase: 'The grind never stops.' },
+  aggressive:   { aggression: 90, workEthic: 60, sociability: 30, creativity: 30, strategy: 'warrior', catchphrase: 'Blood and thunder!' },
+  lazy:         { aggression: 10, workEthic: 10, sociability: 50, creativity: 40, strategy: 'balanced', catchphrase: 'Five more minutes...' },
+  chaotic:      { aggression: 50, workEthic: 50, sociability: 60, creativity: 95, strategy: 'explorer', catchphrase: 'YOLO!' },
+  optimist:     { aggression: 15, workEthic: 70, sociability: 80, creativity: 60, strategy: 'socialite', catchphrase: 'What a beautiful day!' },
+  confused:     { aggression: 30, workEthic: 40, sociability: 50, creativity: 70, strategy: 'explorer', catchphrase: 'Where am I? WHO am I?' },
+};
+
+for (const agent of worldState.agents.values()) {
+  const demo = DEMO_AGENTS.find(d => d.name === agent.name);
+  if (demo) {
+    const traits = PERSONALITY_MAP[demo.personality] || PERSONALITY_MAP.analyst;
+    llmBrain.registerHosted(agent.id, {
+      name: agent.name,
+      faction: agent.faction,
+      aggression: traits.aggression,
+      workEthic: traits.workEthic,
+      sociability: traits.sociability,
+      creativity: traits.creativity,
+      strategy: traits.strategy,
+      catchphrase: traits.catchphrase,
+    });
+  }
+}
+console.log(`[Server] ${worldState.agents.size} agents registered with LLM brain`);
+
 // Mount API routes
 app.use('/api/agents', createAgentRouter(worldState));
 app.use('/api/world', createWorldRouter(worldState));
 
-// Fallback: serve viewer index for SPA routing
+// ─── Deploy Agent Endpoint ───
+
+/**
+ * POST /api/agents/deploy
+ * Deploy a new autonomous AI agent into the world.
+ *
+ * For "create" mode: personality config → system prompt → hosted LLM (Haiku)
+ * For "import" mode: user's API key + model → BYOK LLM
+ */
+app.post('/api/agents/deploy', (req, res) => {
+  try {
+    const { mode, name, faction, personality } = req.body;
+    const Agent = require('./models/Agent');
+
+    if (!name || !faction) {
+      return res.status(400).json({ error: 'name and faction are required' });
+    }
+    if (!Agent.FACTIONS.includes(faction)) {
+      return res.status(400).json({ error: `Invalid faction. Must be: ${Agent.FACTIONS.join(', ')}` });
+    }
+
+    // Check duplicate name
+    for (const a of worldState.agents.values()) {
+      if (a.name.toLowerCase() === name.toLowerCase()) {
+        return res.status(409).json({ error: `Name "${name}" is taken` });
+      }
+    }
+
+    // Find spawn location on grassland
+    let startX = Math.floor(Math.random() * worldState.width);
+    let startY = Math.floor(Math.random() * worldState.height);
+    for (let i = 0; i < 100; i++) {
+      const tx = Math.floor(Math.random() * worldState.width);
+      const ty = Math.floor(Math.random() * worldState.height);
+      const tile = worldState.tiles.get(`${tx},${ty}`);
+      if (tile && tile.biome === 'grassland' && !tile.owner) {
+        startX = tx; startY = ty; break;
+      }
+    }
+
+    const chosenPersonality = personality || 'analyst';
+    const agent = new Agent({ name, faction, personality: chosenPersonality, x: startX, y: startY });
+    worldState.agents.set(agent.id, agent);
+
+    if (mode === 'create') {
+      // Hosted AI: compile personality config into system prompt
+      const { aggression, workEthic, sociability, creativity, strategy, catchphrase } = req.body;
+      llmBrain.registerHosted(agent.id, {
+        name, faction,
+        aggression: aggression || 50,
+        workEthic: workEthic || 70,
+        sociability: sociability || 50,
+        creativity: creativity || 50,
+        strategy: strategy || 'balanced',
+        catchphrase: catchphrase || '',
+      });
+    } else if (mode === 'import') {
+      // BYOK: user provides their own AI
+      const { apiKey, model, provider, systemPrompt } = req.body;
+      if (!apiKey) {
+        return res.status(400).json({ error: 'apiKey is required for import mode' });
+      }
+      llmBrain.registerBYOK(agent.id, {
+        name, apiKey, model: model || 'claude-haiku-4-5-20251001',
+        provider: provider || 'anthropic',
+        systemPrompt: systemPrompt || '',
+      });
+    }
+
+    worldState.events.push({
+      tick: worldState.tick,
+      type: 'agent_deployed',
+      agent: name,
+      message: `🤖 ${name} deployed as autonomous AI (${mode === 'import' ? 'custom LLM' : 'hosted AI'})`,
+    });
+
+    res.status(201).json({
+      agent_id: agent.id,
+      name: agent.name,
+      faction: agent.faction,
+      mode: mode || 'create',
+      llm_powered: true,
+      x: startX,
+      y: startY,
+    });
+  } catch (err) {
+    console.error('[deploy] Error:', err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+/**
+ * GET /api/agents/llm-status
+ * Show all LLM-powered agents and their status.
+ */
+app.get('/api/agents/llm-status', (req, res) => {
+  res.json({ agents: llmBrain.getRegisteredAgents() });
+});
+
+// Fallback: landing page for root, viewer for /viewer/*
 app.get('*', (req, res) => {
-  const indexPath = path.join(viewerPath, 'index.html');
   const fs = require('fs');
+  if (req.path.startsWith('/viewer')) {
+    const vIdx = path.join(viewerPath, 'index.html');
+    if (fs.existsSync(vIdx)) return res.sendFile(vIdx);
+  }
+  const landingIdx = path.join(landingPath, 'index.html');
+  if (fs.existsSync(landingIdx)) return res.sendFile(landingIdx);
+  const indexPath = path.join(viewerPath, 'index.html');
   if (fs.existsSync(indexPath)) {
     res.sendFile(indexPath);
   } else {
@@ -91,15 +237,15 @@ app.get('*', (req, res) => {
 
 // ─── Start HTTP Server ───
 
-const httpServer = app.listen(PORT, () => {
+const httpServer = app.listen(PORT, '0.0.0.0', () => {
   console.log(`[Server] HTTP server listening on port ${PORT}`);
   console.log(`[Server] Viewer served from ${viewerPath}`);
 });
 
-// ─── WebSocket Server ───
+// ─── WebSocket Server (attached to HTTP server for single-port hosting) ───
 
-const wss = new WebSocketServer({ port: WS_PORT });
-console.log(`[Server] WebSocket server listening on port ${WS_PORT}`);
+const wss = new WebSocketServer({ server: httpServer });
+console.log(`[Server] WebSocket server attached to HTTP server on port ${PORT}`);
 
 wss.on('connection', (ws, req) => {
   const clientAddr = req.socket.remoteAddress;

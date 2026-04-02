@@ -2,18 +2,18 @@
 pragma solidity ^0.8.20;
 
 /// @title SeasonPrize
-/// @notice Collects WORK tokens as a seasonal prize pool and distributes them to
+/// @notice Collects $AGENTCRAFT tokens as a seasonal prize pool and distributes them to
 ///         top-scoring agents at the end of each season.
 contract SeasonPrize {
     // ──────────────────── Storage ───────────────────────────
 
     address public owner;
     address public server;
-    IWORK   public immutable workToken;
+    IAgentCraft   public immutable agentCraftToken;
 
     uint256 public currentSeason = 1;
 
-    /// @dev season => total deposited WORK for that season.
+    /// @dev season => total deposited $AGENTCRAFT for that season.
     mapping(uint256 => uint256) internal _pool;
 
     /// @dev season => history record.
@@ -66,23 +66,23 @@ contract SeasonPrize {
 
     // ──────────────────── Constructor ───────────────────────
 
-    /// @param _workToken Address of the WORK ERC-20 contract.
+    /// @param _agentCraftToken Address of the $AGENTCRAFT ERC-20 contract.
     /// @param _owner     Initial contract owner.
-    constructor(address _workToken, address _owner) {
-        if (_workToken == address(0) || _owner == address(0)) revert ZeroAddress();
-        workToken = IWORK(_workToken);
+    constructor(address _agentCraftToken, address _owner) {
+        if (_agentCraftToken == address(0) || _owner == address(0)) revert ZeroAddress();
+        agentCraftToken = IAgentCraft(_agentCraftToken);
         owner  = _owner;
         server = _owner; // default; can be changed
     }
 
     // ──────────────────── Deposit ───────────────────────────
 
-    /// @notice Deposit WORK into the current season's prize pool.
-    /// @dev Caller must have approved this contract to spend `amount` WORK.
-    /// @param amount Amount of WORK to deposit (18 decimals).
+    /// @notice Deposit $AGENTCRAFT into the current season's prize pool.
+    /// @dev Caller must have approved this contract to spend `amount` $AGENTCRAFT.
+    /// @param amount Amount of $AGENTCRAFT to deposit (18 decimals).
     function depositPrize(uint256 amount) external nonReentrant {
         if (amount == 0) revert ZeroAmount();
-        bool ok = workToken.transferFrom(msg.sender, address(this), amount);
+        bool ok = agentCraftToken.transferFrom(msg.sender, address(this), amount);
         if (!ok) revert TransferFailed();
         _pool[currentSeason] += amount;
         emit PrizeDeposited(currentSeason, msg.sender, amount);
@@ -122,7 +122,7 @@ contract SeasonPrize {
             distributed += prize;
 
             if (prize > 0) {
-                bool ok = workToken.transfer(agents[i], prize);
+                bool ok = agentCraftToken.transfer(agents[i], prize);
                 if (!ok) revert TransferFailed();
             }
             unchecked { ++i; }
@@ -145,7 +145,7 @@ contract SeasonPrize {
 
     // ──────────────────── Views ─────────────────────────────
 
-    /// @notice WORK balance in the current season's prize pool.
+    /// @notice $AGENTCRAFT balance in the current season's prize pool.
     function currentPool() external view returns (uint256) {
         return _pool[currentSeason];
     }
@@ -184,7 +184,7 @@ contract SeasonPrize {
 
 // ──────────────────── Minimal Interface ─────────────────────
 
-interface IWORK {
+interface IAgentCraft {
     function transfer(address to, uint256 amount) external returns (bool);
     function transferFrom(address from, address to, uint256 amount) external returns (bool);
     function balanceOf(address account) external view returns (uint256);
