@@ -3223,10 +3223,9 @@ for(const s of settlements){
             ctx.fillStyle='#5a3a18';ctx.beginPath();ctx.moveTo(lx-2,ly-7);ctx.lineTo(lx,ly-10);ctx.lineTo(lx+3,ly-7);ctx.fill();
           }
         }
-        // Scaffolding at construction tip if in progress
-        if(ws.progress<1){
-          ctx.fillStyle='#9a7a3a';ctx.fillRect(mx3-4,my3-12,2,14);ctx.fillRect(mx3+2,my3-12,2,14);
-          ctx.fillRect(mx3-4,my3-6,8,2);
+        // Construction tip: just a small marker dot (no scaffolding H)
+        if(ws.progress<1&&ws.progress>0){
+          ctx.fillStyle='rgba(200,180,100,0.4)';ctx.beginPath();ctx.arc(mx3,my3,3,0,Math.PI*2);ctx.fill();
         }
         // Posts at segment endpoints
         ctx.fillStyle=isStone?'#6a6672':'#4a2a10';
