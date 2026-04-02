@@ -1771,22 +1771,22 @@ function getNextBuilding(){
   const unbuilt=TECH_TREE.filter(b=>b.era<=G.era&&!b.decorative&&!builtTypes.has(b.type))
     .sort((a2,b2)=>(a2.cost.wood+a2.cost.stone+a2.cost.gold)-(b2.cost.wood+b2.cost.stone+b2.cost.gold));
   if(unbuilt.length>0)return unbuilt[0];
-  // Priority 2: duplicates of homes/resource buildings (max 3 each)
+  // Priority 2: duplicates of homes/resource buildings (max 5 each)
   const dupTargets=['wood_hut','log_cabin','stone_house','lumber_mill','quarry','campfire','farm'];
   for(const dt of dupTargets){
     const def=TECH_TREE.find(t2=>t2.type===dt);
-    if(def&&def.era<=G.era&&G.clientBuildings.filter(b=>b.type===dt).length<3)return def;
+    if(def&&def.era<=G.era&&G.clientBuildings.filter(b=>b.type===dt).length<5)return def;
   }
-  // Priority 3: decorative buildings (max 2 each)
+  // Priority 3: decorative buildings (max 4 each)
   const decoTypes=TECH_TREE.filter(b=>b.decorative&&b.era<=G.era);
   for(const def of decoTypes){
-    if(G.clientBuildings.filter(b=>b.type===def.type).length<2)return def;
+    if(G.clientBuildings.filter(b=>b.type===def.type).length<4)return def;
   }
-  // Priority 4: more duplicates (max 5 each for expansion)
-  const expansionTargets=['wood_hut','stone_house','brick_house','farm','well','log_cabin'];
+  // Priority 4: more duplicates (max 8 each for expansion)
+  const expansionTargets=['wood_hut','stone_house','brick_house','farm','well','log_cabin','blacksmith','market'];
   for(const dt of expansionTargets){
     const def=TECH_TREE.find(t2=>t2.type===dt);
-    if(def&&def.era<=G.era&&G.clientBuildings.filter(b=>b.type===dt).length<5)return def;
+    if(def&&def.era<=G.era&&G.clientBuildings.filter(b=>b.type===dt).length<8)return def;
   }
   // Priority 5: ALWAYS return something — random building for infinite expansion
   const available=TECH_TREE.filter(b=>b.era<=G.era);
@@ -2598,9 +2598,11 @@ function updateAgentMovement(){
 
       // Try to BUILD or UPGRADE
       if(action==='build'){
+        // If near world limit, prefer upgrading over new builds
+        const nearLimit=G.clientBuildings.length>=60;
         // First try upgrading an owned building
         const ownedBuildings=G.clientBuildings.filter(b2=>b2.owner===a.id&&b2.complete&&UPGRADES[b2.type]);
-        if(ownedBuildings.length>0&&Math.random()<0.3){
+        if(ownedBuildings.length>0&&(nearLimit||Math.random()<0.3)){
           const upTarget=ownedBuildings[0];
           if(tryUpgrade(a,upTarget)){
             st.state='building';st.target=upTarget;st.timer=0;
@@ -2637,7 +2639,22 @@ function updateAgentMovement(){
               clearDetailsAtBuilding(site.x,site.y,bpw,bph);
               const cb={type:next.type,name:next.name,abbr:next.abbr,x:site.x,y:site.y,
                 progress:0,complete:false,faction:next.faction,width:next.w,height:next.h,pw:bpw,ph:bph,tall:next.tall,claimedBy:a.id,settlement:site.settlement||null};
-              if(G.clientBuildings.length>=40){action='chop';continue}// building cap
+              if(G.clientBuildings.length>=80){
+                // At world limit: try to demolish a lower-tier building
+                const demolishable=G.clientBuildings.filter(b3=>b3.complete&&['wood_hut','campfire','fence','garden'].includes(b3.type));
+                if(demolishable.length>0){
+                  const target=demolishable[0];
+                  const tdef=TECH_TREE.find(t3=>t3.type===target.type);
+                  if(tdef){G.wood+=Math.round(tdef.cost.wood*0.3);G.stone+=Math.round(tdef.cost.stone*0.3)}
+                  G.clientBuildings=G.clientBuildings.filter(b3=>b3!==target);
+                  gameEvent(`${a.name} demolished an old ${target.name||target.type} to make room`,'build_started');
+                }else{action='chop';continue}// truly at limit, gather instead
+              }
+              // Per-settlement cap: max 30 buildings per settlement
+              if(site.settlement){
+                const settBldCount=G.clientBuildings.filter(b3=>b3.settlement===site.settlement).length;
+                if(settBldCount>=30){action='chop';continue}
+              }
               G.clientBuildings.push(cb);
               G.wood-=next.cost.wood;G.stone-=next.cost.stone;G.gold-=next.cost.gold;
               st.state='building';st.target=cb;st.timer=0;
@@ -2969,7 +2986,7 @@ if(frame%(60*30)===0){
   while(particles.length>20)particles.pop();
   while(footprints.length>30)footprints.pop();
   while(wildAnimals.length>40)wildAnimals.pop();
-  while(G.clientBuildings.length>50){G.clientBuildings.pop();console.warn('Building cap enforced')}
+  while(G.clientBuildings.length>90){G.clientBuildings.pop();console.warn('Building cap enforced')}
 }
 // Periodic cleanup sweep every 60 seconds
 if(frame%(60*60)===30){
@@ -4827,13 +4844,26 @@ function updateWorldEvents(){
     }
     // Also handle natural regrowth and population
     if(harvestables.size>5){let cl=0;for(const[key] of harvestables){if(cl<5){harvestables.delete(key);cl++}}}
-    if(S.agents.length<16&&G.clientBuildings.filter(b=>b.complete).length>=5&&G.food>30){
+    // Population growth: spawn new agents when settlements grow
+    const completeBlds=G.clientBuildings.filter(b=>b.complete).length;
+    const canSpawn=S.agents.length<16&&completeBlds>=4&&G.food>20;
+    // Spawn more aggressively as settlements grow (every ~90s drama event)
+    if(canSpawn){
+      // Find a settlement at Town phase (9+ buildings) or just any with food
+      let spawnSett=settlements.find(s2=>s2.buildings&&s2.buildings.length>=9);
+      if(!spawnSett)spawnSett=settlements[0];
       const faction=['human','orc','dwarf','elf'][Math.floor(Math.random()*4)];
       const nm2=NEW_AGENT_NAMES[Math.floor(Math.random()*NEW_AGENT_NAMES.length)];
-      const spawnB=G.clientBuildings.find(b=>b.complete);
+      const spawnB=spawnSett?G.clientBuildings.find(b=>b.settlement===spawnSett.name&&b.complete):G.clientBuildings.find(b=>b.complete);
       if(spawnB){
-        S.agents.push({id:'new_'+frame,name:nm2,faction,personality:['optimist','grinder','analyst'][Math.floor(Math.random()*3)],x:spawnB.x,y:spawnB.y,mood:'idle',current_action:null,message:'',resources:{food:0,wood:0,stone:0,gold:0},work_balance:0,owned_tiles:0});
-        gameEvent(`👤 ${nm2} arrived!`,'build_complete');
+        G.food-=10;// cost food to spawn
+        const pers=['optimist','grinder','analyst','aggressive','chaotic'][Math.floor(Math.random()*5)];
+        S.agents.push({id:'new_'+frame,name:nm2,faction,personality:pers,x:spawnB.x,y:spawnB.y,mood:'idle',current_action:null,message:'',resources:{food:0,wood:0,stone:0,gold:0},work_balance:0,owned_tiles:0});
+        const settName=spawnSett?spawnSett.name:'the wilderness';
+        showDramaBanner(`🎉 A new settler, ${nm2}, arrived at ${settName}!`);
+        gameEvent(`🎉 ${nm2} arrived at ${settName}!`,'build_complete');
+        // Assign to settlement's clan if available
+        if(spawnSett&&spawnSett.clan){const soc5=getAgentSocial('new_'+frame);soc5.clan=spawnSett.clan}
       }
     }
   }
@@ -5079,7 +5109,7 @@ function saveGame(){
     // Pre-save validation: remove corrupt entries
     G.clientBuildings=G.clientBuildings.filter(b=>b&&isFinite(b.x)&&isFinite(b.y));
     while(G.clientBuildings.length>50)G.clientBuildings.pop();
-    const state={version:5,savedAt:Date.now(),tick:frame,era:G.era,
+    const state={version:6,savedAt:Date.now(),tick:frame,era:G.era,
       wood:G.wood||0,stone:G.stone||0,gold:G.gold||0,food:G.food||0,
       buildings:G.clientBuildings.slice(0,50).map(b=>({type:b.type,name:b.name,abbr:b.abbr,x:b.x,y:b.y,progress:b.progress,complete:b.complete,faction:b.faction,width:b.width,height:b.height,pw:b.pw,ph:b.ph,tall:b.tall,owner:b.owner,ownerName:b.ownerName,isHome:b.isHome,personalized:b.personalized,personalFaction:b.personalFaction,claimedBy:b.claimedBy,settlement:b.settlement})),
       harvested:[...harvestables.keys()].slice(0,500),
@@ -5105,7 +5135,7 @@ function loadGame(){
     const raw=localStorage.getItem(SAVE_KEY);
     if(!raw)return false;
     const s=JSON.parse(raw);
-    if(!s||s.version<5)return false;// v5 = chicken/building/settlement fix
+    if(!s||s.version<6)return false;// v6 = round 14 speed/density/progression overhaul
     G.era=s.era||0;G.wood=s.wood||0;G.stone=s.stone||0;G.gold=s.gold||0;G.food=s.food||0;
     frame=s.tick||0;
     G.clientBuildings.length=0;
@@ -5217,7 +5247,7 @@ function runOfflineSim(){
     }
     // Try spawning new buildings if affordable
     const next=getNextBuilding();
-    if(next&&canAfford(next.cost)&&G.clientBuildings.length<40){
+    if(next&&canAfford(next.cost)&&G.clientBuildings.length<80){
       G.wood-=next.cost.wood;G.stone-=next.cost.stone;G.gold-=next.cost.gold;
       const rng3=new SeededRNG(t+G.clientBuildings.length*13);
       const bx2=Math.floor(0.15*WW+rng3.next()*0.7*WW);
