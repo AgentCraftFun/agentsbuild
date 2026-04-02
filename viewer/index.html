@@ -759,9 +759,9 @@ const FI={human:'\u2694',orc:'\u2620',dwarf:'\u26CF',elf:'\u2727'};
 const MI={idle:'\u23F8',moving:'\u27A1',claiming:'\u2691',building:'\uD83D\uDD28',raiding:'\u2694',chatting:'\uD83D\uDCAC',defeated:'\uD83D\uDC80'};
 // Build label lookups from TECH_TREE + legacy types
 const BLabels={town_hall:'TH',farmstead:'FM',lumber_mill:'LM',watchtower:'WT',chapel:'CH',castle:'CA',great_hall:'GH',pig_farm:'PF',war_pit:'WP',spike_tower:'ST',blood_forge:'BF',skull_throne:'SK',mountain_hold:'MH',mine_shaft:'MS',brewery:'BR',stone_wall:'SW',runeforge:'RF',deep_citadel:'DC',tree_palace:'TP',moonwell:'MW',grove:'GR',sentinel_tree:'SN',starforge:'SF',world_tree:'WT',
-  campfire:'CF',wood_hut:'WH',log_cabin:'LC',stone_house:'SH',quarry:'QR',blacksmith:'BS',barracks:'BK',church:'CH',market:'MK',brick_house:'BH',apartment:'AP',office:'OF',factory:'FY',farm:'FA',well:'WL',library:'LB',monument:'MN',garden:'GD',fence:'FN',fountain:'FT',statue:'SU'};
+  campfire:'CF',wood_hut:'WH',log_cabin:'LC',stone_house:'SH',quarry:'QR',blacksmith:'BS',barracks:'BK',church:'CH',market:'MK',brick_house:'BH',apartment:'AP',office:'OF',factory:'FY',farm:'FA',well:'WL',library:'LB',monument:'MN',garden:'GD',fence:'FN',fountain:'FT',statue:'SU',dock:'DK',bridge:'BR'};
 const BNames={town_hall:'Town Hall',farmstead:'Farmstead',lumber_mill:'Lumber Mill',watchtower:'Watchtower',chapel:'Chapel',castle:'Castle',great_hall:'Great Hall',pig_farm:'Pig Farm',war_pit:'War Pit',spike_tower:'Spike Tower',blood_forge:'Blood Forge',skull_throne:'Skull Throne',mountain_hold:'Mtn Hold',mine_shaft:'Mine Shaft',brewery:'Brewery',stone_wall:'Stone Wall',runeforge:'Runeforge',deep_citadel:'Deep Citadel',tree_palace:'Tree Palace',moonwell:'Moonwell',grove:'Grove',sentinel_tree:'Sentinel',starforge:'Starforge',world_tree:'World Tree',
-  campfire:'Campfire',wood_hut:'Wood Hut',log_cabin:'Log Cabin',stone_house:'Stone House',quarry:'Quarry',blacksmith:'Blacksmith',barracks:'Barracks',church:'Church',market:'Market',brick_house:'Brick House',apartment:'Apartment',office:'Office',factory:'Factory',farm:'Farm',well:'Well',library:'Library',monument:'Monument',garden:'Garden',fence:'Fence',fountain:'Fountain',statue:'Statue'};
+  campfire:'Campfire',wood_hut:'Wood Hut',log_cabin:'Log Cabin',stone_house:'Stone House',quarry:'Quarry',blacksmith:'Blacksmith',barracks:'Barracks',church:'Church',market:'Market',brick_house:'Brick House',apartment:'Apartment',office:'Office',factory:'Factory',farm:'Farm',well:'Well',library:'Library',monument:'Monument',garden:'Garden',fence:'Fence',fountain:'Fountain',statue:'Statue',dock:'Dock',bridge:'Bridge'};
 
 // === Canvas ===
 const canvasEl=document.getElementById('world'),ctx=canvasEl.getContext('2d'),wrap=document.getElementById('canvas-wrap');
@@ -1437,9 +1437,29 @@ function drawAgentPixelArt(c,ax,ay,agent,sel,fr,anim){
   let pupilX=faceLeft?-1:1;
   if(!walking&&idleFrames>60){const lc=fr%240;if(lc>140&&lc<170)pupilX=-1;else if(lc>170&&lc<200)pupilX=1;else pupilX=0}
 
-  // SHADOW (stronger, directional)
-  c.fillStyle='rgba(0,0,0,0.35)';
-  c.beginPath();c.ellipse(ax+3,ay+3,12,5,0,0,Math.PI*2);c.fill();
+  // Check if agent is on water → draw boat
+  const onWater=anim.onWater||false;
+  if(onWater){
+    // Boat hull
+    c.fillStyle='#6a4a20';
+    c.beginPath();c.ellipse(ax,ay+4,12,5,0,0,Math.PI);c.fill();
+    c.fillStyle='#7a5a30';c.fillRect(ax-10,ay-1,20,3);
+    // Mast + sail
+    c.fillStyle='#5a3a10';c.fillRect(ax-1,ay-14,2,14);
+    c.fillStyle='#e8e0d0';
+    c.beginPath();c.moveTo(ax+1,ay-13);c.lineTo(ax+8,ay-7);c.lineTo(ax+1,ay-3);c.fill();
+    // Wake particles (drawn behind)
+    if(walking&&fr%8<4){
+      c.fillStyle='rgba(255,255,255,0.3)';
+      c.fillRect(ax-6-(faceLeft?-4:4),ay+6,3,1);c.fillRect(ax-8-(faceLeft?-6:6),ay+7,2,1);
+    }
+  }
+
+  // SHADOW (skip on water — no ground shadow on water)
+  if(!onWater){
+    c.fillStyle='rgba(0,0,0,0.35)';
+    c.beginPath();c.ellipse(ax+3,ay+3,12,5,0,0,Math.PI*2);c.fill();
+  }
 
   // BOOTS (chunky 5x4 with sole) — resting: legs forward
   const bootCol=(t==='dwarf')?'#442208':(t==='orc')?'#441100':'#224488';
@@ -1632,6 +1652,8 @@ const TECH_TREE=[
   {type:'fence',name:'Fence',abbr:'FN',w:2,h:1,pw:40,ph:16,tall:false,cost:{wood:5,stone:0,gold:0},era:0,faction:'neutral',decorative:true},
   {type:'fountain',name:'Fountain',abbr:'FT',w:2,h:2,pw:36,ph:36,tall:false,cost:{wood:0,stone:15,gold:5},era:1,faction:'neutral',decorative:true},
   {type:'statue',name:'Statue',abbr:'SU',w:1,h:2,pw:24,ph:50,tall:true,cost:{wood:0,stone:20,gold:10},era:2,faction:'neutral',decorative:true},
+  {type:'dock',name:'Dock',abbr:'DK',w:2,h:1,pw:40,ph:20,tall:false,cost:{wood:12,stone:5,gold:0},era:1,faction:'neutral',decorative:true},
+  {type:'bridge',name:'Bridge',abbr:'BR',w:3,h:1,pw:48,ph:16,tall:false,cost:{wood:15,stone:5,gold:0},era:1,faction:'neutral',decorative:true},
 ];
 
 // Track harvestable details — key: "tx,ty" -> {type,hp}
@@ -2437,8 +2459,31 @@ function updateAgentMovement(){
       }else if(action==='gold'){
         const dep=goldDeposits.find(g=>g.alive);
         if(dep){st.state='walking_to_gold';st.target=dep;v.tx=dep.x/WW/TS+0.01;v.ty=dep.y/WH/TS+0.01}
-        else{action='mine';st.taskCooldown=10}// retry as stone
+        else{action='mine';st.taskCooldown=10}
       }
+      // Fishing: if food is low, walk toward water to fish
+      if(G.food<20&&st.state==='idle'&&Math.random()<0.2){
+        // Find nearest water cell
+        for(let r2=1;r2<15;r2++){
+          const fy2=Math.floor(v.y*WH)+r2,fx2=Math.floor(v.x*WW);
+          if(fy2<WH&&tBiomes[fy2*WW+fx2]===1){// shallow_water
+            st.state='walking_to_fish';v.tx=fx2/WW;v.ty=(fy2-1)/WH;break;
+          }
+        }
+      }
+    }
+    else if(st.state==='walking_to_fish'){
+      if(atTarget){st.state='fishing';st.timer=480}// 8 sec fishing
+    }
+    else if(st.state==='fishing'){
+      st.timer-=(isLazy?0.5:1);
+      // Fishing line visual: handled by fishing state check in render
+      if(st.timer%300<5&&Math.random()<0.5){// catch attempt every ~5 sec
+        G.food+=3;
+        gameEvent(`${a.name} caught a fish! (+3 food)`,'build_complete');
+        spawnParticle(v.x*WW*TS,v.y*WH*TS+TS,'debris');
+      }
+      if(st.timer<=0){st.state='idle';st.taskCooldown=30}
     }
     else if(st.state==='walking_to_tree'||st.state==='walking_to_rock'||st.state==='walking_to_gold'){
       if(atTarget){
@@ -2637,8 +2682,8 @@ function updateGameUI(){
   // Minimap
   updateMinimap();
 }
-const STATE_ICONS={idle:'💤',walking_to_tree:'🪓',walking_to_rock:'⛏',walking_to_gold:'🪙',chopping:'🪓',mining:'⛏',mining_gold:'🪙',building:'🔨'};
-const STATE_LABELS={idle:'Idle',walking_to_tree:'Walking to tree',walking_to_rock:'Walking to rock',walking_to_gold:'Walking to gold',chopping:'Chopping tree',mining:'Mining stone',mining_gold:'Mining gold',building:'Building'};
+const STATE_ICONS={idle:'💤',walking_to_tree:'🪓',walking_to_rock:'⛏',walking_to_gold:'🪙',walking_to_fish:'🎣',chopping:'🪓',mining:'⛏',mining_gold:'🪙',building:'🔨',fishing:'🎣'};
+const STATE_LABELS={idle:'Idle',walking_to_tree:'Walking to tree',walking_to_rock:'Walking to rock',walking_to_gold:'Walking to gold',walking_to_fish:'Walking to water',chopping:'Chopping tree',mining:'Mining stone',mining_gold:'Mining gold',building:'Building',fishing:'Fishing'};
 function updateMinimap(){
   const mc=document.getElementById('minimap');
   const mx2=mc.getContext('2d');mx2.imageSmoothingEnabled=false;
@@ -3138,7 +3183,10 @@ for(const item of renderItems){
       else if(G.wood>5)carrying='wood';
       else if(G.stone>3)carrying='stone';
     }
-    drawAgentPixelArt(ctx,ax,ay,ad.a,sel,frame,{walking:ad.isWalking,building:ad.isBuilding,faceLeft:ad.faceLeft,idleFrames:ad.a._idleFrames||0,resting:isResting,carrying,chopping:isChopping2,mining:isMining2});
+    // Check if agent is on water tile
+    const agTx=Math.floor(ad.vx),agTy=Math.floor(ad.vy);
+    const agOnWater=(agTx>=0&&agTx<WW&&agTy>=0&&agTy<WH)?(tBiomes[agTy*WW+agTx]===0||tBiomes[agTy*WW+agTx]===1||tBiomes[agTy*WW+agTx]===10):false;
+    drawAgentPixelArt(ctx,ax,ay,ad.a,sel,frame,{walking:ad.isWalking,building:ad.isBuilding,faceLeft:ad.faceLeft,idleFrames:ad.a._idleFrames||0,resting:isResting,carrying,chopping:isChopping2,mining:isMining2,onWater:agOnWater});
     // Highlight circle for pan-to-agent
     if(panHighlight&&panHighlight.id===ad.a.id&&panHighlight.timer>0){
       const hAlpha=0.3+0.3*Math.sin(frame*0.15);
