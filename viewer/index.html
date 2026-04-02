@@ -556,11 +556,14 @@ function getDetails(sx,sy,ex,ey){
 // --- Draw functions ---
 function drawDeciduous(c,px,py,h){
   const ox=px+TS/2+((h%6)-3),oy=py+TS-2;
-  // Shadow (strong directional, bottom-right)
-  c.fillStyle='rgba(0,0,0,0.25)';c.beginPath();c.ellipse(ox+6,oy+4,14,5,0,0,Math.PI*2);c.fill();
-  // Trunk with dark right edge
-  c.fillStyle='#5a3a18';c.fillRect(ox-4,oy-18,8,18);
-  c.fillStyle='#3a2208';c.fillRect(ox+2,oy-18,2,18);
+  // Shadow (consistent bottom-right direction)
+  c.fillStyle='rgba(0,0,0,0.25)';c.beginPath();c.ellipse(ox+4,oy+3,14,5,0,0,Math.PI*2);c.fill();
+  // Trunk with variety (width 4-7, color varies by hash)
+  const tw2=4+((h>>10)%4),trkCol=['#5a3a18','#4a2a08','#6a4a28'][(h>>12)%3];
+  c.fillStyle=trkCol;c.fillRect(ox-tw2/2,oy-18,tw2,18);
+  c.fillStyle='#3a2208';c.fillRect(ox+tw2/2-2,oy-18,2,18);// dark right edge
+  // Grass tufts at base
+  c.fillStyle='#3a8a2a';c.fillRect(ox-5,oy-1,1,3);c.fillRect(ox+4,oy-2,1,4);
   // 4-layer canopy with dark gaps for depth
   c.fillStyle='#0a3a06';c.beginPath();c.arc(ox+1,oy-20,17,0,Math.PI*2);c.fill();// back dark
   c.fillStyle='#1a5a10';c.beginPath();c.arc(ox,oy-23,15,0,Math.PI*2);c.fill();// mid-back
@@ -808,23 +811,26 @@ function resize(){canvasEl.width=wrap.clientWidth;canvasEl.height=wrap.clientHei
 wrap.addEventListener('mousedown',e=>{lastInputFrame=frame;if(tvMode)tvMode=false;
   if(followAgent&&!tvMode){followAgent=null;const ti3=document.getElementById('tracking-indicator');if(ti3)ti3.style.display='none'}// release tracking on click
   if(e.button===0){dragging=true;dsx=e.clientX;dsy=e.clientY;dvx=vpX;dvy=vpY;if(cursorGrab)setCursor('grab')}});
-window.addEventListener('mousemove',e=>{if(dragging){vpX=dvx+(e.clientX-dsx)/zoom;vpY=dvy+(e.clientY-dsy)/zoom}const r=canvasEl.getBoundingClientRect();mx=e.clientX-r.left;my=e.clientY-r.top});
+let _prevDragVpX=0,_prevDragVpY=0;
+window.addEventListener('mousemove',e=>{
+  if(dragging){
+    _prevDragVpX=vpX;_prevDragVpY=vpY;
+    vpX=dvx+(e.clientX-dsx)/zoom;vpY=dvy+(e.clientY-dsy)/zoom;
+  }
+  const r=canvasEl.getBoundingClientRect();mx=e.clientX-r.left;my=e.clientY-r.top;
+});
 let panVelX=0,panVelY=0,lastDragX=0,lastDragY=0;
 window.addEventListener('mouseup',()=>{
-  if(dragging){panVelX=(vpX-dvx)*0.3;panVelY=(vpY-dvy)*0.3}// capture momentum
+  if(dragging){panVelX=vpX-_prevDragVpX;panVelY=vpY-_prevDragVpY}// capture last frame velocity
   dragging=false;setCursor('normal');
 });
 let targetZoom=1;
+let zoomAnchorX=0,zoomAnchorY=0;// world point to keep under mouse during zoom
 wrap.addEventListener('wheel',e=>{e.preventDefault();lastInputFrame=frame;if(tvMode)tvMode=false;
-  const r=canvasEl.getBoundingClientRect(),mx3=e.clientX-r.left,my3=e.clientY-r.top;
-  // World point under mouse BEFORE zoom
-  const worldMx=mx3/zoom-vpX,worldMy=my3/zoom-vpY;
-  // Apply zoom
-  const oldZoom=zoom;
-  targetZoom*=e.deltaY<0?1.1:1/1.1;targetZoom=Math.max(0.5,Math.min(3,targetZoom));
-  zoom+=(targetZoom-zoom)*0.3;
-  // Adjust camera so world point stays under mouse
-  vpX=-(worldMx-mx3/zoom);vpY=-(worldMy-my3/zoom);
+  const r=canvasEl.getBoundingClientRect();
+  zoomAnchorX=e.clientX-r.left;zoomAnchorY=e.clientY-r.top;
+  targetZoom*=e.deltaY<0?1.08:1/1.08;
+  targetZoom=Math.max(0.5,Math.min(3,targetZoom));
 },{passive:false});
 // Double-click to zoom in/out
 wrap.addEventListener('dblclick',e=>{lastInputFrame=frame;if(tvMode)tvMode=false;
@@ -2932,8 +2938,12 @@ if(panTarget&&panFrames>0){
 if(!dragging&&(Math.abs(panVelX)>0.1||Math.abs(panVelY)>0.1)){
   vpX+=panVelX;vpY+=panVelY;panVelX*=0.92;panVelY*=0.92;
 }
-// Smooth zoom lerp
-if(Math.abs(zoom-targetZoom)>0.01)zoom+=(targetZoom-zoom)*0.08;
+// Smooth zoom with mouse anchor
+if(Math.abs(zoom-targetZoom)>0.005){
+  const worldBefore=zoomAnchorX/zoom-vpX;const worldBeforeY=zoomAnchorY/zoom-vpY;
+  zoom+=(targetZoom-zoom)*0.1;
+  vpX=-(worldBefore-zoomAnchorX/zoom);vpY=-(worldBeforeY-zoomAnchorY/zoom);
+}
 // Follow agent mode — smooth lock onto tracked agent
 if(followAgent){
   const fv=agentVisual.get(followAgent);
@@ -4788,7 +4798,7 @@ function saveGame(){
     // Pre-save validation: remove corrupt entries
     G.clientBuildings=G.clientBuildings.filter(b=>b&&isFinite(b.x)&&isFinite(b.y));
     while(G.clientBuildings.length>50)G.clientBuildings.pop();
-    const state={version:3,savedAt:Date.now(),tick:frame,era:G.era,
+    const state={version:4,savedAt:Date.now(),tick:frame,era:G.era,
       wood:G.wood||0,stone:G.stone||0,gold:G.gold||0,food:G.food||0,
       buildings:G.clientBuildings.slice(0,50).map(b=>({type:b.type,name:b.name,abbr:b.abbr,x:b.x,y:b.y,progress:b.progress,complete:b.complete,faction:b.faction,width:b.width,height:b.height,pw:b.pw,ph:b.ph,tall:b.tall,owner:b.owner,ownerName:b.ownerName,isHome:b.isHome,personalized:b.personalized,personalFaction:b.personalFaction,claimedBy:b.claimedBy,settlement:b.settlement})),
       harvested:[...harvestables.keys()].slice(0,500),
@@ -4814,7 +4824,7 @@ function loadGame(){
     const raw=localStorage.getItem(SAVE_KEY);
     if(!raw)return false;
     const s=JSON.parse(raw);
-    if(!s||s.version<3)return false;// v3 = fresh world reset
+    if(!s||s.version<4)return false;// v4 = final visual polish reset
     G.era=s.era||0;G.wood=s.wood||0;G.stone=s.stone||0;G.gold=s.gold||0;G.food=s.food||0;
     frame=s.tick||0;
     G.clientBuildings.length=0;
