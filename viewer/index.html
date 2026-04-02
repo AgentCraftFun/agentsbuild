@@ -19,7 +19,7 @@ html,body{height:100%;overflow:hidden;background:var(--bg);color:var(--text);fon
 #era-announce{position:fixed;top:40%;left:50%;transform:translate(-50%,-50%);font-size:24px;color:#f0c040;font-weight:bold;letter-spacing:3px;text-shadow:0 0 20px rgba(240,192,64,0.6);pointer-events:none;opacity:0;transition:opacity 0.5s;z-index:500;font-family:'Courier New',monospace}
 #header-stats{display:flex;gap:20px;font-size:12px;align-items:center}
 #header-stats span{color:#555588}
-#header-stats .val{color:#aaffaa;font-weight:bold}
+#header-stats .val{color:#aaffaa;font-weight:bold;min-width:24px;display:inline-block}
 #live-dot{display:inline-block;width:8px;height:8px;border-radius:50%;margin-right:4px;background:#ff4444}
 #live-dot.on{background:#ff4444;box-shadow:0 0 6px #ff4444}
 #canvas-wrap{position:relative;overflow:hidden;background:#000}
@@ -2481,7 +2481,7 @@ function updateAgentMovement(){
 
 const ERA_ICONS=['🪵','🪨','⚔️','🏙️'];
 function updateGameUI(){
-  if(frame%10!==0)return;// throttle DOM updates
+  if(frame%30!==0)return;// throttle DOM updates (every 0.5s)
   const next=getNextBuilding();
   const nc=next?next.cost:{wood:0,stone:0,gold:0};
   // Resource bar with current/needed
@@ -2496,10 +2496,7 @@ function updateGameUI(){
       el.className='res-need '+(G[res]>=nc[res]?'enough':'short');
     }else{el.textContent=''}
   }
-  // Era indicator
-  document.getElementById('h-era').textContent=G.eraNames[G.era];
-  document.getElementById('h-era-icon').textContent=ERA_ICONS[G.era];
-  // Era progress bar
+  // Era progress bar (header era/agents updated in render loop)
   const eraBuildings=TECH_TREE.filter(b=>b.era===G.era);
   const built=new Set(G.clientBuildings.filter(b=>b.complete).map(b=>b.type));
   const eraProg=eraBuildings.length?eraBuildings.filter(b=>built.has(b.type)).length/eraBuildings.length:0;
@@ -2529,9 +2526,7 @@ function updateGameUI(){
       return`<div style="margin-bottom:3px"><b style="color:${FC[v2.faction]||'#ccc'}">${v2.name}</b> <span style="color:var(--dim)">${v2.buildings.length} bldgs, ${pop} pop</span></div>`;
     }).join('');
   }else{vs.style.display='none'}
-  // Playtime
-  const secs=Math.floor(frame/60);
-  document.getElementById('h-playtime').textContent=`${Math.floor(secs/60)}:${String(secs%60).padStart(2,'0')}`;
+  // Playtime updated in render loop (not here, to avoid flickering)
   // Leaderboard (update every 5 seconds)
   if(frame%300===0){
     const lb=getLeaderboards();
@@ -3157,13 +3152,17 @@ if(tvMode){
   ctx.fillText('\uD83D\uDCFA TV MODE',cw2-12,12);
 }
 // World clock overlay (top-left of canvas)
-if(frame%30===0){
+// World clock + header updates (once per second to prevent flickering)
+if(frame%60===0){
   const totalSec=Math.floor(frame/60);
-  const days=Math.floor(totalSec/300);// 5 min = 1 day
+  const days=Math.floor(totalSec/300);
   const dayProgress=(totalSec%300)/300;
   const hours=Math.floor(dayProgress*24);
   const mins=Math.floor((dayProgress*24-hours)*60);
   document.getElementById('h-playtime').textContent=`Day ${days+1}, ${String(hours).padStart(2,'0')}:${String(mins).padStart(2,'0')}`;
+  document.getElementById('h-agents').textContent=S.agents.length;
+  document.getElementById('h-era').textContent=G.eraNames[G.era];
+  document.getElementById('h-era-icon').textContent=ERA_ICONS[G.era];
 }
 
 // Ambient audio indicators (visual cues in world space — need to draw before restore)
@@ -3421,8 +3420,8 @@ const last=S.events.length?S.events[S.events.length-1]:null;
 document.getElementById('last-event').textContent=last?`last: ${last.message||last.type||''}`:''}
 
 function updateHeader(){
-document.getElementById('h-agents').textContent=S.agents.length;
-document.getElementById('h-tick').textContent=Math.floor(G.tick/60).toLocaleString();
+// Most header updates now in render loop (throttled to 1/sec)
+// Only update connection status here (called on WS events)
 const dot=document.getElementById('live-dot');
 const st=document.getElementById('h-status');
 if(S.connected){dot.className='on';st.textContent='LIVE';st.style.color='var(--green)'}
