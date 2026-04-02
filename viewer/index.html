@@ -3295,23 +3295,119 @@ function regrowResources(){
   }
 }
 
+// === Offline Catch-Up Simulation ===
+function runOfflineSim(){
+  const raw=localStorage.getItem(SAVE_KEY);
+  if(!raw)return null;
+  const s=JSON.parse(raw);
+  if(!s||!s.savedAt)return null;
+  const elapsedMs=Date.now()-s.savedAt;
+  if(elapsedMs<60000)return null;// less than 1 min, no catchup needed
+  // Cap at 24 hours
+  const cappedMs=Math.min(elapsedMs,24*60*60*1000);
+  const offlineTicks=Math.min(Math.floor(cappedMs/16),100000);
+  console.log(`Offline catchup: ${Math.round(cappedMs/1000)}s elapsed, simulating ${offlineTicks} ticks`);
+  const summary={hours:Math.round(cappedMs/3600000*10)/10,buildings:0,trees:0,stones:0,gold:0,erasBefore:G.era,erasAfter:G.era,villages:villages.length};
+  const agentCount=Math.max(1,S.agents.length);
+  // Process in chunks
+  for(let t=0;t<offlineTicks;t+=1000){
+    const chunk=Math.min(1000,offlineTicks-t);
+    // Resource gathering (each agent gathers per tick)
+    for(let c2=0;c2<chunk;c2++){
+      // Each agent gathers a bit each tick
+      const gatherRoll=Math.random();
+      if(gatherRoll<0.4){G.wood+=1;summary.trees+=0.2}
+      else if(gatherRoll<0.7){G.stone+=1;summary.stones+=0.33}
+      else if(gatherRoll<0.8){G.gold+=1;summary.gold++}
+      else{G.food+=1}
+    }
+    // Scale by agent count
+    G.wood=Math.round(G.wood*Math.min(agentCount,8)/8);
+    G.stone=Math.round(G.stone*Math.min(agentCount,8)/8);
+    // Building progress
+    for(const b of G.clientBuildings){
+      if(!b.complete&&b.progress!=null){
+        b.progress+=chunk*0.008;
+        if(b.progress>=1){b.progress=1;b.complete=true;summary.buildings++}
+      }
+    }
+    // Try spawning new buildings if affordable
+    const next=getNextBuilding();
+    if(next&&canAfford(next.cost)&&G.clientBuildings.length<40){
+      G.wood-=next.cost.wood;G.stone-=next.cost.stone;G.gold-=next.cost.gold;
+      const rng3=new SeededRNG(t+G.clientBuildings.length*13);
+      const bx2=Math.floor(0.15*WW+rng3.next()*0.7*WW);
+      const by2=Math.floor(0.15*WH+rng3.next()*0.7*WH);
+      G.clientBuildings.push({type:next.type,name:next.name,abbr:next.abbr,x:bx2,y:by2,
+        progress:0.5,complete:false,faction:next.faction,width:next.w,height:next.h,
+        pw:next.pw,ph:next.ph,tall:next.tall,claimedBy:null});
+      summary.buildings++;
+    }
+    // Era check
+    if(G.era<3){
+      const eraB=TECH_TREE.filter(b2=>b2.era===G.era);
+      const builtT=new Set(G.clientBuildings.filter(b2=>b2.complete).map(b2=>b2.type));
+      if(eraB.every(b2=>builtT.has(b2.type)))G.era++;
+    }
+    // Regrow some resources
+    if(t%5000===0&&harvestables.size>3){
+      let cl=0;for(const[key] of harvestables){if(cl<5){harvestables.delete(key);cl++}}
+    }
+  }
+  summary.erasAfter=G.era;
+  summary.newVillages=villages.length-summary.villages;
+  summary.trees=Math.round(summary.trees);
+  summary.stones=Math.round(summary.stones);
+  return summary;
+}
+
+function showOfflineSummary(summary){
+  if(!summary)return;
+  const ov=document.createElement('div');
+  ov.style.cssText='position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(5,5,20,0.85);display:flex;align-items:center;justify-content:center;z-index:800;cursor:pointer';
+  const lines=[];
+  if(summary.hours>=1)lines.push(`⏰ ${summary.hours} hours passed`);
+  else lines.push(`⏰ ${Math.round(summary.hours*60)} minutes passed`);
+  if(summary.buildings>0)lines.push(`🏗️ ${summary.buildings} buildings constructed`);
+  if(summary.trees>0)lines.push(`🪓 ${summary.trees} trees chopped`);
+  if(summary.stones>0)lines.push(`⛏ ${summary.stones} stone mined`);
+  if(summary.gold>0)lines.push(`🪙 ${summary.gold} gold found`);
+  if(summary.erasAfter>summary.erasBefore)lines.push(`⭐ Advanced to ${G.eraNames[summary.erasAfter]}!`);
+  ov.innerHTML=`<div style="text-align:center;font-family:Courier New,monospace">
+    <div style="font-size:18px;color:#f0c040;font-weight:bold;margin-bottom:16px;letter-spacing:2px">While you were away...</div>
+    ${lines.map(l=>`<div style="font-size:14px;color:#ddd;margin:6px 0">${l}</div>`).join('')}
+    <div style="font-size:10px;color:#666;margin-top:20px">Click anywhere to continue</div>
+  </div>`;
+  document.body.appendChild(ov);
+  ov.addEventListener('click',()=>{ov.style.opacity='0';ov.style.transition='opacity 0.5s';setTimeout(()=>ov.remove(),500)});
+  setTimeout(()=>{if(ov.parentNode){ov.style.opacity='0';ov.style.transition='opacity 0.5s';setTimeout(()=>ov.remove(),500)}},8000);
+}
+
 // === Init ===
 window.addEventListener('resize',()=>{resize()});
 resize();genTerrain();renderTBuf();generateBoulders();initHarvestables();initCreatures();initCursors();
 // Try loading saved game
 const didLoad=loadGame();
-if(didLoad){console.log('Restored saved game')}
+let offlineSummary=null;
+if(didLoad){
+  console.log('Restored saved game');
+  offlineSummary=runOfflineSim();
+  if(offlineSummary)saveGame();// save the caught-up state
+}
 // Center camera on agents if available, otherwise center of world
 if(S.agents.length>0){
   let avgX=0,avgY=0;for(const a of S.agents){avgX+=a.x;avgY+=a.y}
   avgX/=S.agents.length;avgY/=S.agents.length;
   vpX=canvasEl.width/(2*zoom)-avgX*TS-TS/2;vpY=canvasEl.height/(2*zoom)-avgY*TS-TS/2;
 }else{vpX=canvasEl.width/(2*zoom)-(WW*TS)/2;vpY=canvasEl.height/(2*zoom)-(WH*TS)/2}
-// Intro fade (skip if loaded save)
+// Intro or offline summary
 if(!didLoad){
   setTimeout(()=>{document.getElementById('intro-overlay').classList.add('fade')},2500);
   setTimeout(()=>{const io=document.getElementById('intro-overlay');if(io)io.remove()},4500);
-}else{const io=document.getElementById('intro-overlay');if(io)io.remove()}
+}else{
+  const io=document.getElementById('intro-overlay');if(io)io.remove();
+  if(offlineSummary)showOfflineSummary(offlineSummary);
+}
 requestAnimationFrame(render);connectWS();
 safeInterval(tickFood,10000);
 safeInterval(saveGame,30000);// save every 30 seconds
