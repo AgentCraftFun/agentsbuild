@@ -733,9 +733,9 @@ const FI={human:'\u2694',orc:'\u2620',dwarf:'\u26CF',elf:'\u2727'};
 const MI={idle:'\u23F8',moving:'\u27A1',claiming:'\u2691',building:'\uD83D\uDD28',raiding:'\u2694',chatting:'\uD83D\uDCAC',defeated:'\uD83D\uDC80'};
 // Build label lookups from TECH_TREE + legacy types
 const BLabels={town_hall:'TH',farmstead:'FM',lumber_mill:'LM',watchtower:'WT',chapel:'CH',castle:'CA',great_hall:'GH',pig_farm:'PF',war_pit:'WP',spike_tower:'ST',blood_forge:'BF',skull_throne:'SK',mountain_hold:'MH',mine_shaft:'MS',brewery:'BR',stone_wall:'SW',runeforge:'RF',deep_citadel:'DC',tree_palace:'TP',moonwell:'MW',grove:'GR',sentinel_tree:'SN',starforge:'SF',world_tree:'WT',
-  campfire:'CF',wood_hut:'WH',log_cabin:'LC',stone_house:'SH',quarry:'QR',blacksmith:'BS',barracks:'BK',church:'CH',market:'MK',brick_house:'BH',apartment:'AP',office:'OF',factory:'FA'};
+  campfire:'CF',wood_hut:'WH',log_cabin:'LC',stone_house:'SH',quarry:'QR',blacksmith:'BS',barracks:'BK',church:'CH',market:'MK',brick_house:'BH',apartment:'AP',office:'OF',factory:'FY',farm:'FA',well:'WL',library:'LB',monument:'MN'};
 const BNames={town_hall:'Town Hall',farmstead:'Farmstead',lumber_mill:'Lumber Mill',watchtower:'Watchtower',chapel:'Chapel',castle:'Castle',great_hall:'Great Hall',pig_farm:'Pig Farm',war_pit:'War Pit',spike_tower:'Spike Tower',blood_forge:'Blood Forge',skull_throne:'Skull Throne',mountain_hold:'Mtn Hold',mine_shaft:'Mine Shaft',brewery:'Brewery',stone_wall:'Stone Wall',runeforge:'Runeforge',deep_citadel:'Deep Citadel',tree_palace:'Tree Palace',moonwell:'Moonwell',grove:'Grove',sentinel_tree:'Sentinel',starforge:'Starforge',world_tree:'World Tree',
-  campfire:'Campfire',wood_hut:'Wood Hut',log_cabin:'Log Cabin',stone_house:'Stone House',quarry:'Quarry',blacksmith:'Blacksmith',barracks:'Barracks',church:'Church',market:'Market',brick_house:'Brick House',apartment:'Apartment',office:'Office',factory:'Factory'};
+  campfire:'Campfire',wood_hut:'Wood Hut',log_cabin:'Log Cabin',stone_house:'Stone House',quarry:'Quarry',blacksmith:'Blacksmith',barracks:'Barracks',church:'Church',market:'Market',brick_house:'Brick House',apartment:'Apartment',office:'Office',factory:'Factory',farm:'Farm',well:'Well',library:'Library',monument:'Monument'};
 
 // === Canvas ===
 const canvasEl=document.getElementById('world'),ctx=canvasEl.getContext('2d'),wrap=document.getElementById('canvas-wrap');
@@ -1560,26 +1560,30 @@ const G={
 };
 
 const TECH_TREE=[
-  // Era 0: Wood Age — pw/ph are pixel dimensions for rendering
+  // Era 0: Wood Age
   {type:'campfire',name:'Campfire',abbr:'CF',w:2,h:1,pw:30,ph:20,tall:false,cost:{wood:3,stone:0,gold:0},era:0,faction:'neutral'},
-  {type:'wood_hut',name:'Wood Hut',abbr:'WH',w:3,h:2,pw:56,ph:48,tall:false,cost:{wood:10,stone:0,gold:0},era:0,faction:'human'},
-  {type:'log_cabin',name:'Log Cabin',abbr:'LC',w:3,h:3,pw:72,ph:56,tall:false,cost:{wood:18,stone:3,gold:0},era:0,faction:'human'},
-  {type:'lumber_mill',name:'Lumber Mill',abbr:'LM',w:4,h:3,pw:80,ph:60,tall:false,cost:{wood:20,stone:7,gold:0},era:0,faction:'dwarf'},
+  {type:'wood_hut',name:'Wood Hut',abbr:'WH',w:3,h:2,pw:56,ph:48,tall:false,cost:{wood:8,stone:0,gold:0},era:0,faction:'human'},
+  {type:'log_cabin',name:'Log Cabin',abbr:'LC',w:3,h:3,pw:72,ph:56,tall:false,cost:{wood:15,stone:3,gold:0},era:0,faction:'human'},
+  {type:'lumber_mill',name:'Lumber Mill',abbr:'LM',w:4,h:3,pw:80,ph:60,tall:false,cost:{wood:20,stone:5,gold:0},era:0,faction:'dwarf'},
+  {type:'farm',name:'Farm',abbr:'FA',w:3,h:2,pw:64,ph:40,tall:false,cost:{wood:12,stone:3,gold:0},era:0,faction:'neutral'},
   // Era 1: Stone Age
-  {type:'stone_house',name:'Stone House',abbr:'SH',w:3,h:3,pw:68,ph:56,tall:false,cost:{wood:7,stone:20,gold:0},era:1,faction:'human'},
-  {type:'quarry',name:'Quarry',abbr:'QR',w:4,h:3,pw:88,ph:52,tall:false,cost:{wood:10,stone:28,gold:0},era:1,faction:'dwarf'},
-  {type:'blacksmith',name:'Blacksmith',abbr:'BS',w:3,h:3,pw:72,ph:60,tall:false,cost:{wood:14,stone:35,gold:3},era:1,faction:'orc'},
-  {type:'watchtower',name:'Watchtower',abbr:'WT',w:2,h:4,pw:40,ph:96,tall:true,cost:{wood:7,stone:24,gold:0},era:1,faction:'human'},
-  // Era 2: Iron Age
-  {type:'town_hall',name:'Town Hall',abbr:'TH',w:5,h:4,pw:100,ph:80,tall:false,cost:{wood:28,stone:42,gold:10},era:2,faction:'human'},
-  {type:'barracks',name:'Barracks',abbr:'BK',w:4,h:3,pw:88,ph:64,tall:false,cost:{wood:20,stone:35,gold:7},era:2,faction:'orc'},
-  {type:'church',name:'Church',abbr:'CH',w:3,h:5,pw:72,ph:100,tall:true,cost:{wood:18,stone:32,gold:14},era:2,faction:'elf'},
-  {type:'market',name:'Market',abbr:'MK',w:4,h:3,pw:96,ph:56,tall:false,cost:{wood:24,stone:28,gold:18},era:2,faction:'dwarf'},
+  {type:'stone_house',name:'Stone House',abbr:'SH',w:3,h:3,pw:68,ph:56,tall:false,cost:{wood:8,stone:20,gold:0},era:1,faction:'human'},
+  {type:'quarry',name:'Quarry',abbr:'QR',w:4,h:3,pw:88,ph:52,tall:false,cost:{wood:10,stone:25,gold:0},era:1,faction:'dwarf'},
+  {type:'blacksmith',name:'Blacksmith',abbr:'BS',w:3,h:3,pw:72,ph:60,tall:false,cost:{wood:15,stone:30,gold:3},era:1,faction:'orc'},
+  {type:'watchtower',name:'Watchtower',abbr:'WT',w:2,h:4,pw:40,ph:96,tall:true,cost:{wood:8,stone:20,gold:0},era:1,faction:'human'},
+  {type:'well',name:'Well',abbr:'WL',w:1,h:1,pw:24,ph:28,tall:false,cost:{wood:5,stone:15,gold:0},era:1,faction:'neutral'},
+  // Era 2: Gold Age
+  {type:'town_hall',name:'Town Hall',abbr:'TH',w:5,h:4,pw:100,ph:80,tall:false,cost:{wood:25,stone:40,gold:10},era:2,faction:'human'},
+  {type:'barracks',name:'Barracks',abbr:'BK',w:4,h:3,pw:88,ph:64,tall:false,cost:{wood:20,stone:35,gold:5},era:2,faction:'orc'},
+  {type:'church',name:'Church',abbr:'CH',w:3,h:5,pw:72,ph:100,tall:true,cost:{wood:15,stone:30,gold:12},era:2,faction:'elf'},
+  {type:'market',name:'Market',abbr:'MK',w:4,h:3,pw:96,ph:56,tall:false,cost:{wood:20,stone:25,gold:15},era:2,faction:'dwarf'},
+  {type:'library',name:'Library',abbr:'LB',w:3,h:3,pw:68,ph:64,tall:false,cost:{wood:18,stone:28,gold:8},era:2,faction:'elf'},
   // Era 3: Modern
-  {type:'brick_house',name:'Brick House',abbr:'BH',w:3,h:3,pw:72,ph:60,tall:false,cost:{wood:14,stone:56,gold:7},era:3,faction:'human'},
-  {type:'apartment',name:'Apartment',abbr:'AP',w:3,h:5,pw:60,ph:110,tall:true,cost:{wood:20,stone:70,gold:20},era:3,faction:'human'},
-  {type:'office',name:'Office',abbr:'OF',w:3,h:5,pw:70,ph:120,tall:true,cost:{wood:18,stone:63,gold:28},era:3,faction:'elf'},
-  {type:'factory',name:'Factory',abbr:'FA',w:5,h:3,pw:110,ph:65,tall:false,cost:{wood:35,stone:84,gold:14},era:3,faction:'orc'},
+  {type:'brick_house',name:'Brick House',abbr:'BH',w:3,h:3,pw:72,ph:60,tall:false,cost:{wood:15,stone:50,gold:5},era:3,faction:'human'},
+  {type:'apartment',name:'Apartment',abbr:'AP',w:3,h:5,pw:60,ph:110,tall:true,cost:{wood:20,stone:70,gold:15},era:3,faction:'human'},
+  {type:'office',name:'Office',abbr:'OF',w:3,h:5,pw:70,ph:120,tall:true,cost:{wood:15,stone:60,gold:25},era:3,faction:'elf'},
+  {type:'factory',name:'Factory',abbr:'FY',w:5,h:3,pw:110,ph:65,tall:false,cost:{wood:30,stone:80,gold:10},era:3,faction:'orc'},
+  {type:'monument',name:'Monument',abbr:'MN',w:2,h:3,pw:40,ph:70,tall:true,cost:{wood:10,stone:40,gold:30},era:3,faction:'neutral'},
 ];
 
 // Track harvestable details — key: "tx,ty" -> {type,hp}
@@ -1624,13 +1628,19 @@ function getNextBuilding(){
   const unbuilt=TECH_TREE.filter(b=>b.era<=G.era&&!builtTypes.has(b.type))
     .sort((a2,b2)=>(a2.cost.wood+a2.cost.stone+a2.cost.gold)-(b2.cost.wood+b2.cost.stone+b2.cost.gold));
   if(unbuilt.length>0)return unbuilt[0];
-  // Priority 2: build duplicates of useful buildings (homes, resource buildings)
-  const dupTargets=['wood_hut','log_cabin','stone_house','lumber_mill','quarry','campfire'];
+  // Priority 2: build duplicates of useful buildings (homes, resource, farms)
+  const dupTargets=['wood_hut','log_cabin','stone_house','lumber_mill','quarry','campfire','farm','well'];
   for(const dt of dupTargets){
     const def=TECH_TREE.find(t2=>t2.type===dt);
-    if(def&&def.era<=G.era&&G.clientBuildings.filter(b=>b.type===dt).length<3)return def;
+    if(def&&def.era<=G.era&&G.clientBuildings.filter(b=>b.type===dt).length<4)return def;
   }
-  // Priority 3: any building from current era (variety)
+  // Priority 3: monuments and decorative (endgame variety)
+  const decorative=['monument','well','library','church','market'];
+  for(const dt of decorative){
+    const def=TECH_TREE.find(t2=>t2.type===dt);
+    if(def&&def.era<=G.era&&G.clientBuildings.filter(b=>b.type===dt).length<2)return def;
+  }
+  // Priority 4: any building from current era (expand settlements)
   const anyEra=TECH_TREE.filter(b=>b.era<=G.era);
   if(anyEra.length>0)return anyEra[Math.floor(Math.random()*anyEra.length)];
   return null;
@@ -2526,6 +2536,7 @@ if(frame%60===0)tickNeeds();
 if(frame%90===0)checkSocialInteractions();
 socialCheckTimer--;if(socialCheckTimer<=0){socialCheckTimer=600;checkClanFormation();checkVillages()}
 if(frame%30===0)updateConflicts();
+if(frame%300===0)ensureResourceAbundance();
 // Drama events
 dramaTimer--;if(dramaTimer<=0){dramaTimer=60*(90+Math.random()*30);triggerDramaEvent()}
 // Spotlight
@@ -3274,7 +3285,8 @@ safeInterval(()=>{if(ws&&ws.readyState===1)ws.send('{"type":"ping"}')},30000);
 // Food gathering happens passively every 600 frames
 function tickFood(){
   const hasCampfire=G.clientBuildings.some(b=>b.type==='campfire'&&b.complete);
-  G.food+=hasCampfire?2:1;
+  const farmCount=G.clientBuildings.filter(b=>b.type==='farm'&&b.complete).length;
+  G.food+=(hasCampfire?2:1)+farmCount*2;// farms produce +2 food each
 }
 
 // === Custom Pixel-Art Cursor ===
@@ -3691,22 +3703,57 @@ function loadGame(){
   }catch(e){console.warn('Load failed:',e);return false}
 }
 
-// === Resource Regrowth ===
+// === Resource Regeneration System ===
 function regrowResources(){
-  // Tree regrowth: clear 8 harvest markers in forest/grass areas
-  if(harvestables.size>3){
+  const rng2=new SeededRNG(frame+7777);
+
+  // TREE REGROWTH: clear oldest harvest markers (trees regrow over time)
+  // Each call clears 10 entries — forests slowly return
+  if(harvestables.size>0){
     let cleared=0;
-    for(const[key] of harvestables){if(cleared<8){harvestables.delete(key);cleared++}}
+    for(const[key] of harvestables){if(cleared<10){harvestables.delete(key);cleared++}else break}
   }
-  // Rock regrowth: nothing to do (rocks are generated from hash, clearing harvestables restores them)
-  // Gold deposit regrowth
-  if(goldDeposits.filter(g=>g.alive).length<5){
-    const rng2=new SeededRNG(frame);
-    for(let i=0;i<3;i++){
-      const gx=Math.floor(rng2.next()*WW),gy=Math.floor(rng2.next()*WH);
-      if(tBiomes&&(BL[tBiomes[gy*WW+gx]]==='mountain'||BL[tBiomes[gy*WW+gx]]==='hills')){
-        goldDeposits.push({x:gx*TS,y:gy*TS,h:tileHash(gx,gy),alive:true});break;
+
+  // GOLD DEPOSIT respawn: keep minimum 3, max 8
+  const aliveGold=goldDeposits.filter(g=>g.alive).length;
+  if(aliveGold<3){
+    for(let i=0;i<(3-aliveGold);i++){
+      for(let attempt=0;attempt<20;attempt++){
+        const gx=Math.floor(rng2.next()*WW),gy=Math.floor(rng2.next()*WH);
+        if(tBiomes&&(BL[tBiomes[gy*WW+gx]]==='mountain'||BL[tBiomes[gy*WW+gx]]==='hills')){
+          goldDeposits.push({x:gx*TS,y:gy*TS,h:tileHash(gx+frame,gy),alive:true});break;
+        }
       }
+    }
+  }
+  // Revive dead gold deposits periodically
+  for(const g of goldDeposits){if(!g.alive&&Math.random()<0.1&&aliveGold<8)g.alive=true}
+
+  // PASSIVE RESOURCE GENERATION from buildings
+  const hasFarm=G.clientBuildings.some(b=>b.type==='farm'&&b.complete);
+  const hasMarket=G.clientBuildings.some(b=>b.type==='market'&&b.complete);
+  const hasFactory=G.clientBuildings.some(b=>b.type==='factory'&&b.complete);
+  if(hasFarm)G.food+=2;// +2 food per cycle from farm
+  if(hasMarket)G.gold+=1;// +1 gold per cycle from market
+  if(hasFactory){G.wood+=2;G.stone+=2}// +2 each from factory
+}
+
+// Resource abundance check: ensure minimums (called every 300 frames)
+function ensureResourceAbundance(){
+  // Count available (non-harvested) trees and rocks by checking a sample
+  // If harvestables has grown too large, the world is barren — clear extra
+  if(harvestables.size>80){// too many things harvested
+    let cleared=0;
+    for(const[key] of harvestables){if(cleared<30){harvestables.delete(key);cleared++}else break}
+    gameEvent('🌱 New growth spotted in the forest','tile_claimed');
+  }
+  // Ensure gold deposits
+  const ag=goldDeposits.filter(g=>g.alive).length;
+  if(ag<3){
+    const rng3=new SeededRNG(frame+3333);
+    for(let i=ag;i<3;i++){
+      const gx=Math.floor(rng3.next()*WW),gy=Math.floor(rng3.next()*WH);
+      goldDeposits.push({x:gx*TS,y:gy*TS,h:tileHash(gx,gy+frame),alive:true});
     }
   }
 }
