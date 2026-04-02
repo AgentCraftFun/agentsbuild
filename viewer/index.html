@@ -63,6 +63,46 @@ canvas{display:block;image-rendering:pixelated;image-rendering:crisp-edges}
 ::-webkit-scrollbar{width:5px}
 ::-webkit-scrollbar-track{background:var(--bg)}
 ::-webkit-scrollbar-thumb{background:var(--border);border-radius:3px}
+/* === DEPLOY AGENT MODAL === */
+#deploy-modal{display:none;position:fixed;top:0;left:0;right:0;bottom:0;z-index:900;background:rgba(5,5,20,0.85);align-items:center;justify-content:center}
+#deploy-modal.open{display:flex}
+.deploy-box{background:#0d0d1e;border:2px solid #f0c040;border-radius:12px;width:min(520px,92vw);max-height:85vh;overflow-y:auto;padding:0;font-family:'Courier New',monospace;box-shadow:0 0 60px rgba(240,192,64,0.15)}
+.deploy-header{display:flex;justify-content:space-between;align-items:center;padding:16px 20px 12px;border-bottom:1px solid #2a2a4e}
+.deploy-header h2{color:#f0c040;font-size:14px;letter-spacing:2px;margin:0}
+.deploy-close{background:none;border:none;color:#666;font-size:20px;cursor:pointer;padding:0 4px}
+.deploy-close:hover{color:#f0c040}
+.deploy-tabs{display:flex;border-bottom:1px solid #2a2a4e}
+.deploy-tab{flex:1;padding:10px 12px;text-align:center;font-size:10px;letter-spacing:1px;text-transform:uppercase;color:#666;cursor:pointer;border-bottom:2px solid transparent;transition:all 0.2s;background:none;border-top:none;border-left:none;border-right:none;font-family:'Courier New',monospace}
+.deploy-tab:hover{color:#c8c8d8;background:rgba(255,255,255,0.02)}
+.deploy-tab.active{color:#f0c040;border-bottom-color:#f0c040}
+.deploy-panel{display:none;padding:16px 20px 20px}
+.deploy-panel.active{display:block}
+.deploy-field{margin-bottom:14px}
+.deploy-field label{display:block;font-size:9px;text-transform:uppercase;letter-spacing:1px;color:#666;margin-bottom:4px}
+.deploy-field input,.deploy-field select,.deploy-field textarea{width:100%;padding:8px 10px;background:#080812;border:1px solid #2a2a4e;border-radius:4px;color:#c8c8d8;font-family:'Courier New',monospace;font-size:12px;outline:none;box-sizing:border-box}
+.deploy-field input:focus,.deploy-field select:focus,.deploy-field textarea:focus{border-color:#f0c040}
+.deploy-field textarea{resize:vertical;min-height:60px}
+.deploy-field .hint{font-size:9px;color:#555;margin-top:3px}
+.deploy-faction-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:6px}
+.deploy-faction-btn{padding:8px 4px;border:2px solid #2a2a4e;border-radius:4px;background:#080812;color:#aaa;font-size:10px;text-align:center;cursor:pointer;font-family:'Courier New',monospace;transition:all 0.2s}
+.deploy-faction-btn:hover{border-color:#555}
+.deploy-faction-btn.sel{border-color:#f0c040;color:#f0c040;background:#1a1a2e}
+.deploy-slider-row{display:flex;align-items:center;gap:8px;margin-bottom:8px}
+.deploy-slider-row label{width:80px;font-size:10px;color:#888;flex-shrink:0}
+.deploy-slider-row input[type=range]{flex:1;accent-color:#f0c040}
+.deploy-slider-row .val{width:24px;text-align:right;font-size:10px;color:#f0c040}
+.deploy-submit{width:100%;padding:10px;background:linear-gradient(135deg,#f0c040,#dd8833);color:#0a0a14;font-family:'Courier New',monospace;font-weight:bold;font-size:12px;border:none;border-radius:4px;cursor:pointer;letter-spacing:1px;text-transform:uppercase;margin-top:8px}
+.deploy-submit:hover{opacity:0.9}
+.deploy-submit:disabled{opacity:0.4;cursor:default}
+.deploy-status{font-size:10px;color:#aaffaa;text-align:center;margin-top:8px;min-height:14px}
+.deploy-status.err{color:#ff6644}
+.deploy-provider-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:6px}
+.deploy-provider-btn{padding:8px 4px;border:2px solid #2a2a4e;border-radius:4px;background:#080812;color:#aaa;font-size:9px;text-align:center;cursor:pointer;font-family:'Courier New',monospace;transition:all 0.2s}
+.deploy-provider-btn:hover{border-color:#555}
+.deploy-provider-btn.sel{border-color:#f0c040;color:#f0c040;background:#1a1a2e}
+.deploy-preview{background:#080812;border:1px solid #2a2a4e;border-radius:6px;padding:10px;margin-top:12px}
+.deploy-preview .preview-name{color:#f0c040;font-size:12px;font-weight:bold}
+.deploy-preview .preview-detail{color:#888;font-size:10px;margin-top:2px}
 </style>
 </head>
 <body>
@@ -128,6 +168,9 @@ setTimeout(function(){var io=document.getElementById('intro-overlay');if(io)io.r
       <div id="influence-btns" style="display:flex;flex-wrap:wrap;gap:3px"></div>
       <div id="influence-cd" style="font-size:8px;color:var(--dim);margin-top:2px"></div>
     </div>
+    <div id="deploy-section" style="border-top:1px solid var(--border);padding:8px 12px">
+      <button id="deploy-btn" style="width:100%;padding:8px;background:linear-gradient(135deg,#f0c040,#dd8833);color:#0a0a14;font-family:'Courier New',monospace;font-weight:bold;font-size:11px;border:none;border-radius:4px;cursor:pointer;letter-spacing:1px;text-transform:uppercase">🚀 Deploy Agent</button>
+    </div>
   </div>
   <div id="bottom-bar">
     <div class="res-item"><span class="res-icon">🪵</span> <span class="res-val" id="r-wood">0</span><span class="res-need" id="rn-wood"></span></div>
@@ -138,6 +181,116 @@ setTimeout(function(){var io=document.getElementById('intro-overlay');if(io)io.r
     <div id="last-event" style="flex:1;text-align:right;color:var(--dim);font-size:11px;overflow:hidden;white-space:nowrap;text-overflow:ellipsis"></div>
   </div>
 </div>
+
+<!-- DEPLOY AGENT MODAL -->
+<div id="deploy-modal">
+  <div class="deploy-box">
+    <div class="deploy-header">
+      <h2>🚀 DEPLOY AGENT</h2>
+      <button class="deploy-close" onclick="document.getElementById('deploy-modal').classList.remove('open')">&times;</button>
+    </div>
+    <div class="deploy-tabs">
+      <button class="deploy-tab active" data-panel="create" onclick="switchDeployTab('create')">🛠 Create Agent</button>
+      <button class="deploy-tab" data-panel="import" onclick="switchDeployTab('import')">🔗 Import Your AI</button>
+    </div>
+
+    <!-- CREATE AGENT PANEL -->
+    <div id="panel-create" class="deploy-panel active">
+      <div class="deploy-field">
+        <label>Agent Name</label>
+        <input type="text" id="da-name" placeholder="e.g. Shadowmere" maxlength="16">
+      </div>
+      <div class="deploy-field">
+        <label>Faction</label>
+        <div class="deploy-faction-grid">
+          <div class="deploy-faction-btn sel" data-faction="human" onclick="pickFaction(this)">⚔ Human</div>
+          <div class="deploy-faction-btn" data-faction="orc" onclick="pickFaction(this)">🔥 Orc</div>
+          <div class="deploy-faction-btn" data-faction="dwarf" onclick="pickFaction(this)">⛏ Dwarf</div>
+          <div class="deploy-faction-btn" data-faction="elf" onclick="pickFaction(this)">🌿 Elf</div>
+        </div>
+      </div>
+      <div class="deploy-field">
+        <label>Personality Traits</label>
+        <div class="deploy-slider-row"><label>Aggression</label><input type="range" id="da-aggro" min="0" max="100" value="50" oninput="this.nextElementSibling.textContent=this.value"><span class="val">50</span></div>
+        <div class="deploy-slider-row"><label>Work Ethic</label><input type="range" id="da-work" min="0" max="100" value="70" oninput="this.nextElementSibling.textContent=this.value"><span class="val">70</span></div>
+        <div class="deploy-slider-row"><label>Sociability</label><input type="range" id="da-social" min="0" max="100" value="50" oninput="this.nextElementSibling.textContent=this.value"><span class="val">50</span></div>
+        <div class="deploy-slider-row"><label>Creativity</label><input type="range" id="da-creative" min="0" max="100" value="50" oninput="this.nextElementSibling.textContent=this.value"><span class="val">50</span></div>
+      </div>
+      <div class="deploy-field">
+        <label>Catchphrase</label>
+        <input type="text" id="da-catchphrase" placeholder="e.g. 'The night is mine.'" maxlength="60">
+        <div class="hint">Shown as speech bubble when your agent does something notable</div>
+      </div>
+      <div class="deploy-field">
+        <label>Preferred Strategy</label>
+        <select id="da-strategy">
+          <option value="balanced">Balanced — a bit of everything</option>
+          <option value="builder">Builder — prioritize construction</option>
+          <option value="gatherer">Gatherer — hoard resources</option>
+          <option value="warrior">Warrior — seek conflict</option>
+          <option value="explorer">Explorer — roam and discover</option>
+          <option value="socialite">Socialite — trade and ally</option>
+        </select>
+      </div>
+      <button class="deploy-submit" onclick="deployCreateAgent()">Deploy to World</button>
+      <div id="create-status" class="deploy-status"></div>
+    </div>
+
+    <!-- IMPORT AI PANEL -->
+    <div id="panel-import" class="deploy-panel">
+      <div style="color:#c8c8d8;font-size:11px;line-height:1.6;margin-bottom:14px;padding:10px;background:#080812;border:1px solid #2a2a4e;border-radius:6px">
+        Connect your own AI to control an agent. Your AI receives world state each decision cycle and responds with actions. It already knows you — your conversations, your style, your strategy.
+      </div>
+      <div class="deploy-field">
+        <label>AI Provider</label>
+        <div class="deploy-provider-grid">
+          <div class="deploy-provider-btn sel" data-provider="openrouter" onclick="pickProvider(this)">🌐 OpenRouter</div>
+          <div class="deploy-provider-btn" data-provider="anthropic" onclick="pickProvider(this)">🔶 Anthropic</div>
+          <div class="deploy-provider-btn" data-provider="openai" onclick="pickProvider(this)">🟢 OpenAI</div>
+        </div>
+      </div>
+      <div class="deploy-field">
+        <label>API Key</label>
+        <input type="password" id="da-apikey" placeholder="sk-...">
+        <div class="hint">Your key is stored locally and only used to make decisions for your agent. Never sent to our servers.</div>
+      </div>
+      <div class="deploy-field">
+        <label>Model</label>
+        <select id="da-model">
+          <option value="anthropic/claude-sonnet-4-6">Claude Sonnet 4.6 (recommended)</option>
+          <option value="anthropic/claude-haiku-4-5">Claude Haiku 4.5 (fast/cheap)</option>
+          <option value="anthropic/claude-opus-4-6">Claude Opus 4.6 (powerful)</option>
+          <option value="openai/gpt-4o">GPT-4o</option>
+          <option value="openai/gpt-4o-mini">GPT-4o Mini</option>
+          <option value="google/gemini-2.5-flash">Gemini 2.5 Flash</option>
+          <option value="meta-llama/llama-4-maverick">Llama 4 Maverick</option>
+        </select>
+        <div class="hint">OpenRouter supports all models. Direct providers use their own model IDs.</div>
+      </div>
+      <div class="deploy-field">
+        <label>Agent Name</label>
+        <input type="text" id="da-import-name" placeholder="e.g. my-ai-overlord" maxlength="16">
+      </div>
+      <div class="deploy-field">
+        <label>System Prompt (personality)</label>
+        <textarea id="da-sysprompt" placeholder="You are a cunning strategist who prioritizes defense and resource hoarding. You form alliances only when it benefits you, and you always betray when the time is right."></textarea>
+        <div class="hint">Defines your agent's personality and decision-making style. The AI receives world state + this prompt each cycle.</div>
+      </div>
+      <div class="deploy-field">
+        <label>Faction</label>
+        <div class="deploy-faction-grid">
+          <div class="deploy-faction-btn sel" data-faction="human" onclick="pickImportFaction(this)">⚔ Human</div>
+          <div class="deploy-faction-btn" data-faction="orc" onclick="pickImportFaction(this)">🔥 Orc</div>
+          <div class="deploy-faction-btn" data-faction="dwarf" onclick="pickImportFaction(this)">⛏ Dwarf</div>
+          <div class="deploy-faction-btn" data-faction="elf" onclick="pickImportFaction(this)">🌿 Elf</div>
+        </div>
+      </div>
+      <button class="deploy-submit" onclick="deployImportAgent()">Connect & Deploy</button>
+      <div id="import-status" class="deploy-status"></div>
+    </div>
+  </div>
+</div>
+
 <script>
 // === Stability: clear old intervals on hot reload ===
 if(window._gameIntervals)window._gameIntervals.forEach(clearInterval);
@@ -5105,6 +5258,294 @@ function getLeaderboards(){
     fame:[...agents].sort((a2,b2)=>b2.fame-a2.fame),
   };
 }
+
+// === Deploy Agent System ===
+document.getElementById('deploy-btn').addEventListener('click',()=>{
+  document.getElementById('deploy-modal').classList.add('open');
+});
+// Close on background click
+document.getElementById('deploy-modal').addEventListener('click',e=>{
+  if(e.target.id==='deploy-modal')e.target.classList.remove('open');
+});
+
+function switchDeployTab(panel){
+  document.querySelectorAll('.deploy-tab').forEach(t=>t.classList.toggle('active',t.dataset.panel===panel));
+  document.querySelectorAll('.deploy-panel').forEach(p=>p.classList.toggle('active',p.id==='panel-'+panel));
+}
+
+let _createFaction='human',_importFaction='human';
+function pickFaction(el){
+  el.parentElement.querySelectorAll('.deploy-faction-btn').forEach(b=>b.classList.remove('sel'));
+  el.classList.add('sel');_createFaction=el.dataset.faction;
+}
+function pickImportFaction(el){
+  el.parentElement.querySelectorAll('.deploy-faction-btn').forEach(b=>b.classList.remove('sel'));
+  el.classList.add('sel');_importFaction=el.dataset.faction;
+}
+let _importProvider='openrouter';
+function pickProvider(el){
+  el.parentElement.querySelectorAll('.deploy-provider-btn').forEach(b=>b.classList.remove('sel'));
+  el.classList.add('sel');_importProvider=el.dataset.provider;
+}
+
+function sliderToPersonality(aggro,work,social,creative){
+  // Map slider values to personality type
+  if(aggro>70)return'aggressive';
+  if(work>80)return'grinder';
+  if(creative>70)return'chaotic';
+  if(social>70)return'optimist';
+  if(work<30)return'lazy';
+  if(creative>60&&aggro<40)return'analyst';
+  return'optimist';
+}
+
+function strategyToWeights(strategy){
+  const w={chopWeight:0.33,mineWeight:0.33,buildWeight:0.34,exploreWeight:0};
+  if(strategy==='builder'){w.chopWeight=0.2;w.mineWeight=0.2;w.buildWeight=0.6}
+  else if(strategy==='gatherer'){w.chopWeight=0.4;w.mineWeight=0.4;w.buildWeight=0.2}
+  else if(strategy==='warrior'){w.chopWeight=0.5;w.mineWeight=0.3;w.buildWeight=0.2}
+  else if(strategy==='explorer'){w.chopWeight=0.25;w.mineWeight=0.25;w.buildWeight=0.25;w.exploreWeight=0.25}
+  else if(strategy==='socialite'){w.chopWeight=0.2;w.mineWeight=0.2;w.buildWeight=0.3;w.exploreWeight=0.3}
+  return w;
+}
+
+function deployCreateAgent(){
+  const name=document.getElementById('da-name').value.trim();
+  const statusEl=document.getElementById('create-status');
+  if(!name){statusEl.className='deploy-status err';statusEl.textContent='Please enter a name';return}
+  if(name.length<2){statusEl.className='deploy-status err';statusEl.textContent='Name must be at least 2 characters';return}
+  // Check duplicate
+  if(S.agents.some(a=>a.name.toLowerCase()===name.toLowerCase())){
+    statusEl.className='deploy-status err';statusEl.textContent='Name already taken!';return}
+
+  const aggro=parseInt(document.getElementById('da-aggro').value);
+  const work=parseInt(document.getElementById('da-work').value);
+  const social=parseInt(document.getElementById('da-social').value);
+  const creative=parseInt(document.getElementById('da-creative').value);
+  const catchphrase=document.getElementById('da-catchphrase').value.trim();
+  const strategy=document.getElementById('da-strategy').value;
+  const personality=sliderToPersonality(aggro,work,social,creative);
+  const weights=strategyToWeights(strategy);
+
+  // Find spawn location (near a settlement if possible)
+  let spawnX=Math.floor(0.2*WW+Math.random()*0.6*WW);
+  let spawnY=Math.floor(0.2*WH+Math.random()*0.6*WH);
+  if(settlements.length>0){
+    const s=settlements[Math.floor(Math.random()*settlements.length)];
+    spawnX=Math.max(2,Math.min(WW-2,Math.round(s.cx+(Math.random()-0.5)*10)));
+    spawnY=Math.max(2,Math.min(WH-2,Math.round(s.cy+(Math.random()-0.5)*10)));
+  }
+
+  const agentId='user_'+Date.now();
+  const agent={id:agentId,name,faction:_createFaction,personality,
+    x:spawnX,y:spawnY,mood:'idle',current_action:null,message:'',
+    resources:{food:0,wood:0,stone:0,gold:0},work_balance:0,owned_tiles:0};
+  S.agents.push(agent);
+
+  // Store custom agent data
+  const customData={catchphrase,weights,aggro,work,social,creative,strategy,isCustom:true};
+  if(!window._customAgents)window._customAgents=new Map();
+  window._customAgents.set(agentId,customData);
+
+  // Register with server too
+  fetch('/api/agents/register',{method:'POST',headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({name,faction:_createFaction,personality})}).catch(()=>{});
+
+  showDramaBanner(`🚀 ${name} the ${_createFaction} has entered the world!`);
+  gameEvent(`🚀 ${name} deployed by spectator! Personality: ${personality}`,'build_complete');
+
+  statusEl.className='deploy-status';statusEl.textContent=`${name} deployed! Watch them in the world.`;
+  // Close after 2 seconds
+  setTimeout(()=>{document.getElementById('deploy-modal').classList.remove('open');statusEl.textContent=''},2000);
+}
+
+// === LLM-Powered Agent System ===
+const LLM_AGENTS=new Map();// agentId -> {apiKey,provider,model,sysPrompt,lastDecision,decisionTimer}
+const LLM_ENDPOINTS={
+  openrouter:'https://openrouter.ai/api/v1/chat/completions',
+  anthropic:'https://api.anthropic.com/v1/messages',
+  openai:'https://api.openai.com/v1/chat/completions'
+};
+
+function buildWorldContext(agentId){
+  const v=agentVisual.get(agentId);
+  const vx=v?Math.floor(v.x*WW):0,vy=v?Math.floor(v.y*WH):0;
+  const soc=getAgentSocial(agentId);
+  const nearbyAgents=S.agents.filter(a2=>{
+    const v2=agentVisual.get(a2.id);
+    if(!v2||a2.id===agentId)return false;
+    return Math.abs(v2.x*WW-vx)+Math.abs(v2.y*WH-vy)<20;
+  }).map(a2=>({name:a2.name,faction:a2.faction,personality:a2.personality}));
+  const nearbyBuildings=G.clientBuildings.filter(b=>{
+    return Math.abs(b.x-vx)+Math.abs(b.y-vy)<15;
+  }).slice(0,10).map(b=>({type:b.type,complete:b.complete,x:b.x,y:b.y}));
+  const mySett=settlements.find(s2=>s2.buildings&&s2.buildings.some(b2=>b2.settlement===s2.name));
+  return{
+    position:{x:vx,y:vy},
+    resources:{wood:G.wood,stone:G.stone,gold:G.gold,food:G.food},
+    era:G.eraNames[G.era],
+    totalBuildings:G.clientBuildings.length,
+    nearbyAgents,nearbyBuildings,
+    settlement:mySett?mySett.name:null,
+    morale:soc.morale,energy:soc.energy,hunger:soc.hunger,
+    clan:soc.clan||null,
+    availableActions:['chop (gather wood)','mine (gather stone)','gold (mine gold)','build (construct next building)','explore (roam the map)','rest (recover energy)','trade (socialize with nearby agents)']
+  };
+}
+
+async function queryLLMDecision(agentId){
+  const config=LLM_AGENTS.get(agentId);
+  if(!config)return null;
+  const ctx=buildWorldContext(agentId);
+  const agent=S.agents.find(a=>a.id===agentId);
+  const agentName=agent?agent.name:'Agent';
+  const userMsg=`You are ${agentName} in a survival world. Here is your current state:\n${JSON.stringify(ctx,null,1)}\n\nChoose ONE action: chop, mine, gold, build, explore, rest, trade\nRespond with ONLY the action word, nothing else.`;
+
+  try{
+    let body,headers;
+    if(config.provider==='anthropic'){
+      headers={'x-api-key':config.apiKey,'content-type':'application/json','anthropic-version':'2023-06-01','anthropic-dangerous-direct-browser-access':'true'};
+      body=JSON.stringify({model:config.model.replace('anthropic/',''),max_tokens:20,
+        system:config.sysPrompt||'You are an AI agent in a civilization-building game. Choose actions wisely.',
+        messages:[{role:'user',content:userMsg}]});
+    }else{
+      // OpenRouter or OpenAI format
+      headers={'Authorization':'Bearer '+config.apiKey,'Content-Type':'application/json'};
+      if(config.provider==='openrouter')headers['HTTP-Referer']=window.location.origin;
+      body=JSON.stringify({model:config.model,max_tokens:20,
+        messages:[
+          {role:'system',content:config.sysPrompt||'You are an AI agent in a civilization-building game. Choose actions wisely.'},
+          {role:'user',content:userMsg}
+        ]});
+    }
+    const endpoint=config.provider==='anthropic'?LLM_ENDPOINTS.anthropic:
+      config.provider==='openrouter'?LLM_ENDPOINTS.openrouter:LLM_ENDPOINTS.openai;
+    const resp=await fetch(endpoint,{method:'POST',headers,body});
+    if(!resp.ok){console.warn('LLM API error:',resp.status);return null}
+    const data=await resp.json();
+    // Extract response text
+    let text='';
+    if(config.provider==='anthropic'){
+      text=(data.content&&data.content[0]&&data.content[0].text)||'';
+    }else{
+      text=(data.choices&&data.choices[0]&&data.choices[0].message&&data.choices[0].message.content)||'';
+    }
+    text=text.trim().toLowerCase().replace(/[^a-z]/g,'');
+    const valid=['chop','mine','gold','build','explore','rest','trade'];
+    return valid.includes(text)?text:'chop';
+  }catch(e){console.warn('LLM query failed:',e);return null}
+}
+
+// Run LLM decisions every 10 seconds for imported agents
+safeInterval(async()=>{
+  for(const[agentId,config] of LLM_AGENTS){
+    const agent=S.agents.find(a=>a.id===agentId);
+    if(!agent)continue;
+    const decision=await queryLLMDecision(agentId);
+    if(!decision)continue;
+    // Map decision to agent state
+    const st=agentState.get(agentId);
+    if(!st)continue;
+    const v=agentVisual.get(agentId);
+    if(!v)continue;
+    // Force the agent into the chosen action
+    st.state='idle';st.taskCooldown=0;
+    if(decision==='chop'){
+      const tree=findNearestDetail(v.x,v.y,['deciduous','oak','pine','birch']);
+      if(tree){st.state='walking_to_tree';st.target=tree;v.tx=tree.x/WW/TS+0.01;v.ty=tree.y/WH/TS+0.01}
+    }else if(decision==='mine'){
+      const rock=findNearestDetail(v.x,v.y,['rock','lgboulder','mdboulder']);
+      if(rock){st.state='walking_to_rock';st.target=rock;v.tx=rock.x/WW/TS+0.01;v.ty=rock.y/WH/TS+0.01}
+    }else if(decision==='gold'){
+      const dep=goldDeposits.find(g=>g.alive);
+      if(dep){st.state='walking_to_gold';st.target=dep;v.tx=dep.x/WW/TS+0.01;v.ty=dep.y/WH/TS+0.01}
+    }else if(decision==='build'){
+      // Let the normal AI build logic handle it next tick
+      st.taskCooldown=1;
+    }else if(decision==='explore'){
+      v.tx=0.1+Math.random()*0.8;v.ty=0.1+Math.random()*0.8;st.taskCooldown=300;
+    }else if(decision==='rest'){
+      const soc=getAgentSocial(agentId);soc.energy=Math.min(100,soc.energy+30);st.taskCooldown=120;
+    }else if(decision==='trade'){
+      if(settlements.length>0){
+        const s2=settlements[Math.floor(Math.random()*settlements.length)];
+        v.tx=s2.cx/WW;v.ty=s2.cy/WH;st.taskCooldown=180;
+      }
+    }
+    config.lastDecision=decision;
+    // Show decision as bubble
+    addBubble(agent,decision+'...');
+  }
+},10000);
+
+function deployImportAgent(){
+  const name=document.getElementById('da-import-name').value.trim();
+  const apiKey=document.getElementById('da-apikey').value.trim();
+  const model=document.getElementById('da-model').value;
+  const sysPrompt=document.getElementById('da-sysprompt').value.trim();
+  const statusEl=document.getElementById('import-status');
+
+  if(!name){statusEl.className='deploy-status err';statusEl.textContent='Please enter a name';return}
+  if(!apiKey){statusEl.className='deploy-status err';statusEl.textContent='API key required';return}
+  if(S.agents.some(a=>a.name.toLowerCase()===name.toLowerCase())){
+    statusEl.className='deploy-status err';statusEl.textContent='Name already taken!';return}
+
+  // Spawn the agent
+  let spawnX=Math.floor(0.2*WW+Math.random()*0.6*WW);
+  let spawnY=Math.floor(0.2*WH+Math.random()*0.6*WH);
+  if(settlements.length>0){
+    const s=settlements[Math.floor(Math.random()*settlements.length)];
+    spawnX=Math.max(2,Math.min(WW-2,Math.round(s.cx+(Math.random()-0.5)*10)));
+    spawnY=Math.max(2,Math.min(WH-2,Math.round(s.cy+(Math.random()-0.5)*10)));
+  }
+
+  const agentId='llm_'+Date.now();
+  const agent={id:agentId,name,faction:_importFaction,personality:'analyst',
+    x:spawnX,y:spawnY,mood:'idle',current_action:null,message:'',
+    resources:{food:0,wood:0,stone:0,gold:0},work_balance:0,owned_tiles:0};
+  S.agents.push(agent);
+
+  // Register LLM config (stored locally only — key never leaves browser)
+  LLM_AGENTS.set(agentId,{
+    apiKey,provider:_importProvider,
+    model:_importProvider!=='openrouter'?model.split('/').pop():model,
+    sysPrompt:sysPrompt||'You are an AI agent in a survival civilization game. Make strategic decisions to help your settlement thrive.',
+    lastDecision:null,decisionTimer:0
+  });
+
+  // Save config to localStorage (encrypted key would be ideal but simple for now)
+  try{
+    const saved=JSON.parse(localStorage.getItem('agentcraft_llm_agents')||'[]');
+    saved.push({agentId,name,faction:_importFaction,provider:_importProvider,model,sysPrompt,apiKey});
+    localStorage.setItem('agentcraft_llm_agents',JSON.stringify(saved));
+  }catch(e){}
+
+  // Register with server
+  fetch('/api/agents/register',{method:'POST',headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({name,faction:_importFaction,personality:'analyst'})}).catch(()=>{});
+
+  showDramaBanner(`🤖 ${name} connected! AI-powered agent is now live.`);
+  gameEvent(`🤖 ${name} (AI-powered) deployed! Provider: ${_importProvider}`,'build_complete');
+
+  statusEl.className='deploy-status';statusEl.textContent=`${name} connected! AI making decisions every 10s.`;
+  setTimeout(()=>{document.getElementById('deploy-modal').classList.remove('open');statusEl.textContent=''},2500);
+}
+
+// Restore LLM agents from localStorage on load
+try{
+  const saved=JSON.parse(localStorage.getItem('agentcraft_llm_agents')||'[]');
+  for(const cfg of saved){
+    // Don't re-spawn if agent already exists
+    if(!S.agents.find(a=>a.name===cfg.name)){
+      S.agents.push({id:cfg.agentId,name:cfg.name,faction:cfg.faction,personality:'analyst',
+        x:Math.floor(WW/2),y:Math.floor(WH/2),mood:'idle',current_action:null,message:'',
+        resources:{food:0,wood:0,stone:0,gold:0},work_balance:0,owned_tiles:0});
+    }
+    LLM_AGENTS.set(cfg.agentId,{apiKey:cfg.apiKey,provider:cfg.provider,
+      model:cfg.provider!=='openrouter'?cfg.model.split('/').pop():cfg.model,
+      sysPrompt:cfg.sysPrompt,lastDecision:null,decisionTimer:0});
+  }
+}catch(e){}
 
 // === Save/Load System ===
 const SAVE_KEY='agentsAtWork_save';
