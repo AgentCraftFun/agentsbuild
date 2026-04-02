@@ -842,7 +842,10 @@ wrap.addEventListener('wheel',e=>{e.preventDefault();lastInputFrame=frame;if(tvM
   const r=canvasEl.getBoundingClientRect();
   zoomAnchorX=e.clientX-r.left;zoomAnchorY=e.clientY-r.top;
   targetZoom*=e.deltaY<0?1.08:1/1.08;
-  targetZoom=Math.max(0.5,Math.min(3,targetZoom));
+  // Minimum zoom: never see beyond world edges
+  const minZoomX2=canvasEl.width/(WW*TS),minZoomY2=canvasEl.height/(WH*TS);
+  const minZoom2=Math.max(minZoomX2,minZoomY2,0.4);
+  targetZoom=Math.max(minZoom2,Math.min(3,targetZoom));
 },{passive:false});
 // Double-click to zoom in/out
 wrap.addEventListener('dblclick',e=>{lastInputFrame=frame;if(tvMode)tvMode=false;
@@ -990,8 +993,8 @@ function drawBuildingPixelArt(c,b,bx,by,bw,bh,fr){
   const p=b.progress!=null?b.progress:1;
   const tall=b.tall||false;
 
-  // p>=1.0: fully complete — draw final form
-  if(p>=1){try{return drawCompletedBuilding(c,b,bx,by,bw,bh,fr)}catch(e){return}}
+  // p>=0.95: close enough — draw final form (prevents stuck half-built visuals)
+  if(p>=0.95){try{return drawCompletedBuilding(c,b,bx,by,bw,bh,fr)}catch(e){return}}
 
   // === UNDER CONSTRUCTION — visual driven by SAME p value as progress bar ===
   const wallH=bh*0.7;
@@ -1450,7 +1453,7 @@ function drawBuilding(c,b,bx,by,bw,bh,fr){
   if(type==='runeforge')return drawQuarry(c,bx,by,bw,bh,p);
   if(type==='tree_palace'||type==='grove'||type==='sentinel_tree')return drawTreeShrine(c,bx,by,bw,bh,p,fr);
   // Era-specific completed renderers
-  if(p>=1){
+  if(p>=0.95){
     if(type==='campfire')return drawCampfire(c,bx,by,bw,bh,fr);
     if(type==='wood_hut')return drawWoodHut(c,bx,by,bw,bh,fr);
     if(type==='log_cabin')return drawLogCabin(c,bx,by,bw,bh,fr);
@@ -3002,6 +3005,23 @@ if(frame%30===0){
     if(st&&st.state==='idle'&&st.taskCooldown<=0){st.taskCooldown=1}// force immediate re-evaluation
   }
 }
+// Stuck building scanner (every 300 frames = ~5 sec)
+if(frame%300===0){
+  for(const b of G.clientBuildings){
+    // Fix NaN/undefined progress
+    if(!isFinite(b.progress)){b.progress=1.0;b.complete=true;b.building=false}
+    // If progress >= 1 but not marked complete, fix it
+    if(b.progress>=0.95&&!b.complete){b.progress=1.0;b.complete=true;b.building=false}
+    // If under construction with no agent working on it, increment stuck timer
+    if(!b.complete&&b.progress<0.95){
+      const hasWorker=S.agents.some(a2=>{const st2=agentState.get(a2.id);return st2&&st2.state==='building'&&st2.target===b});
+      if(!hasWorker){
+        b.stuckTimer=(b.stuckTimer||0)+1;
+        if(b.stuckTimer>2){b.progress=1.0;b.complete=true;b.building=false;b.stuckTimer=0}// force-complete after ~10 sec stuck
+      }else{b.stuckTimer=0}
+    }
+  }
+}
 // Social/needs systems (throttled)
 if(frame%60===0)tickNeeds();
 if(frame%90===0)checkSocialInteractions();
@@ -3032,11 +3052,16 @@ S.buildings=G.clientBuildings.map(b=>({type:b.type,name:b.name,x:b.x,y:b.y,progr
 // Safety: ensure zoom is valid
 if(!isFinite(zoom)||zoom<=0)zoom=1;
 if(!isFinite(vpX))vpX=0;if(!isFinite(vpY))vpY=0;
-// Clamp camera to world bounds
+// Enforce minimum zoom so viewport never exceeds world
 const worldPxW=WW*TS,worldPxH=WH*TS;
+const minZoomRX=canvasEl.width/worldPxW,minZoomRY=canvasEl.height/worldPxH;
+const minZoomR=Math.max(minZoomRX,minZoomRY,0.4);
+if(zoom<minZoomR){zoom=minZoomR;targetZoom=Math.max(targetZoom,minZoomR)}
+// Clamp camera to world bounds
 const viewW=canvasEl.width/zoom,viewH=canvasEl.height/zoom;
-vpX=Math.min(0,Math.max(-(worldPxW-viewW),vpX));
-vpY=Math.min(0,Math.max(-(worldPxH-viewH),vpY));
+const maxCamX=worldPxW-viewW,maxCamY=worldPxH-viewH;
+vpX=Math.min(0,Math.max(-maxCamX,vpX));
+vpY=Math.min(0,Math.max(-maxCamY,vpY));
 
 const cw=canvasEl.width,ch=canvasEl.height;
 // Fill with ocean color before anything (eliminates black void)
@@ -3536,6 +3561,9 @@ for(let i=0;i<agentRenderData.length;i++){
 
 // Sort everything by Y (bottom/ground contact point)
 renderItems.sort((a2,b2)=>a2.sortY-b2.sortY);
+// Off-screen rendering guard: cap visible objects to prevent zoom-out crash
+const MAX_VISIBLE=500;
+if(renderItems.length>MAX_VISIBLE)renderItems.length=MAX_VISIBLE;
 
 // PASS 1: Draw ALL shadows first (under everything)
 for(const item of renderItems){
