@@ -855,17 +855,19 @@ function drawCompletedBuilding(c,b,bx,by,bw,bh,fr){
   const roofC=ROOF_COL[fc]||ROOF_COL.neutral;
   const roofL=ROOF_LIGHT[fc]||ROOF_LIGHT.neutral;
   const h=tileHash(b.x||0,b.y||0);
-  const SD=6;// 3D side depth
+  const SD=10;// 3D side depth — VISIBLE
+  const SS=-6;// side shift up for perspective
+  // Helper: parse hex to darkened rgb
+  function dk(hex,amt){const r=parseInt(hex.slice(1,3),16),g=parseInt(hex.slice(3,5),16),b2=parseInt(hex.slice(5,7),16);return`rgb(${r*(1-amt)|0},${g*(1-amt)|0},${b2*(1-amt)|0})`}
 
-  // Shadow
-  c.fillStyle='rgba(0,0,0,0.25)';c.fillRect(bx+SD,by+bh,bw,8);
+  // Bottom shadow strip
+  c.fillStyle='rgba(0,0,0,0.25)';c.fillRect(bx-2,by+bh,bw+SD+4,4);
 
-  // Foundation
+  // Foundation (wider than walls)
   c.fillStyle='#4a3a28';c.fillRect(bx-2,by+bh-3,bw+SD+4,5);
-  c.fillStyle='#3a2a18';c.fillRect(bx-2,by+bh+2,bw+SD+4,1);
 
   // WALLS — front face
-  const wallH=bh-Math.max(8,bh*0.25);
+  const wallH=bh-Math.max(10,bh*0.28);
   const wallY=by+bh-wallH;
   c.fillStyle=cols.color;c.fillRect(bx,wallY,bw,wallH);
   // Brick pattern
@@ -875,34 +877,39 @@ function drawCompletedBuilding(c,b,bx,by,bw,bh,fr){
     const off=(row%2)*4;
     for(let col=off;col<bw-2;col+=8)c.fillRect(bx+col+1,wallY+row*6+1,6,4);
   }
+  // Left bright edge
+  c.fillStyle='rgba(255,255,255,0.1)';c.fillRect(bx,wallY,2,wallH);
 
-  // 3D SIDE WALL — parallelogram on right
-  c.fillStyle='rgba(0,0,0,0.25)';
-  c.beginPath();c.moveTo(bx+bw,wallY);c.lineTo(bx+bw+SD,wallY-4);c.lineTo(bx+bw+SD,wallY+wallH-4);c.lineTo(bx+bw,wallY+wallH);c.closePath();c.fill();
-  // Side wall base color
-  const sideCol=cols.color;
-  c.fillStyle=sideCol;c.globalAlpha=0.6;
-  c.beginPath();c.moveTo(bx+bw,wallY);c.lineTo(bx+bw+SD,wallY-4);c.lineTo(bx+bw+SD,wallY+wallH-4);c.lineTo(bx+bw,wallY+wallH);c.closePath();c.fill();
-  c.globalAlpha=1;
+  // RIGHT SIDE WALL — 10px wide, CLEARLY darker (35%)
+  c.fillStyle=dk(cols.color,0.35);
+  c.beginPath();
+  c.moveTo(bx+bw,wallY);c.lineTo(bx+bw+SD,wallY+SS);
+  c.lineTo(bx+bw+SD,wallY+wallH+SS);c.lineTo(bx+bw,wallY+wallH);
+  c.closePath();c.fill();
 
-  // ROOF with depth
-  const roofOH=5;
-  const roofH=Math.max(8,bh*0.25);
+  // ROOF with 4px overhang each side
+  const roofOH=6;
+  const roofH=Math.max(10,bh*0.28);
   if(tall){
+    // Pointed roof front
     c.fillStyle=roofC;
     c.beginPath();c.moveTo(bx-roofOH,wallY);c.lineTo(bx+bw/2,wallY-roofH*1.3);c.lineTo(bx+bw+roofOH,wallY);c.fill();
-    // Roof side depth
-    c.fillStyle=roofL;c.beginPath();c.moveTo(bx+bw+roofOH,wallY);c.lineTo(bx+bw/2,wallY-roofH*1.3);c.lineTo(bx+bw/2+SD,wallY-roofH*1.3-3);c.lineTo(bx+bw+roofOH+SD,wallY-4);c.closePath();c.fill();
+    // Pointed roof SIDE (right face)
+    c.fillStyle=dk(roofC,0.3);
+    c.beginPath();c.moveTo(bx+bw+roofOH,wallY);c.lineTo(bx+bw/2,wallY-roofH*1.3);
+    c.lineTo(bx+bw/2+SD,wallY-roofH*1.3+SS);c.lineTo(bx+bw+roofOH+SD,wallY+SS);c.closePath();c.fill();
   }else{
+    // Flat roof front
     c.fillStyle=roofC;c.fillRect(bx-roofOH,wallY-roofH,bw+roofOH*2,roofH);
-    // Roof side depth
-    c.fillStyle=roofL;
-    c.beginPath();c.moveTo(bx+bw+roofOH,wallY-roofH);c.lineTo(bx+bw+roofOH+SD,wallY-roofH-3);c.lineTo(bx+bw+roofOH+SD,wallY-3);c.lineTo(bx+bw+roofOH,wallY);c.closePath();c.fill();
+    // Flat roof SIDE (right face) — parallelogram
+    c.fillStyle=dk(roofC,0.3);
+    c.beginPath();c.moveTo(bx+bw+roofOH,wallY-roofH);c.lineTo(bx+bw+roofOH+SD,wallY-roofH+SS);
+    c.lineTo(bx+bw+roofOH+SD,wallY+SS);c.lineTo(bx+bw+roofOH,wallY);c.closePath();c.fill();
     // Ridge highlight
     c.fillStyle=roofL;c.fillRect(bx-roofOH,wallY-roofH,bw+roofOH*2,2);
-    // Roof underside (dark strip)
-    c.fillStyle='rgba(0,0,0,0.3)';c.fillRect(bx-roofOH,wallY-2,bw+roofOH*2,2);
   }
+  // Roof underside (dark overhang strip)
+  c.fillStyle='rgba(0,0,0,0.35)';c.fillRect(bx-roofOH,wallY-2,bw+roofOH*2,3);
 
   // DOOR with depth + porch
   const dw=Math.min(10,bw*0.2),dh2=Math.min(14,wallH*0.5);
