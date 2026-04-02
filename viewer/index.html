@@ -2319,10 +2319,17 @@ function createSettlement(agentId,tx,ty){
 }
 
 function getSettlementRing(buildingType){
-  if(RING1_TYPES.has(buildingType))return{min:2,max:4};// close to center
-  if(RING2_TYPES.has(buildingType))return{min:4,max:7};// homes
-  if(RING3_TYPES.has(buildingType))return{min:7,max:10};// industry
-  return{min:10,max:14};// defense/decorative
+  if(RING1_TYPES.has(buildingType))return{min:1,max:3};// close to center
+  if(RING2_TYPES.has(buildingType))return{min:2,max:5};// homes (tighter)
+  if(RING3_TYPES.has(buildingType))return{min:4,max:7};// industry
+  return{min:6,max:10};// defense/decorative
+}
+
+function getSettlementPhase(bldCount){
+  if(bldCount<=3)return{name:'Camp',id:0};
+  if(bldCount<=8)return{name:'Village',id:1};
+  if(bldCount<=15)return{name:'Town',id:2};
+  return{name:'City',id:3};
 }
 
 function checkVillages(){
@@ -2332,8 +2339,18 @@ function checkVillages(){
     if(blds.length>0){
       let cx2=0,cy2=0;for(const b of blds){cx2+=b.x;cy2+=b.y}
       s.cx=cx2/blds.length;s.cy=cy2/blds.length;
-      s.radius=Math.max(6,blds.length*2);
+      // Slow radius growth — pack tight before expanding
+      s.radius=Math.max(4,Math.min(blds.length+3,20));
       s.buildings=blds;
+      // Settlement phase transitions
+      const phase=getSettlementPhase(blds.length);
+      if(!s.phase)s.phase=0;
+      if(phase.id>s.phase){
+        s.phase=phase.id;
+        const phaseEmoji=['🏕️','🏘️','🏰','🌆'][phase.id];
+        showDramaBanner(`${phaseEmoji} ${s.name} grew into a ${phase.name}!`);
+        gameEvent(`${phaseEmoji} ${s.name} grew into a ${phase.name}!`,'build_complete');
+      }
     }
     // Sync to villages array
     const vl=villages.find(v2=>v2.name===s.name);
@@ -2407,8 +2424,8 @@ function canPlaceAt(tx,ty,pw2,ph2){
     const bi=tBiomes[py2*WW+px2];
     if(bi===0||bi===1||bi===10)return false;
   }
-  // Check overlap with ALL existing buildings — 35px margin (GENEROUS)
-  const MARGIN=50;
+  // Check overlap with ALL existing buildings — 20px margin (tight, dense)
+  const MARGIN=20;
   for(const eb of G.clientBuildings){
     const ebw=eb.pw||(eb.width||1)*TS;
     const ebh=eb.ph||(eb.height||1)*TS;
@@ -2468,9 +2485,9 @@ function pickBuildSite(bdef,agentId){
     if(!sett)return null;
   }
 
-  // GRID PLOT SYSTEM: buildings placed along N/S/E/W roads from center
-  const plotDist=Math.ceil(75/TS);// 75px between plot centers in tiles
-  const sideOff=Math.ceil(45/TS);// offset from road center to building
+  // GRID PLOT SYSTEM: buildings placed along N/S/E/W roads from center (tight)
+  const plotDist=Math.ceil(55/TS);// 55px between plot centers in tiles (dense)
+  const sideOff=Math.ceil(35/TS);// offset from road center to building
   const isPublic=RING1_TYPES.has(bdef.type);
   const isIndustrial=RING3_TYPES.has(bdef.type);
 
@@ -3274,6 +3291,34 @@ for(const s of settlements){
       }
     }
   }
+  // GROUND CLUTTER (settlement density cues) — phase 2+
+  if(settBlds2.length>=4){
+    const clutterSeed=tileHash(Math.round(s.cx),Math.round(s.cy));
+    const clutterCount=Math.min(settBlds2.length*2,20);
+    const rng5=new SeededRNG(clutterSeed);
+    for(let ci=0;ci<clutterCount;ci++){
+      const cx5=scx+(rng5.next()-0.5)*s.radius*ts*1.2;
+      const cy5=scy+(rng5.next()-0.5)*s.radius*ts*1.2;
+      const ctype=rng5.next();
+      if(ctype<0.25){// Hay bale
+        ctx.fillStyle='#a08828';ctx.fillRect(cx5-3,cy5-2,6,4);
+        ctx.fillStyle='#b09838';ctx.fillRect(cx5-3,cy5-2,6,1);
+      }else if(ctype<0.45){// Barrel
+        ctx.fillStyle='#6a4a28';ctx.beginPath();ctx.arc(cx5,cy5,3,0,Math.PI*2);ctx.fill();
+        ctx.fillStyle='#5a3a18';ctx.fillRect(cx5-3,cy5-1,6,1);
+      }else if(ctype<0.6){// Crate
+        ctx.fillStyle='#7a5a30';ctx.fillRect(cx5-3,cy5-3,6,6);
+        ctx.fillStyle='#6a4a20';ctx.fillRect(cx5-3,cy5-1,6,1);ctx.fillRect(cx5-1,cy5-3,1,6);
+      }else if(ctype<0.75){// Sign post
+        ctx.fillStyle='#5a3a18';ctx.fillRect(cx5,cy5-8,2,8);
+        ctx.fillStyle='#7a5a30';ctx.fillRect(cx5-4,cy5-9,10,4);
+      }else{// Flower pot / hedge
+        ctx.fillStyle='#3a6a20';ctx.fillRect(cx5-2,cy5-2,4,3);
+        if(rng5.next()<0.5){ctx.fillStyle='#aa5050';ctx.fillRect(cx5-1,cy5-3,1,1)}
+      }
+    }
+  }
+
   // WELL at settlement center (if no fountain already drawn)
   if(settBlds2.length>=2&&G.era<2){
     ctx.strokeStyle='#7a7680';ctx.lineWidth=2;ctx.beginPath();ctx.arc(scx,scy,8,0,Math.PI*2);ctx.stroke();
