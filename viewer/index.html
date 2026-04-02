@@ -84,6 +84,8 @@ canvas{display:block;image-rendering:pixelated;image-rendering:crisp-edges}
   <div id="canvas-wrap">
     <canvas id="world"></canvas>
     <div id="tooltip"></div>
+    <div id="drama-banner" style="position:absolute;top:45%;left:-100%;width:100%;padding:10px 0;background:rgba(10,10,30,0.9);border-top:2px solid #f0c040;border-bottom:2px solid #f0c040;text-align:center;color:#f0c040;font:bold 14px 'Courier New',monospace;z-index:300;transition:left 0.4s ease;letter-spacing:1px;text-shadow:0 0 10px rgba(240,192,64,0.4);pointer-events:none"></div>
+    <div id="tracking-indicator" style="position:absolute;top:8px;left:8px;background:rgba(10,10,30,0.7);padding:3px 8px;border-radius:3px;color:#f0c040;font:bold 10px 'Courier New',monospace;display:none;z-index:200"></div>
     <div id="conn-overlay"><h2>Connecting...</h2><p>Waiting for game server...</p></div>
   </div>
   <div id="sidebar">
@@ -123,7 +125,6 @@ canvas{display:block;image-rendering:pixelated;image-rendering:crisp-edges}
       <div id="influence-cd" style="font-size:8px;color:var(--dim);margin-top:2px"></div>
     </div>
   </div>
-  <div id="drama-banner" style="position:fixed;top:45%;left:-100%;width:100%;padding:12px 0;background:rgba(10,10,30,0.9);border-top:2px solid #f0c040;border-bottom:2px solid #f0c040;text-align:center;color:#f0c040;font:bold 16px 'Courier New',monospace;z-index:700;transition:left 0.4s ease;letter-spacing:1px;text-shadow:0 0 10px rgba(240,192,64,0.4)"></div>
   <div id="bottom-bar">
     <div class="res-item"><span class="res-icon">🪵</span> <span class="res-val" id="r-wood">0</span><span class="res-need" id="rn-wood"></span></div>
     <div class="res-item"><span class="res-icon">🪨</span> <span class="res-val" id="r-stone">0</span><span class="res-need" id="rn-stone"></span></div>
@@ -745,7 +746,9 @@ const BNames={town_hall:'Town Hall',farmstead:'Farmstead',lumber_mill:'Lumber Mi
 const canvasEl=document.getElementById('world'),ctx=canvasEl.getContext('2d'),wrap=document.getElementById('canvas-wrap');
 let vpX=0,vpY=0,zoom=1,dragging=false,dsx=0,dsy=0,dvx=0,dvy=0,mx=-1,my=-1,selAgent=null;
 function resize(){canvasEl.width=wrap.clientWidth;canvasEl.height=wrap.clientHeight}
-wrap.addEventListener('mousedown',e=>{lastInputFrame=frame;if(tvMode)tvMode=false;if(e.button===0){dragging=true;dsx=e.clientX;dsy=e.clientY;dvx=vpX;dvy=vpY;if(cursorGrab)setCursor('grab')}});
+wrap.addEventListener('mousedown',e=>{lastInputFrame=frame;if(tvMode)tvMode=false;
+  if(followAgent&&!tvMode){followAgent=null;const ti3=document.getElementById('tracking-indicator');if(ti3)ti3.style.display='none'}// release tracking on click
+  if(e.button===0){dragging=true;dsx=e.clientX;dsy=e.clientY;dvx=vpX;dvy=vpY;if(cursorGrab)setCursor('grab')}});
 window.addEventListener('mousemove',e=>{if(dragging){vpX=dvx+(e.clientX-dsx)/zoom;vpY=dvy+(e.clientY-dsy)/zoom}const r=canvasEl.getBoundingClientRect();mx=e.clientX-r.left;my=e.clientY-r.top});
 window.addEventListener('mouseup',()=>{dragging=false;setCursor('normal')});
 let targetZoom=1;
@@ -2621,23 +2624,36 @@ if(panTarget&&panFrames>0){
 }
 // Smooth zoom lerp
 if(Math.abs(zoom-targetZoom)>0.01)zoom+=(targetZoom-zoom)*0.08;
-// Follow agent mode
-if(followAgent&&!panTarget){
+// Follow agent mode — smooth lock onto tracked agent
+if(followAgent){
   const fv=agentVisual.get(followAgent);
-  if(fv){vpX+=(canvasEl.width/(2*zoom)-fv.x*WW*TS-TS/2-vpX)*0.03;vpY+=(canvasEl.height/(2*zoom)-fv.y*WH*TS-TS/2-vpY)*0.03}
+  if(fv){
+    const targetVpX2=canvasEl.width/(2*zoom)-fv.x*WW*TS-TS/2;
+    const targetVpY2=canvasEl.height/(2*zoom)-fv.y*WH*TS-TS/2;
+    vpX+=(targetVpX2-vpX)*0.08;vpY+=(targetVpY2-vpY)*0.08;// smooth track
+  }
 }
 // TV Mode: auto-camera when idle
 if(frame-lastInputFrame>TV_IDLE_THRESHOLD&&!tvMode&&!panTarget){tvMode=true;tvModeTimer=0}
 if(tvMode){
   tvModeTimer++;
-  if(tvModeTimer%300===0){// every 5 sec, pan to something interesting
-    const active=S.agents.filter(a2=>{const st2=agentState.get(a2.id);return st2&&st2.state!=='idle'});
-    if(active.length>0){
-      const a2=active[Math.floor(Math.random()*active.length)];
-      const v2=agentVisual.get(a2.id);
-      if(v2){panToWorld(v2.x*WW,v2.y*WH,1.2+Math.random()*0.6,45)}
+  if(tvModeTimer%480===0){// every 8 sec — zoom out, pan, zoom in rhythm
+    // Prioritize: building > mining/chopping > socializing > anything active
+    const interestScore=st2=>{if(!st2)return 0;if(st2.state==='building')return 4;if(st2.state==='chopping'||st2.state==='mining'||st2.state==='mining_gold')return 3;return st2.state!=='idle'?1:0};
+    const ranked=S.agents.map(a2=>({a:a2,score:interestScore(agentState.get(a2.id))})).filter(r=>r.score>0).sort((a3,b3)=>b3.score-a3.score);
+    if(ranked.length>0){
+      const pick=ranked[Math.min(Math.floor(Math.random()*3),ranked.length-1)];// top 3
+      const v2=agentVisual.get(pick.a.id);
+      if(v2){
+        // Cinematic: zoom out first, then zoom in on subject
+        panToWorld(v2.x*WW,v2.y*WH,2.0,40);
+        followAgent=pick.a.id;// track them
+        panHighlight={id:pick.a.id,timer:480};
+      }
     }
   }
+  // Release follow after spotlight time
+  if(tvModeTimer%480>400&&followAgent){followAgent=null}
 }
 if(panHighlight&&panHighlight.timer>0)panHighlight.timer--;
 updateAgentMovement();
@@ -3285,7 +3301,10 @@ function updateParticles(){
 }
 
 let shiftDown=false;
-window.addEventListener('keydown',e=>{if(e.key==='Shift')shiftDown=true});
+window.addEventListener('keydown',e=>{
+  if(e.key==='Shift')shiftDown=true;
+  if(e.key==='Escape'){followAgent=null;tvMode=false;const ti4=document.getElementById('tracking-indicator');if(ti4)ti4.style.display='none';lastInputFrame=frame}
+});
 window.addEventListener('keyup',e=>{if(e.key==='Shift')shiftDown=false});
 
 function updateTooltip(){
@@ -3366,10 +3385,15 @@ function selAg(id){
   if(tvMode){tvMode=false}
   trackAgentClick(id);
   if(a){
+    followAgent=a.id;// LOCK camera onto agent
     const v=agentVisual.get(a.id);
     const tx=v?v.x*WW:a.x,ty=v?v.y*WH:a.y;
-    panToWorld(tx,ty,1.5,30);
-    panHighlight={id:a.id,timer:120};
+    panToWorld(tx,ty,1.8,30);
+    targetZoom=1.8;
+    panHighlight={id:a.id,timer:300};// 5 sec highlight
+    // Show tracking indicator
+    const ti2=document.getElementById('tracking-indicator');
+    if(ti2){ti2.textContent=`\uD83D\uDD12 Tracking: ${a.name}`;ti2.style.display=''}
     addBubble(a,getActionText(a));
   }
   updateAgentList();
