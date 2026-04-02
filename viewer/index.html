@@ -2220,28 +2220,30 @@ function findNearestDetail(vx,vy,types){
 }
 
 function canPlaceAt(tx,ty,pw2,ph2){
-  // Check biome at center and corners of footprint
-  const pts=[[tx,ty],[tx-1,ty-1],[tx+Math.ceil(pw2/TS),ty-1],[tx-1,ty+Math.ceil(ph2/TS)],[tx+Math.ceil(pw2/TS),ty+Math.ceil(ph2/TS)]];
-  for(const[px2,py2] of pts){
+  // Check biome at center and corners
+  const twid=Math.ceil(pw2/TS),thei=Math.ceil(ph2/TS);
+  for(const[px2,py2] of [[tx,ty],[tx,ty+thei],[tx+twid,ty],[tx+twid,ty+thei]]){
     if(px2<0||px2>=WW||py2<0||py2>=WH)return false;
     const bi=tBiomes[py2*WW+px2];
-    if(['deep_water','shallow_water','river'].includes(BL[bi]))return false;
+    if(bi===0||bi===1||bi===10)return false;// deep_water, shallow_water, river
   }
-  // Check overlap with existing buildings (20px margin in tile units ≈ 1 tile)
+  // Check overlap: pixel center-to-center distance with 25px margin
+  const ncx=tx*TS+pw2/2,ncy=ty*TS+ph2/2;
   for(const eb of G.clientBuildings){
-    const ebw=(eb.pw||eb.width*TS||TS)/TS,ebh=(eb.ph||eb.height*TS||TS)/TS;
-    if(Math.abs(eb.x-tx)<(Math.ceil(pw2/TS)+ebw)/2+2&&Math.abs(eb.y-ty)<(Math.ceil(ph2/TS)+ebh)/2+2)return false;
+    const ebw=eb.pw||(eb.width||1)*TS,ebh=eb.ph||(eb.height||1)*TS;
+    const ecx=eb.x*TS+ebw/2,ecy=eb.y*TS+ebh/2;
+    if(Math.abs(ncx-ecx)<(pw2+ebw)/2+25&&Math.abs(ncy-ecy)<(ph2+ebh)/2+25)return false;
   }
   return true;
 }
 
 function clearDetailsAtBuilding(tx,ty,pw2,ph2){
-  // Remove harvested markers and add new ones to clear trees from building footprint
-  const margin=1;// tile margin
-  for(let dy=-margin;dy<=Math.ceil(ph2/TS)+margin;dy++){
-    for(let dx=-margin;dx<=Math.ceil(pw2/TS)+margin;dx++){
-      const cx2=(tx+dx)*TS,cy2=(ty+dy)*TS;
-      harvestables.set(`${cx2},${cy2}`,true);// mark as harvested → trees won't render
+  // Mark ALL tile positions within footprint + 2 tile margin as harvested
+  const margin=2;
+  const twid=Math.ceil(pw2/TS),thei=Math.ceil(ph2/TS);
+  for(let dy=-margin;dy<=thei+margin;dy++){
+    for(let dx=-margin;dx<=twid+margin;dx++){
+      harvestables.set(`${(tx+dx)*TS},${(ty+dy)*TS}`,true);
     }
   }
 }
@@ -3209,15 +3211,9 @@ if(weatherState.type==='rain'){
   }
 }
 
-// AMBIENT CREATURES (skip in slow mode)
-if(!_slowMode){
-updateAmbientCreatures(cw2,ch2);
-for(const bf of ambientButterflies){
-  ctx.fillStyle=bf.col;
-  ctx.fillRect(bf.x-1,bf.y-1,3,3);
-  ctx.fillRect(bf.x-3,bf.y,2,2);ctx.fillRect(bf.x+2,bf.y,2,2);
-}
-}// end slow mode skip
+// Ambient creatures: butterflies REMOVED (were screen-space, moved with camera)
+// Birds are drawn in world-space inside the camera transform (see render loop above)
+if(!_slowMode){updateAmbientCreatures(cw2,ch2)}// still updates fish/leaves
 
 // 6. PULSE LIVE INDICATOR + TV MODE + WORLD CLOCK
 const liveEl=document.getElementById('h-status');
