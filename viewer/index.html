@@ -2919,12 +2919,71 @@ for(const s of settlements){
     }
     ctx.lineWidth=1;
   }
+  // Central plaza (3+ buildings)
+  if(s.buildings.length>=3){
+    // Plaza ground
+    ctx.fillStyle='rgba(154,138,112,0.15)';
+    ctx.beginPath();ctx.arc(scx,scy,22,0,Math.PI*2);ctx.fill();
+    // Central feature based on era
+    if(G.era>=2){// Fountain
+      ctx.fillStyle='#8a8890';ctx.beginPath();ctx.arc(scx,scy,8,0,Math.PI*2);ctx.fill();
+      ctx.fillStyle='#4488cc';ctx.beginPath();ctx.arc(scx,scy,5,0,Math.PI*2);ctx.fill();
+      if(frame%20<10){ctx.fillStyle='rgba(100,180,255,0.3)';ctx.beginPath();ctx.arc(scx,scy-3,2,0,Math.PI*2);ctx.fill()}
+    }else{// Well
+      ctx.fillStyle='#7a7a80';ctx.beginPath();ctx.arc(scx,scy,6,0,Math.PI*2);ctx.stroke();
+      ctx.fillStyle='#2a4a6a';ctx.beginPath();ctx.arc(scx,scy,4,0,Math.PI*2);ctx.fill();
+      ctx.fillStyle='#6a4a20';ctx.fillRect(scx+5,scy-8,2,8);// bucket pole
+    }
+  }
+  // Farm fields near farm buildings
+  for(const fb of G.clientBuildings){
+    if(fb.settlement!==s.name||fb.type!=='farm'||!fb.complete)continue;
+    const ffx=fb.x*ts-10,ffy=fb.y*ts+(fb.ph||40)+4;
+    for(let row=0;row<5;row++){
+      ctx.fillStyle=row%2===0?'#5a4a28':'#4a7a2a';
+      ctx.fillRect(ffx,ffy+row*4,50,3);
+    }
+    // Crop sprites
+    ctx.fillStyle='#3a8a2a';
+    for(let ci=0;ci<6;ci++)ctx.fillRect(ffx+4+ci*8,ffy-4,2,5);
+  }
+  // Street lights (Gold Age+, along paths)
+  if(G.era>=2){
+    for(const b of G.clientBuildings){
+      if(b.settlement!==s.name||!b.complete)continue;
+      const bpx=b.x*ts+ts,bpy=b.y*ts+ts;
+      const dist=Math.sqrt((bpx-scx)**2+(bpy-scy)**2);
+      if(dist>30){// place lamp at midpoint of path
+        const lx=(scx+bpx)/2,ly=(scy+bpy)/2;
+        ctx.fillStyle='#3a3030';ctx.fillRect(lx-1,ly-12,2,12);
+        ctx.fillStyle='#ffdd88';ctx.fillRect(lx-1,ly-14,3,3);
+        if(window._isNight){ctx.fillStyle='rgba(255,220,100,0.08)';ctx.beginPath();ctx.arc(lx,ly-10,20,0,Math.PI*2);ctx.fill()}
+      }
+    }
+  }
+  // Building-specific ambient (max 1 particle per building per call)
+  if(!_slowMode&&frame%60===0){
+    for(const b of G.clientBuildings){
+      if(b.settlement!==s.name||!b.complete)continue;
+      if(b.type==='blacksmith')spawnParticle(b.x*ts+ts,b.y*ts,'gold');
+      if(b.type==='lumber_mill')spawnParticle(b.x*ts+ts+5,b.y*ts+ts-5,'debris');
+    }
+  }
+  // Settlement banner on tallest building
+  const tallest=G.clientBuildings.filter(b=>b.settlement===s.name&&b.complete&&b.tall).sort((a2,b2)=>(b2.ph||0)-(a2.ph||0))[0];
+  if(tallest){
+    const bfx=tallest.x*ts+(tallest.pw||ts)/2,bfy=tallest.y*ts-(tallest.ph||ts)*0.3;
+    ctx.fillStyle='#5a3a18';ctx.fillRect(bfx,bfy-18,2,20);
+    ctx.fillStyle=FC[s.faction]||'#888';
+    const wave=Math.sin(frame*0.06)*2;
+    ctx.beginPath();ctx.moveTo(bfx+2,bfy-18);ctx.lineTo(bfx+12,bfy-14+wave);ctx.lineTo(bfx+2,bfy-10);ctx.fill();
+  }
   // Village sign at gate
   if(s.buildings.length>=3){
     const gateA=Math.atan2(scy-WH*ts/2,scx-WW*ts/2)+Math.PI;
     const signX=scx+Math.cos(gateA)*(s.radius*ts+20),signY=scy+Math.sin(gateA)*(s.radius*ts+20);
-    ctx.fillStyle='#5a3a18';ctx.fillRect(signX-1,signY-16,3,16);// pole
-    ctx.fillStyle='#7a5a30';ctx.fillRect(signX-15,signY-14,30,8);// plank
+    ctx.fillStyle='#5a3a18';ctx.fillRect(signX-1,signY-16,3,16);
+    ctx.fillStyle='#7a5a30';ctx.fillRect(signX-15,signY-14,30,8);
     ctx.fillStyle='#ddd';ctx.font='7px Courier New';ctx.textAlign='center';ctx.textBaseline='middle';
     ctx.fillText(s.name,signX,signY-10);
   }
