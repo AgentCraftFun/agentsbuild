@@ -2190,29 +2190,60 @@ function findNearestDetail(vx,vy,types){
   return null;
 }
 
+function canPlaceAt(tx,ty,pw2,ph2){
+  // Check biome at center and corners of footprint
+  const pts=[[tx,ty],[tx-1,ty-1],[tx+Math.ceil(pw2/TS),ty-1],[tx-1,ty+Math.ceil(ph2/TS)],[tx+Math.ceil(pw2/TS),ty+Math.ceil(ph2/TS)]];
+  for(const[px2,py2] of pts){
+    if(px2<0||px2>=WW||py2<0||py2>=WH)return false;
+    const bi=tBiomes[py2*WW+px2];
+    if(['deep_water','shallow_water','river'].includes(BL[bi]))return false;
+  }
+  // Check overlap with existing buildings (20px margin in tile units ≈ 1 tile)
+  for(const eb of G.clientBuildings){
+    const ebw=(eb.pw||eb.width*TS||TS)/TS,ebh=(eb.ph||eb.height*TS||TS)/TS;
+    if(Math.abs(eb.x-tx)<(Math.ceil(pw2/TS)+ebw)/2+2&&Math.abs(eb.y-ty)<(Math.ceil(ph2/TS)+ebh)/2+2)return false;
+  }
+  return true;
+}
+
+function clearDetailsAtBuilding(tx,ty,pw2,ph2){
+  // Remove harvested markers and add new ones to clear trees from building footprint
+  const margin=1;// tile margin
+  for(let dy=-margin;dy<=Math.ceil(ph2/TS)+margin;dy++){
+    for(let dx=-margin;dx<=Math.ceil(pw2/TS)+margin;dx++){
+      const cx2=(tx+dx)*TS,cy2=(ty+dy)*TS;
+      harvestables.set(`${cx2},${cy2}`,true);// mark as harvested → trees won't render
+    }
+  }
+}
+
 function pickBuildSite(bdef,agentId){
   const rng3=new SeededRNG(frame+G.clientBuildings.length*7);
-  // Prefer building near agent's existing buildings
+  const pw2=bdef.pw||bdef.w*TS,ph2=bdef.ph||bdef.h*TS;
   const owned=G.clientBuildings.filter(b=>b.owner===agentId&&b.complete);
+
+  // Try grid-based placement near existing buildings first
+  if(owned.length>0){
+    // Find settlement center
+    let scx=0,scy=0;for(const ob of owned){scx+=ob.x;scy+=ob.y}
+    scx/=owned.length;scy/=owned.length;
+    // Try grid offsets around center
+    const gridW=Math.ceil(pw2/TS)+3,gridH=Math.ceil(ph2/TS)+3;
+    for(let gi=0;gi<20;gi++){
+      const gx2=Math.round(scx)+((gi%5)-2)*gridW+(Math.round(rng3.next()*2)-1);
+      const gy2=Math.round(scy)+(Math.floor(gi/5)-2)*gridH+(Math.round(rng3.next()*2)-1);
+      const tx=Math.max(1,Math.min(WW-3,gx2)),ty=Math.max(1,Math.min(WH-3,gy2));
+      if(canPlaceAt(tx,ty,pw2,ph2)){clearDetailsAtBuilding(tx,ty,pw2,ph2);return{x:tx,y:ty}}
+    }
+  }
+  // Fallback: random placement
   for(let i=0;i<30;i++){
-    let bx,by;
-    if(owned.length>0&&Math.random()<0.7){
-      // Near existing owned building
-      const ref=owned[Math.floor(Math.random()*owned.length)];
-      bx=(ref.x+((rng3.next()-0.5)*16))/WW;
-      by=(ref.y+((rng3.next()-0.5)*12))/WH;
-    }else{
-      bx=0.15+rng3.next()*0.7;by=0.15+rng3.next()*0.7;
-    }
-    const tx=Math.max(1,Math.min(WW-2,Math.floor(bx*WW)));
-    const ty=Math.max(1,Math.min(WH-2,Math.floor(by*WH)));
-    const bi=tBiomes[ty*WW+tx];
-    if(['deep_water','shallow_water','river'].includes(BL[bi]))continue;
-    let ok=true;
-    for(const eb of G.clientBuildings){
-      if(Math.abs(eb.x-tx)+Math.abs(eb.y-ty)<8){ok=false;break}
-    }
-    if(ok)return{x:tx,y:ty};
+    const bx2=0.1+rng3.next()*0.8,by2=0.1+rng3.next()*0.8;
+    const tx=Math.max(1,Math.min(WW-3,Math.floor(bx2*WW)));
+    const ty=Math.max(1,Math.min(WH-3,Math.floor(by2*WH)));
+    if(canPlaceAt(tx,ty,pw2,ph2)){clearDetailsAtBuilding(tx,ty,pw2,ph2);return{x:tx,y:ty}}
+  }
+  return null;
   }
   return null;
 }
@@ -2808,7 +2839,8 @@ for(const d of details){if(!groundTypes.has(d.t))renderItems.push({type:'detail'
 const sortedBuildings=[...S.buildings];
 for(const b of sortedBuildings){
   if(b.x+(b.width||1)<sx||b.x>=ex||b.y+(b.height||1)<sy||b.y>=ey)continue;
-  renderItems.push({type:'building',b,sortY:(b.y+(b.height||1))*ts});
+  const bph=b.ph||(b.height||1)*ts;
+  renderItems.push({type:'building',b,sortY:b.y*ts+bph});// sort by visual bottom edge
 }
 // Agents — compute animation state
 const agentRenderData=[];
