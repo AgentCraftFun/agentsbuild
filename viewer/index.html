@@ -2849,13 +2849,21 @@ for(let i=footprints.length-1;i>=0;i--){if(!footprints[i]||footprints[i].life<=0
 G.clientBuildings=G.clientBuildings.filter(b=>b&&typeof b.x==='number'&&isFinite(b.x)&&typeof b.y==='number'&&isFinite(b.y));
 // Frame timing
 const _now=performance.now(),_dt=_now-_lastFrameTime;_lastFrameTime=_now;
-_slowMode=_dt>50;// update existing slow mode flag
-const _lowPerf=_dt>100;// if last frame >100ms, skip more
+_slowMode=_dt>50;const _lowPerf=_dt>100;
+if(_dt>50){_slowFrames=(_slowFrames||0)+1;if(_slowFrames>=3)console.warn('3+ slow frames:',Math.round(_dt)+'ms')}else{_slowFrames=0}
 _frameTimes.push(_dt);if(_frameTimes.length>60)_frameTimes.shift();
-_slowMode=_dt>32;// below 30fps
+// _slowMode already set above
 frame++;G.tick=frame;
 // Heartbeat every 60 seconds
-if(frame%(60*60)===0)console.log(`Game heartbeat: ${frame} frames, ${S.agents.length} agents, ${G.clientBuildings.length} buildings, ${particles.length} particles, ${footprints.length} footprints`);
+// Heartbeat + memory management every 30 seconds
+if(frame%(60*30)===0){
+  console.log(`Heartbeat: ${frame}f, ${S.agents.length}ag, ${G.clientBuildings.length}bld, ${particles.length}ptcl, ${footprints.length}fp, ${wildAnimals.length}anim`);
+  // Truncate any oversized arrays
+  while(particles.length>20)particles.pop();
+  while(footprints.length>30)footprints.pop();
+  while(wildAnimals.length>40)wildAnimals.pop();
+  while(G.clientBuildings.length>50){G.clientBuildings.pop();console.warn('Building cap enforced')}
+}
 // Periodic cleanup sweep every 60 seconds
 if(frame%(60*60)===30){
   for(let i=particles.length-1;i>=0;i--)if(!particles[i]||particles[i].life>=particles[i].maxLife)particles.splice(i,1);
@@ -3312,10 +3320,10 @@ for(let y=sy;y<ey;y++){for(let x=sx;x<ex;x++){
 
 // === LAYERED DRAW ORDER ===
 
-// Layer 2: Ground-level details (lily pads, flowers, tall grass, mushrooms)
-const details=getDetails(sx,sy,ex,ey);
+// Layer 2: Ground-level details (skip in lowPerf mode)
+const details=_lowPerf?[]:getDetails(sx,sy,ex,ey);
 const groundTypes=new Set(['lilypad','flower','tallgrass','mushroom']);
-for(const d of details){if(groundTypes.has(d.t))drawDetail(ctx,d,frame)}
+if(!_lowPerf){for(const d of details){if(groundTypes.has(d.t))drawDetail(ctx,d,frame)}}
 
 // Territory overlays
 for(const t of S.tiles){if(t.x<sx||t.x>=ex||t.y<sy||t.y>=ey)continue;if(t.owner){const ag=agentById(t.owner);if(ag){ctx.fillStyle=FC[ag.faction]||'#888';ctx.globalAlpha=0.15;ctx.fillRect(t.x*ts,t.y*ts,ts,ts);ctx.globalAlpha=1;
@@ -4596,24 +4604,31 @@ function getLeaderboards(){
 
 // === Save/Load System ===
 const SAVE_KEY='agentsAtWork_save';
+let _lastSaveTime=0;
 function saveGame(){
   try{
+    // Pre-save validation: remove corrupt entries
+    G.clientBuildings=G.clientBuildings.filter(b=>b&&isFinite(b.x)&&isFinite(b.y));
+    while(G.clientBuildings.length>50)G.clientBuildings.pop();
     const state={version:2,savedAt:Date.now(),tick:frame,era:G.era,
-      wood:G.wood,stone:G.stone,gold:G.gold,food:G.food,
-      buildings:G.clientBuildings.map(b=>({type:b.type,name:b.name,abbr:b.abbr,x:b.x,y:b.y,progress:b.progress,complete:b.complete,faction:b.faction,width:b.width,height:b.height,pw:b.pw,ph:b.ph,tall:b.tall,owner:b.owner,ownerName:b.ownerName,isHome:b.isHome,personalized:b.personalized,personalFaction:b.personalFaction,claimedBy:b.claimedBy})),
-      harvested:[...harvestables.keys()],
-      goldDeposits:goldDeposits.map(g=>({x:g.x,y:g.y,h:g.h,alive:g.alive})),
-      clans:clans.map(c2=>({name:c2.name,members:c2.members,faction:c2.faction})),
-      villages:villages.map(v2=>({name:v2.name,cx:v2.cx,cy:v2.cy,faction:v2.faction})),
-      social:[...agentSocial.entries()].map(([k,v2])=>({id:k,data:v2})),
+      wood:G.wood||0,stone:G.stone||0,gold:G.gold||0,food:G.food||0,
+      buildings:G.clientBuildings.slice(0,50).map(b=>({type:b.type,name:b.name,abbr:b.abbr,x:b.x,y:b.y,progress:b.progress,complete:b.complete,faction:b.faction,width:b.width,height:b.height,pw:b.pw,ph:b.ph,tall:b.tall,owner:b.owner,ownerName:b.ownerName,isHome:b.isHome,personalized:b.personalized,personalFaction:b.personalFaction,claimedBy:b.claimedBy,settlement:b.settlement})),
+      harvested:[...harvestables.keys()].slice(0,500),
+      goldDeposits:goldDeposits.slice(0,20).map(g=>({x:g.x,y:g.y,h:g.h,alive:g.alive})),
+      clans:clans.slice(0,10).map(c2=>({name:c2.name,members:c2.members,faction:c2.faction})),
+      villages:villages.slice(0,10).map(v2=>({name:v2.name,cx:v2.cx,cy:v2.cy,faction:v2.faction})),
+      settlements:settlements.slice(0,10).map(s2=>({name:s2.name,clan:s2.clan,faction:s2.faction,cx:s2.cx,cy:s2.cy,radius:s2.radius,clearRadius:s2.clearRadius})),
+      social:[...agentSocial.entries()].slice(0,20).map(([k,v2])=>({id:k,data:v2})),
       milestones:{...milestones},
       worldStats:{...worldStats},
-      eventLog:eventLog.slice(-100)// save last 100 events
+      eventLog:eventLog.slice(-50)
     };
-    localStorage.setItem(SAVE_KEY,JSON.stringify(state));
-    // Flash save indicator
-    const le=document.getElementById('last-event');
-    if(le){const old=le.textContent;le.textContent='💾 Saved';setTimeout(()=>{le.textContent=old},1500)}
+    const json=JSON.stringify(state);
+    localStorage.setItem(SAVE_KEY,json);
+    // Verify save
+    const verify=localStorage.getItem(SAVE_KEY);
+    if(!verify||verify.length<100){console.warn('Save verification failed!');return}
+    _lastSaveTime=Date.now();
   }catch(e){console.warn('Save failed:',e)}
 }
 function loadGame(){
@@ -4633,6 +4648,7 @@ function loadGame(){
     agentSocial.clear();for(const e of (s.social||[]))agentSocial.set(e.id,e.data);
     if(s.milestones)Object.assign(milestones,s.milestones);
     if(s.worldStats)Object.assign(worldStats,s.worldStats);
+    if(s.settlements){settlements.length=0;for(const s2 of s.settlements)settlements.push(s2)}
     if(s.eventLog){eventLog.length=0;for(const e of s.eventLog)eventLog.push(e)}
     console.log('Game loaded from save, tick:',frame,'buildings:',G.clientBuildings.length);
     return true;
