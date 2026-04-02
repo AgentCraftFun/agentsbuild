@@ -2297,7 +2297,7 @@ function createSettlement(agentId,tx,ty){
   settlements.push(s);
   villages.push({name:s.name,cx:tx,cy:ty,faction:s.faction,buildings:s.buildings});
   // Clear initial settlement zone
-  clearSettlementZone(tx,ty,3);
+  clearSettlementZone(tx,ty,5);// wider initial clearing
   gameEvent(`🏘️ Settlement "${name}" founded!`,'build_complete');
   return s;
 }
@@ -2431,7 +2431,7 @@ function expandSettlementClearing(settlementName){
   const s=settlements.find(s2=>s2.name===settlementName);
   if(!s)return;
   const bldCount=G.clientBuildings.filter(b=>b.settlement===settlementName).length;
-  const newRadius=Math.min(Math.ceil(60/TS)+bldCount,Math.ceil(200/TS));
+  const newRadius=Math.min(Math.ceil(80/TS)+bldCount*2,Math.ceil(300/TS));// wider clearing per building
   if(newRadius>s.clearRadius){
     s.clearRadius=newRadius;
     clearSettlementZone(s.cx,s.cy,newRadius);
@@ -3572,7 +3572,7 @@ for(const item of renderItems){
     }
     // Building label: zoom-dependent
     // <1.0: no labels, 1.0-1.5: settlement names only, 1.5-2.0: near cursor, >2.0: all
-    const showLabel=p>0.5&&(zoom>2.0||(zoom>1.5&&mx>=0&&Math.abs(bx+bw/2-(mx/zoom-vpX))<80&&Math.abs(by+bh/2-(my/zoom-vpY))<80));
+    const showLabel=p>=1&&(zoom>2.0||(zoom>1.5&&mx>=0&&Math.abs(bx+bw/2-(mx/zoom-vpX))<80&&Math.abs(by+bh/2-(my/zoom-vpY))<80));
     if(showLabel){
       const nm=BNames[b.type]||b.type;
       ctx.font='8px Courier New';ctx.globalAlpha=0.6;
@@ -4448,7 +4448,7 @@ function updateWildlife(){
   // Spawn chickens for farms
   for(const b of G.clientBuildings){
     if(b.type==='farm'&&b.complete&&!wildAnimals.find(a2=>a2.farmId===b.x+','+b.y)){
-      for(let ci=0;ci<3;ci++)wildAnimals.push({type:'chicken',wx:b.x+Math.random()*2,wy:b.y+Math.random()*2,vx:0,vy:0,phase:Math.random()*10,life:99999,fleeing:0,farmId:b.x+','+b.y});
+      for(let ci=0;ci<3;ci++)wildAnimals.push({type:'chicken',wx:b.x+(ci-1)*2+Math.random(),wy:b.y+1+ci*1.5+Math.random(),vx:0,vy:0,phase:ci*3.3+Math.random()*2,life:99999,fleeing:0,farmId:b.x+','+b.y});
     }
   }
   // Cap
@@ -4902,7 +4902,7 @@ function saveGame(){
     // Pre-save validation: remove corrupt entries
     G.clientBuildings=G.clientBuildings.filter(b=>b&&isFinite(b.x)&&isFinite(b.y));
     while(G.clientBuildings.length>50)G.clientBuildings.pop();
-    const state={version:4,savedAt:Date.now(),tick:frame,era:G.era,
+    const state={version:5,savedAt:Date.now(),tick:frame,era:G.era,
       wood:G.wood||0,stone:G.stone||0,gold:G.gold||0,food:G.food||0,
       buildings:G.clientBuildings.slice(0,50).map(b=>({type:b.type,name:b.name,abbr:b.abbr,x:b.x,y:b.y,progress:b.progress,complete:b.complete,faction:b.faction,width:b.width,height:b.height,pw:b.pw,ph:b.ph,tall:b.tall,owner:b.owner,ownerName:b.ownerName,isHome:b.isHome,personalized:b.personalized,personalFaction:b.personalFaction,claimedBy:b.claimedBy,settlement:b.settlement})),
       harvested:[...harvestables.keys()].slice(0,500),
@@ -4928,7 +4928,7 @@ function loadGame(){
     const raw=localStorage.getItem(SAVE_KEY);
     if(!raw)return false;
     const s=JSON.parse(raw);
-    if(!s||s.version<4)return false;// v4 = final visual polish reset
+    if(!s||s.version<5)return false;// v5 = chicken/building/settlement fix
     G.era=s.era||0;G.wood=s.wood||0;G.stone=s.stone||0;G.gold=s.gold||0;G.food=s.food||0;
     frame=s.tick||0;
     G.clientBuildings.length=0;
