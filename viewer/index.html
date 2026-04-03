@@ -4389,6 +4389,49 @@ for(const item of renderItems){
     const agTx=Math.floor(ad.vx),agTy=Math.floor(ad.vy);
     const agOnWater=(agTx>=0&&agTx<WW&&agTy>=0&&agTy<WH)?(tBiomes[agTy*WW+agTx]===0||tBiomes[agTy*WW+agTx]===1||tBiomes[agTy*WW+agTx]===10):false;
     drawAgentPixelArt(ctx,ax,ay,ad.a,sel,frame,{walking:ad.isWalking,building:ad.isBuilding,faceLeft:ad.faceLeft,idleFrames:ad.a._idleFrames||0,resting:isResting,carrying,chopping:isChopping2,mining:isMining2,onWater:agOnWater});
+
+    // === DIRECT CHOP/MINE VISUAL EFFECTS on nearby tree/rock ===
+    if(isChopping2&&ast2&&ast2.target){
+      const tx=ast2.target.x,ty=ast2.target.y;
+      // Tree shake effect — wobble the tree at the target position
+      const shakeX=Math.sin(frame*0.5)*3;
+      const shakeIntensity=Math.sin(frame*0.3)*2;
+      ctx.save();
+      ctx.translate(tx+TS/2+shakeX,ty+TS);
+      ctx.rotate(shakeIntensity*Math.PI/180*3);
+      ctx.translate(-tx-TS/2,-ty-TS);
+      // Draw a "hit" flash on the tree trunk area
+      if(frame%15<3){
+        ctx.fillStyle='rgba(255,255,200,0.4)';
+        ctx.fillRect(tx+TS/2-4,ty+TS*0.6,8,8);
+      }
+      // Wood chip particles every 10 frames
+      if(frame%10<2){
+        ctx.fillStyle='#8B6914';
+        for(let i=0;i<3;i++){
+          ctx.fillRect(tx+TS/2+(Math.random()-0.5)*16,ty+TS*0.5+(Math.random()-0.5)*10,3,2);
+        }
+      }
+      ctx.restore();
+    }
+    if(isMining2&&ast2&&ast2.target){
+      const tx=ast2.target.x,ty=ast2.target.y;
+      // Rock crack/shake effect
+      const shakeX=Math.sin(frame*0.7)*2;
+      ctx.save();
+      // Spark flash on impact
+      if(frame%20<3){
+        ctx.fillStyle='rgba(255,255,220,0.5)';
+        ctx.fillRect(tx+TS/2-3+shakeX,ty+TS/2-3,6,6);
+        // Stone chip particles
+        ctx.fillStyle='#888';
+        for(let i=0;i<2;i++){
+          ctx.fillRect(tx+TS/2+(Math.random()-0.5)*12,ty+TS/2+(Math.random()-0.5)*8,2,2);
+        }
+      }
+      ctx.restore();
+    }
+
     // Highlight circle for pan-to-agent
     if(panHighlight&&panHighlight.id===ad.a.id&&panHighlight.timer>0){
       const hAlpha=0.3+0.3*Math.sin(frame*0.15);
