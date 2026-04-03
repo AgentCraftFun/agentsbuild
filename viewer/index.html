@@ -4959,15 +4959,15 @@ let ws=null,reconTimer=null,reconDelay=1000;
 function connectWS(){
 const ov=document.getElementById('conn-overlay');ov.style.display='block';
 try{const p=location.protocol==='https:'?'wss:':'ws:';ws=new WebSocket(`${p}//${location.host}`)}catch(e){schedRecon();return}
-ws.onopen=()=>{S.connected=true;reconDelay=1000;ov.style.display='none';updateHeader();try{localStorage.removeItem(SAVE_KEY)}catch(e){}};
+ws.onopen=()=>{S.connected=true;reconDelay=1000;ov.style.display='none';updateHeader()};
 ws.onmessage=e=>{try{handleMsg(JSON.parse(e.data))}catch(ex){console.warn('[WS] Message error:',ex.message,e.data?.slice?.(0,200))}};
 ws.onclose=()=>{S.connected=false;updateHeader();ov.style.display='block';ov.querySelector('h2').textContent='Disconnected';schedRecon()};
 ws.onerror=()=>{}}
 function schedRecon(){if(reconTimer)clearTimeout(reconTimer);reconTimer=setTimeout(()=>{reconDelay=Math.min(reconDelay*1.5,15000);connectWS()},reconDelay)}
-let _initialSyncDone=false;
+let _initialSyncDone=true;
 function syncServerBuildings(serverBlds){
+  return;// Client manages its own buildings via localStorage — ignore server
   if(!_initialSyncDone&&serverBlds.length>0){
-    // FIRST SYNC: seed client with server buildings so all clients start from same state
     _initialSyncDone=true;
     G.clientBuildings.length=0;
     for(const sb of serverBlds){
@@ -6304,7 +6304,7 @@ try{
   try{initInfluence()}catch(e){console.warn('Influence init failed:',e)}
   try{document.getElementById('h-points').textContent=specPoints}catch(e){}
   // Try loading saved game
-  didLoad=false;// Server is source of truth — don't load stale local state
+  didLoad=loadGame();// Load saved world from localStorage
   if(didLoad)validateGameState();// clean up any corrupt data from save
   let offlineSummary=null;
   if(didLoad){
@@ -6356,7 +6356,7 @@ try{
 setTimeout(()=>{const io=document.getElementById('intro-overlay');if(io){io.classList.add('fade');setTimeout(()=>{if(io.parentNode)io.remove()},2000)}},5000);
 requestAnimationFrame(render);connectWS();
 safeInterval(tickFood,10000);
-// safeInterval(saveGame,30000) — disabled, server persists state
+safeInterval(saveGame,30000);// auto-save every 30 seconds
 safeInterval(regrowResources,60000);// regrow every 1 min (faster)
 window.addEventListener('beforeunload',saveGame);
 // Debug: reset world
