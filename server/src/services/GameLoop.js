@@ -289,7 +289,10 @@ class GameLoop {
   _executeBuild(agent, decision, tick, events) {
     const { building: buildingType, x, y, resume } = decision.payload || {};
 
-    // No building limit — agents build infinitely
+    // Global rate limit: max 1 new building every 5 ticks across all agents
+    if (!resume && this._lastGlobalBuildTick && tick - this._lastGlobalBuildTick < 5) {
+      return;
+    }
 
     // Validate building type
     const info = Building.CATALOG[buildingType];
@@ -357,14 +360,21 @@ class GameLoop {
       }
     }
 
-    // Create building (HQ buildings are free, others cost WORK)
+    // Create building — MUST be able to afford (no more "on credit")
     const cost = Economy.buildCost(buildingType);
     if (cost > 0 && !agent.canAfford(cost)) {
-      // Allow building anyway for demo purposes, but log it
-      events.push({ tick, type: 'build_started', agent: agent.name, message: `${agent.name} started a ${info.name} (on credit - ${cost} WORK owed).` });
-    } else if (cost > 0) {
+      events.push({ tick, type: 'action_failed', agent: agent.name, message: `${agent.name} can't afford ${info.name} (needs ${cost} WORK, has ${agent.work_balance.toFixed(1)})` });
+      return;
+    }
+    if (cost > 0) {
       agent.spendWork(cost);
     }
+
+    // Rate limit: agent can only start 1 building every 10 ticks
+    if (agent._lastBuildTick && tick - agent._lastBuildTick < 10) {
+      return;
+    }
+    agent._lastBuildTick = tick;
 
     const building = new Building({
       type: buildingType,
@@ -378,6 +388,7 @@ class GameLoop {
     tile.building = building;
     agent.buildings.push(building);
     this.world.buildingsList.push(building);
+    this._lastGlobalBuildTick = tick;// track for global rate limit
 
     agent.mood = 'building';
     agent.current_action = { type: 'build', building: buildingType, tileId };

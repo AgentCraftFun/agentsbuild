@@ -63,11 +63,11 @@ class Building {
 
   /**
    * Advance build progress per tick. Higher tiers take longer.
-   * Tier 1: 3 ticks, Tier 2: 8 ticks, Tier 3: 20 ticks
+   * Tier 1: 15 ticks (~45s), Tier 2: 30 ticks (~90s), Tier 3: 60 ticks (~3min)
    */
   advanceProgress(tickDelta = 1) {
     if (this.isComplete()) return;
-    const ticksToComplete = this.tier === 1 ? 3 : this.tier === 2 ? 8 : 20;
+    const ticksToComplete = this.tier === 1 ? 15 : this.tier === 2 ? 30 : 60;
     const rate = 1.0 / ticksToComplete;
     this.progress = Math.min(1.0, this.progress + rate * tickDelta);
   }
