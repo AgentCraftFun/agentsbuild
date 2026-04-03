@@ -3824,6 +3824,7 @@ for(const s of settlements){
     ctx.strokeStyle='#aaa';ctx.lineWidth=1;ctx.beginPath();ctx.moveTo(scx,scy-14);ctx.lineTo(scx,scy-8);ctx.stroke();
   }
   // PROGRESSIVE WALL SEGMENTS (4+ buildings)
+  if(!s.buildings)s.buildings=[];
   if(s.buildings.length>=4){
     const wallR=s.radius*ts+15;
     // Only regenerate walls when settlement grows significantly AND walls are fully complete
@@ -6059,7 +6060,7 @@ function saveGame(){
       goldDeposits:goldDeposits.slice(0,20).map(g=>({x:g.x,y:g.y,h:g.h,alive:g.alive})),
       clans:clans.slice(0,10).map(c2=>({name:c2.name,members:c2.members,faction:c2.faction})),
       villages:villages.slice(0,10).map(v2=>({name:v2.name,cx:v2.cx,cy:v2.cy,faction:v2.faction})),
-      settlements:settlements.slice(0,10).map(s2=>({name:s2.name,clan:s2.clan,faction:s2.faction,cx:s2.cx,cy:s2.cy,radius:s2.radius,clearRadius:s2.clearRadius})),
+      settlements:settlements.slice(0,20).map(s2=>({name:s2.name,clan:s2.clan,faction:s2.faction,cx:s2.cx,cy:s2.cy,radius:s2.radius,clearRadius:s2.clearRadius,wallsComplete:s2.wallsComplete||false,wallSegs:s2.wallSegs?s2.wallSegs.map(ws=>({x1:ws.x1,y1:ws.y1,x2:ws.x2,y2:ws.y2,progress:ws.progress,isGate:ws.isGate})):null,_wallBldCount:s2._wallBldCount||0,phase:s2.phase||0})),
       social:[...agentSocial.entries()].slice(0,20).map(([k,v2])=>({id:k,data:v2})),
       milestones:{...milestones},
       worldStats:{...worldStats},
@@ -6090,7 +6091,7 @@ function loadGame(){
     agentSocial.clear();for(const e of (s.social||[]))agentSocial.set(e.id,e.data);
     if(s.milestones)Object.assign(milestones,s.milestones);
     if(s.worldStats)Object.assign(worldStats,s.worldStats);
-    if(s.settlements){settlements.length=0;for(const s2 of s.settlements)settlements.push(s2)}
+    if(s.settlements){settlements.length=0;for(const s2 of s.settlements){s2.buildings=s2.buildings||[];settlements.push(s2)}}
     if(s.eventLog){eventLog.length=0;for(const e of s.eventLog)eventLog.push(e)}
     // Restore AI blueprints
     if(s.aiBlueprints){agentBlueprints.clear();for(const e of s.aiBlueprints)agentBlueprints.set(e.id,e.bps||[])}
