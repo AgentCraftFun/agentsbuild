@@ -3226,22 +3226,10 @@ function updateAgentMovement(){
         }
       }
       if(st.timer<=0){
-        const q2=getQuirk(a.name),gm=q2?q2.gatherMult:1,cm=q2?q2.chopMult||1:1;
-        const woodAmt=Math.round(8*gm*cm);
-        G.wood+=woodAmt;worldStats.totalWood+=woodAmt;
-        const soc3=getAgentSocial(a.id);soc3.morale=Math.min(100,soc3.morale+5);soc3.stats.treesChopped++;
-        milestones.trees++;checkMilestones();
-        if(q2&&q2.regrows&&st.target){const rk=`${st.target.x},${st.target.y}`;setTimeout(()=>harvestables.delete(rk),60000)}
-        // Batched in summary — no individual event spam
-        if(st.target){
-          const key2=`${st.target.x},${st.target.y}`;
-          harvestables.set(key2,true);harvestAnim.delete(key2);
-          // Leave stump
-          stumps.push({x:st.target.x,y:st.target.y,type:'stump',timer:1800});
-          // Tree fall particles
-          for(let i=0;i<6;i++)spawnParticle(st.target.x+TS/2+(Math.random()-0.5)*16,st.target.y+TS*0.4,'debris');
-        }
-        st.state='idle';st.taskCooldown=5;
+        // SERVER HANDLES RESOURCES — just loop the animation
+        st.timer=hasLumberMill?50:100;// reset for continuous animation
+        // Spawn particles on each cycle for visual feedback
+        if(st.target){for(let i=0;i<3;i++)spawnParticle(st.target.x+TS/2+(Math.random()-0.5)*16,st.target.y+TS*0.4,'debris')}
       }
     }
     else if(st.state==='mining'){
@@ -3257,17 +3245,9 @@ function updateAgentMovement(){
         }
       }
       if(st.timer<=0){
-        G.stone+=5;worldStats.totalStone+=5;
-        const soc4=getAgentSocial(a.id);soc4.morale=Math.min(100,soc4.morale+5);soc4.stats.stoneMined++;
-        milestones.stones++;checkMilestones();
-        // Batched in summary
-        if(st.target){
-          const key2=`${st.target.x},${st.target.y}`;
-          harvestables.set(key2,true);harvestAnim.delete(key2);
-          stumps.push({x:st.target.x,y:st.target.y,type:'rubble',timer:1200});
-          for(let i=0;i<5;i++)spawnParticle(st.target.x+TS/2+(Math.random()-0.5)*14,st.target.y+TS/2,'debris');
-        }
-        st.state='idle';st.taskCooldown=5;
+        // SERVER HANDLES RESOURCES — just loop the animation
+        st.timer=hasQuarry?70:140;
+        if(st.target){for(let i=0;i<3;i++)spawnParticle(st.target.x+TS/2+(Math.random()-0.5)*14,st.target.y+TS/2,'debris')}
       }
     }
     else if(st.state==='mining_gold'){
@@ -3276,10 +3256,9 @@ function updateAgentMovement(){
         spawnParticle(st.target.x+TS/2,st.target.y+TS/2,'gold');
       }
       if(st.timer<=0){
-        G.gold+=3;worldStats.totalGold+=3;getAgentSocial(a.id).stats.goldMined++;
-        // Batched in summary
-        if(st.target)st.target.alive=false;
-        st.state='idle';st.taskCooldown=5;
+        // SERVER HANDLES RESOURCES — just loop the animation
+        st.timer=200;
+        if(st.target){for(let i=0;i<2;i++)spawnParticle(st.target.x+TS/2,st.target.y+TS/2,'gold')}
       }
     }
     else if(st.state==='building'){
