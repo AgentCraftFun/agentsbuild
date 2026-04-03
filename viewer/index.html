@@ -3519,11 +3519,20 @@ for(const a of S.agents){
       st.state='chopping';st.timer=100;
       const gx=Math.floor(v.x*WW),gy=Math.floor(v.y*WH);
       st.target=null;
-      for(let r=1;r<5&&!st.target;r++){for(let dx=-r;dx<=r&&!st.target;dx++){for(let dy=-r;dy<=r&&!st.target;dy++){
-        if(Math.abs(dx)!==r&&Math.abs(dy)!==r)continue;
+      // Find nearest tile that actually HAS a tree detail (not just forest biome)
+      for(let r=0;r<6&&!st.target;r++){for(let dx=-r;dx<=r&&!st.target;dx++){for(let dy=-r;dy<=r&&!st.target;dy++){
+        if(r>0&&Math.abs(dx)!==r&&Math.abs(dy)!==r)continue;
         const tx2=gx+dx,ty2=gy+dy;if(tx2<0||tx2>=WW||ty2<0||ty2>=WH)continue;
         const bi=tBiomes[ty2*WW+tx2];
-        if(bi!==undefined&&(BL[bi]==='forest'||BL[bi]==='dense_forest')){st.target={x:tx2*TS,y:ty2*TS}}
+        const biName=BL[bi];
+        // Check biome has trees AND the detail hash produces a tree at this tile
+        if(biName==='forest'||biName==='dense_forest'){
+          const h1=detailHash(tx2,ty2)%100;
+          if(h1<12){st.target={x:tx2*TS,y:ty2*TS}}// pine tree exists here
+        }else if(biName==='grassland'){
+          const h1=detailHash(tx2,ty2)%100;
+          if(h1<8){st.target={x:tx2*TS,y:ty2*TS}}// deciduous tree here
+        }
       }}}
     }
     // Keep timer alive and drive harvestAnim directly for tree shake
@@ -3543,11 +3552,12 @@ for(const a of S.agents){
       st.state='mining';st.timer=140;
       const gx=Math.floor(v.x*WW),gy=Math.floor(v.y*WH);
       st.target=null;
-      for(let r=1;r<5&&!st.target;r++){for(let dx=-r;dx<=r&&!st.target;dx++){for(let dy=-r;dy<=r&&!st.target;dy++){
-        if(Math.abs(dx)!==r&&Math.abs(dy)!==r)continue;
+      for(let r=0;r<6&&!st.target;r++){for(let dx=-r;dx<=r&&!st.target;dx++){for(let dy=-r;dy<=r&&!st.target;dy++){
+        if(r>0&&Math.abs(dx)!==r&&Math.abs(dy)!==r)continue;
         const tx2=gx+dx,ty2=gy+dy;if(tx2<0||tx2>=WW||ty2<0||ty2>=WH)continue;
         const bi=tBiomes[ty2*WW+tx2];
-        if(bi!==undefined&&(BL[bi]==='hills'||BL[bi]==='mountain')){st.target={x:tx2*TS,y:ty2*TS}}
+        const biName=BL[bi];
+        if((biName==='hills'||biName==='mountain')&&detailHash(tx2,ty2)%100<15){st.target={x:tx2*TS,y:ty2*TS}}
       }}}
     }
     if(st.timer<20)st.timer=140;
