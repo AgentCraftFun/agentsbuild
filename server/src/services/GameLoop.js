@@ -14,7 +14,7 @@ class GameLoop {
     this.world = worldState;
     this.wss = wsServer;
     this.intervalId = null;
-    this.tickRate = parseInt(process.env.TICK_RATE_MS, 10) || 10000;
+    this.tickRate = parseInt(process.env.TICK_RATE_MS, 10) || 3000; // 3s ticks for responsive agents
   }
 
   start() {
@@ -117,9 +117,10 @@ class GameLoop {
         broadcast(this.wss, 'tick', diff);
       }
 
-      // Log every 10th tick
-      if (tick % 10 === 0) {
-        console.log(`[GameLoop] Tick ${tick} complete. ${events.length} events.`);
+      // Log every 5th tick
+      if (tick % 5 === 0) {
+        const agentSummary = [...this.world.agents.values()].map(a => `${a.name}(${a.x},${a.y}:${a.mood})`).join(' ');
+        console.log(`[GameLoop] Tick ${tick}. ${events.length} events. ${agentSummary}`);
       }
     } catch (err) {
       console.error('[GameLoop] Tick error:', err);
