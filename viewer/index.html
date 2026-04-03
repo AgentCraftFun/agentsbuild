@@ -3526,8 +3526,18 @@ for(const a of S.agents){
         if(bi!==undefined&&(BL[bi]==='forest'||BL[bi]==='dense_forest')){st.target={x:tx2*TS,y:ty2*TS}}
       }}}
     }
-    // Keep timer alive so original chopping handler animates continuously
+    // Keep timer alive and drive harvestAnim directly for tree shake
     if(st.timer<20)st.timer=100;
+    // Animate the tree: shake + particles
+    if(st.target){
+      const chopProg=1-st.timer/100;
+      const key=`${st.target.x},${st.target.y}`;
+      harvestAnim.set(key,{progress:chopProg,shakeTimer:0,type:'tree'});
+      if(frame%15===0){
+        const ha=harvestAnim.get(key);if(ha)ha.shakeTimer=5;
+        spawnParticle(st.target.x+TS/2,st.target.y+TS*0.6,'debris');
+      }
+    }
   }else if(ss==='mining'){
     if(st.state!=='mining'){
       st.state='mining';st.timer=140;
@@ -3541,9 +3551,20 @@ for(const a of S.agents){
       }}}
     }
     if(st.timer<20)st.timer=140;
+    // Animate the rock: shake + particles
+    if(st.target){
+      const mineProg=1-st.timer/140;
+      const key=`${st.target.x},${st.target.y}`;
+      harvestAnim.set(key,{progress:mineProg,shakeTimer:0,type:'rock'});
+      if(frame%20===0){
+        const ha=harvestAnim.get(key);if(ha)ha.shakeTimer=4;
+        spawnParticle(st.target.x+TS/2,st.target.y+TS/2,'debris');
+      }
+    }
   }else if(ss==='mining_gold'){
     if(st.state!=='mining_gold'){st.state='mining_gold';st.timer=200;st.target={x:Math.floor(v.x*WW)*TS,y:Math.floor(v.y*WH)*TS}}
     if(st.timer<20)st.timer=200;
+    if(st.target&&frame%20===0)spawnParticle(st.target.x+TS/2,st.target.y+TS/2,'gold');
   }else if(ss==='building'){
     const bld=G.clientBuildings.find(b2=>!b2.complete&&b2.builder===a.name);
     if(bld){st.state='building';st.target=bld}
