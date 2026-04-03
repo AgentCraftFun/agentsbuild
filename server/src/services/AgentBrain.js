@@ -489,34 +489,29 @@ class AgentBrain {
 
   _findOwnedTileWithoutBuilding() {
     const { tiles, buildingsList, width, height } = this.world;
-    const MIN_DIST = 4; // minimum tiles from any other building
 
-    // SETTLEMENT LAYOUT: Build NEAR the agent, not in random faction zones.
-    // Search in expanding radius from agent position for valid build spots.
-    const ax = this.agent.x, ay = this.agent.y;
+    // 4. FACTION ZONES
+    const zones = {
+      human:  { xMin: 0.05, xMax: 0.40, yMin: 0.05, yMax: 0.35 },
+      orc:    { xMin: 0.55, xMax: 0.90, yMin: 0.55, yMax: 0.85 },
+      dwarf:  { xMin: 0.40, xMax: 0.60, yMin: 0.08, yMax: 0.30 },
+      elf:    { xMin: 0.70, xMax: 0.95, yMin: 0.10, yMax: 0.40 },
+    };
+    const zone = zones[this.agent.faction];
+    const MIN_DIST = 5; // minimum tiles from any other building
 
-    // First, check if there's a cluster of existing buildings nearby to join
-    const nearbyBlds = (buildingsList || []).filter(b =>
-      Math.abs(b.x - ax) + Math.abs(b.y - ay) < 20
-    );
-    // Bias toward existing cluster center if one exists
-    let centerX = ax, centerY = ay;
-    if (nearbyBlds.length >= 2) {
-      centerX = Math.round(nearbyBlds.reduce((s, b) => s + b.x, 0) / nearbyBlds.length);
-      centerY = Math.round(nearbyBlds.reduce((s, b) => s + b.y, 0) / nearbyBlds.length);
-    }
-
-    for (let radius = 2; radius < 12; radius++) {
-      for (let attempt = 0; attempt < 8; attempt++) {
-        const angle = Math.random() * Math.PI * 2;
-        const rx = Math.max(2, Math.min(width - 3, centerX + Math.round(Math.cos(angle) * radius)));
-        const ry = Math.max(2, Math.min(height - 3, centerY + Math.round(Math.sin(angle) * radius)));
+    // 3. SETTLEMENT LAYOUT: Try to find a spread-out position in faction zone
+    if (zone) {
+      for (let attempt = 0; attempt < 15; attempt++) {
+        const rx = Math.floor((zone.xMin + Math.random() * (zone.xMax - zone.xMin)) * width);
+        const ry = Math.floor((zone.yMin + Math.random() * (zone.yMax - zone.yMin)) * height);
         const tid = `${rx},${ry}`;
         const t = tiles.get(tid);
         if (!t) continue;
         if (t.building) continue;
+        // 5. NO WATER
         if (['deep_water', 'shallow_water', 'river'].includes(t.biome)) continue;
-        // MINIMUM SPACING from other buildings
+        // 2. MINIMUM SPACING
         let tooClose = false;
         for (const b of (buildingsList || [])) {
           if (Math.abs(b.x - rx) + Math.abs(b.y - ry) < MIN_DIST) { tooClose = true; break; }
@@ -569,13 +564,17 @@ class AgentBrain {
   }
 
   _pickBuildingForFaction() {
-    // Only pick buildings the agent can ACTUALLY afford (no credit)
     const available = Building.getBuildingsForFaction(this.agent.faction)
       .filter(b => {
         const info = Building.CATALOG[b];
-        return info.workCost > 0 && info.workCost <= this.agent.work_balance;
+        return info.workCost > 0 && info.workCost <= this.agent.work_balance + 5;
       });
-    if (available.length === 0) return null;// can't afford anything — go gather
+    if (available.length === 0) {
+      // Fall back to cheapest building
+      const all = Building.getBuildingsForFaction(this.agent.faction)
+        .filter(b => Building.CATALOG[b].workCost > 0);
+      return all.length > 0 ? all[0] : null;
+    }
     return AgentBrain._pick(available);
   }
 
