@@ -156,19 +156,22 @@ setTimeout(function(){var io=document.getElementById('intro-overlay');if(io)io.r
       <div class="section-title">Event Feed</div>
       <div id="event-feed"></div>
     </div>
-    <div id="market-section" style="border-top:1px solid var(--border);padding:8px 12px">
+    <div id="market-section" style="border-top:1px solid var(--border);padding:8px 12px;opacity:0.4;pointer-events:none">
       <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px">
         <div style="color:var(--dim);font-size:9px;text-transform:uppercase;letter-spacing:1px">🔮 Prediction Market</div>
-        <div id="wallet-status" style="font-size:8px;color:#666;cursor:pointer" onclick="connectWallet()">Connect Wallet</div>
+        <div style="font-size:8px;color:#f0c040;font-style:italic">Coming Soon</div>
       </div>
-      <div id="market-question" style="color:#ddd;font-size:11px;margin-bottom:6px;line-height:1.4"></div>
-      <div id="market-odds" style="display:flex;gap:4px;margin-bottom:6px">
-        <div id="odds-yes" style="flex:1;text-align:center;padding:4px;background:rgba(68,204,68,0.1);border:1px solid #2a4a2a;border-radius:3px;font-size:9px;color:#44cc44;cursor:pointer" onclick="openBetModal('yes')">YES <span id="odds-yes-pct">50%</span></div>
-        <div id="odds-no" style="flex:1;text-align:center;padding:4px;background:rgba(255,68,68,0.1);border:1px solid #4a2a2a;border-radius:3px;font-size:9px;color:#ff4444;cursor:pointer" onclick="openBetModal('no')">NO <span id="odds-no-pct">50%</span></div>
+      <div style="color:#555;font-size:10px;text-align:center;padding:12px 0">Prediction markets are under development.<br>Bet on agent outcomes with $AGENTCRAFT.</div>
+      <div id="market-question" style="display:none"></div>
+      <div id="market-odds" style="display:none">
+        <div id="odds-yes"></div><div id="odds-no"></div>
       </div>
-      <div id="market-pool" style="font-size:8px;color:#555;margin-bottom:4px">Pool: 0 $AGENTCRAFT</div>
-      <div id="market-timer" style="font-size:8px;color:#888"></div>
-      <div id="market-result" style="font-size:10px;color:#f0c040;display:none;margin-top:4px"></div>
+      <div id="market-pool" style="display:none"></div>
+      <div id="market-timer" style="display:none"></div>
+      <div id="market-result" style="display:none"></div>
+      <div id="wallet-status" style="display:none"></div>
+      <div id="odds-yes-pct" style="display:none"></div>
+      <div id="odds-no-pct" style="display:none"></div>
     </div>
     <div id="deploy-section" style="border-top:1px solid var(--border);padding:8px 12px">
       <button id="deploy-btn" style="width:100%;padding:8px;background:linear-gradient(135deg,#f0c040,#dd8833);color:#0a0a14;font-family:'Courier New',monospace;font-weight:bold;font-size:11px;border:none;border-radius:4px;cursor:pointer;letter-spacing:1px;text-transform:uppercase">🚀 Deploy Agent</button>
@@ -2852,14 +2855,16 @@ function findNearestDetail(vx,vy,types){
 
 function canPlaceAt(tx,ty,pw2,ph2){
   // tx,ty are TILE coordinates. pw2,ph2 are PIXEL dimensions.
-  // Convert to pixel center for overlap check
   const ncx=tx*TS+pw2/2,ncy=ty*TS+ph2/2;
-  // Check biome at center and corners (in tile coords)
+  // Check biome at ALL tiles within footprint (not just corners)
   const twid=Math.ceil(pw2/TS),thei=Math.ceil(ph2/TS);
-  for(const[px2,py2] of [[tx,ty],[tx,ty+thei],[tx+twid,ty],[tx+twid,ty+thei]]){
-    if(px2<0||px2>=WW||py2<0||py2>=WH)return false;
-    const bi=tBiomes[py2*WW+px2];
-    if(bi===0||bi===1||bi===10)return false;
+  for(let dy=0;dy<=thei;dy++){
+    for(let dx=0;dx<=twid;dx++){
+      const px2=tx+dx,py2=ty+dy;
+      if(px2<0||px2>=WW||py2<0||py2>=WH)return false;
+      const bi=tBiomes[py2*WW+px2];
+      if(bi===0||bi===1||bi===10)return false;// deep_water, shallow_water, river
+    }
   }
   // Check overlap with ALL existing buildings — 20px margin (tight, dense)
   const MARGIN=20;
@@ -2914,10 +2919,20 @@ function pickBuildSite(bdef,agentId){
 
   let sett=getSettlementForAgent(agentId);
   if(!sett){
-    for(let i=0;i<30;i++){
+    for(let i=0;i<50;i++){
       const sx2=Math.floor(0.15*WW+rng3.next()*0.7*WW),sy2=Math.floor(0.15*WH+rng3.next()*0.7*WH);
-      if(tBiomes[sy2*WW+sx2]!==0&&tBiomes[sy2*WW+sx2]!==1&&tBiomes[sy2*WW+sx2]!==10){
-        sett=createSettlement(agentId,sx2,sy2);break}
+      // Check center tile is buildable
+      if(tBiomes[sy2*WW+sx2]===0||tBiomes[sy2*WW+sx2]===1||tBiomes[sy2*WW+sx2]===10)continue;
+      // Check area around center is mostly land (at least 80% of 7x7 area)
+      let landCount=0,totalCount=0;
+      for(let dy=-3;dy<=3;dy++){for(let dx=-3;dx<=3;dx++){
+        const cx2=sx2+dx,cy2=sy2+dy;
+        if(cx2<0||cx2>=WW||cy2<0||cy2>=WH)continue;
+        totalCount++;const bi2=tBiomes[cy2*WW+cx2];
+        if(bi2!==0&&bi2!==1&&bi2!==10)landCount++;
+      }}
+      if(landCount/totalCount<0.8)continue;// too much water nearby
+      sett=createSettlement(agentId,sx2,sy2);break;
     }
     if(!sett)return null;
   }
@@ -2952,8 +2967,8 @@ function pickBuildSite(bdef,agentId){
       }
     }
   }
-  // Fallback: try any open ring
-  for(let ring=1;ring<=8;ring++){
+  // Fallback: try nearby rings only (keep buildings clustered in settlements)
+  for(let ring=1;ring<=5;ring++){
     for(const[dx2,dy2] of dirs){
       for(const side of [-1,1]){
         const px3=Math.round(sett.cx+dx2*ring*plotDist+dy2*side*sideOff+(rng3.next()-0.5)*2);
