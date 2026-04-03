@@ -19,30 +19,112 @@ const createAgentRouter = require('./routes/agents');
 const createWorldRouter = require('./routes/world');
 
 const PORT = parseInt(process.env.PORT, 10) || 3000;
-const WS_PORT = parseInt(process.env.WS_PORT, 10) || 3001;
 const WORLD_WIDTH = parseInt(process.env.WORLD_WIDTH, 10) || 200;
 const WORLD_HEIGHT = parseInt(process.env.WORLD_HEIGHT, 10) || 150;
 const WORLD_SEED = parseInt(process.env.WORLD_SEED, 10) || 42;
+const SAVE_INTERVAL = parseInt(process.env.SAVE_INTERVAL_MS, 10) || 30000;
 
-// ─── Initialize World State (in-memory) ───
+const fs = require('fs');
+const STATE_FILE = path.resolve(__dirname, '..', '..', 'gamestate.json');
 
-console.log('[Server] Generating world...');
-const world = WorldGen.generate(WORLD_WIDTH, WORLD_HEIGHT, WORLD_SEED);
-const worldState = {
-  tiles: world.tiles,
-  width: world.width,
-  height: world.height,
-  seed: world.seed,
-  tick: 0,
-  agents: new Map(),
-  buildingsList: [],
-  events: [],
-  leaderboard: [],
-};
+// ─── Persistent State: Save/Load to disk ───
 
-// Seed demo agents
-console.log('[Server] Seeding demo agents...');
-seedAgents(worldState);
+function saveWorldState(ws) {
+  try {
+    const agents = [];
+    for (const agent of ws.agents.values()) {
+      agents.push({
+        id: agent.id, name: agent.name, faction: agent.faction,
+        personality: agent.personality, x: agent.x, y: agent.y,
+        wallet_address: agent.wallet_address, api_key: agent.api_key,
+        work_balance: agent.work_balance, resources: { ...agent.resources },
+        mood: agent.mood, owned_tiles: [...agent.owned_tiles],
+        message: agent.message || '', idle_ticks: agent.idle_ticks || 0,
+        last_action_tick: agent.last_action_tick || 0,
+      });
+    }
+    const buildings = ws.buildingsList.map(b => b.toJSON());
+    const state = {
+      version: 1, savedAt: Date.now(), tick: ws.tick,
+      seed: ws.seed, width: ws.width, height: ws.height,
+      agents, buildings, events: (ws.events || []).slice(-200),
+      leaderboard: ws.leaderboard || [],
+    };
+    fs.writeFileSync(STATE_FILE, JSON.stringify(state));
+    console.log(`[Save] Tick:${ws.tick} Agents:${agents.length} Buildings:${buildings.length}`);
+  } catch (err) { console.error('[Save] Failed:', err.message); }
+}
+
+function loadWorldState() {
+  try {
+    if (!fs.existsSync(STATE_FILE)) return null;
+    const state = JSON.parse(fs.readFileSync(STATE_FILE, 'utf8'));
+    if (!state || !state.version) return null;
+    console.log(`[Load] Found saved state. Tick:${state.tick} Agents:${state.agents?.length} Buildings:${state.buildings?.length}`);
+
+    // Regenerate deterministic terrain from seed
+    const world = WorldGen.generate(state.width || WORLD_WIDTH, state.height || WORLD_HEIGHT, state.seed || WORLD_SEED);
+    const ws = { tiles: world.tiles, width: world.width, height: world.height, seed: world.seed,
+      tick: state.tick || 0, agents: new Map(), buildingsList: [], events: state.events || [], leaderboard: state.leaderboard || [] };
+
+    const Agent = require('./models/Agent');
+    const Building = require('./models/Building');
+
+    // Restore agents
+    for (const ad of (state.agents || [])) {
+      try {
+        const agent = new Agent({ id: ad.id, name: ad.name, faction: ad.faction, personality: ad.personality,
+          x: ad.x, y: ad.y, wallet_address: ad.wallet_address, api_key: ad.api_key,
+          work_balance: ad.work_balance || 0, resources: ad.resources || { food: 10, wood: 10, stone: 5, gold: 0 },
+          mood: ad.mood || 'idle', owned_tiles: ad.owned_tiles || [], buildings: [],
+          message: ad.message || '', idle_ticks: ad.idle_ticks || 0, last_action_tick: ad.last_action_tick || 0 });
+        ws.agents.set(agent.id, agent);
+      } catch (e) { console.warn(`[Load] Agent ${ad.name} failed:`, e.message); }
+    }
+
+    // Restore buildings and re-link to tiles/agents
+    for (const bd of (state.buildings || [])) {
+      try {
+        const building = new Building({ type: bd.type, x: bd.x, y: bd.y, owner: bd.owner, progress: bd.progress || 0, startTick: bd.startTick || 0 });
+        if (bd.complete || bd.progress >= 1) building.progress = 1;
+        ws.buildingsList.push(building);
+        const tileId = `${bd.x},${bd.y}`;
+        const tile = ws.tiles.get(tileId);
+        if (tile) { tile.building = building; tile.owner = tile.owner || bd.owner; }
+        const owner = ws.agents.get(bd.owner);
+        if (owner) { owner.buildings.push(building); if (tile && !owner.owned_tiles.includes(tileId)) owner.addTile(tileId); }
+      } catch (e) { console.warn(`[Load] Building ${bd.type} failed:`, e.message); }
+    }
+
+    // Re-claim tiles from owned_tiles lists
+    for (const agent of ws.agents.values()) {
+      for (const tileId of agent.owned_tiles) {
+        const tile = ws.tiles.get(tileId);
+        if (tile && !tile.owner) tile.owner = agent.id;
+      }
+    }
+
+    console.log(`[Load] Restored: ${ws.agents.size} agents, ${ws.buildingsList.length} buildings, tick ${ws.tick}`);
+    return ws;
+  } catch (err) { console.error('[Load] Failed:', err.message); return null; }
+}
+
+// ─── Initialize World State (persistent) ───
+
+const loadedState = loadWorldState();
+let worldState;
+
+if (loadedState) {
+  worldState = loadedState;
+  console.log('[Server] Resumed from saved state');
+} else {
+  console.log('[Server] Generating new world...');
+  const world = WorldGen.generate(WORLD_WIDTH, WORLD_HEIGHT, WORLD_SEED);
+  worldState = { tiles: world.tiles, width: world.width, height: world.height, seed: world.seed,
+    tick: 0, agents: new Map(), buildingsList: [], events: [], leaderboard: [] };
+  console.log('[Server] Seeding demo agents...');
+  seedAgents(worldState);
+}
 
 // ─── Express App ───
 
@@ -89,19 +171,19 @@ const PERSONALITY_MAP = {
 
 for (const agent of worldState.agents.values()) {
   const demo = DEMO_AGENTS.find(d => d.name === agent.name);
-  if (demo) {
-    const traits = PERSONALITY_MAP[demo.personality] || PERSONALITY_MAP.analyst;
-    llmBrain.registerHosted(agent.id, {
-      name: agent.name,
-      faction: agent.faction,
-      aggression: traits.aggression,
-      workEthic: traits.workEthic,
-      sociability: traits.sociability,
-      creativity: traits.creativity,
-      strategy: traits.strategy,
-      catchphrase: traits.catchphrase,
-    });
-  }
+  const traits = demo
+    ? (PERSONALITY_MAP[demo.personality] || PERSONALITY_MAP.analyst)
+    : (PERSONALITY_MAP[agent.personality] || PERSONALITY_MAP.analyst);
+  llmBrain.registerHosted(agent.id, {
+    name: agent.name,
+    faction: agent.faction,
+    aggression: traits.aggression,
+    workEthic: traits.workEthic,
+    sociability: traits.sociability,
+    creativity: traits.creativity,
+    strategy: traits.strategy,
+    catchphrase: traits.catchphrase,
+  });
 }
 console.log(`[Server] ${worldState.agents.size} agents registered with LLM brain`);
 
@@ -397,8 +479,15 @@ gameLoop.start();
 
 // ─── Graceful Shutdown ───
 
+// ─── Auto-Save ───
+
+const _saveInterval = setInterval(() => saveWorldState(worldState), SAVE_INTERVAL);
+console.log(`[Server] Auto-saving every ${SAVE_INTERVAL / 1000}s to ${STATE_FILE}`);
+
 function shutdown(signal) {
   console.log(`\n[Server] ${signal} received. Shutting down...`);
+  clearInterval(_saveInterval);
+  saveWorldState(worldState); // Save before exit
   gameLoop.stop();
   wss.close();
   httpServer.close(() => {
