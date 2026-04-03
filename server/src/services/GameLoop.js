@@ -121,10 +121,10 @@ class GameLoop {
         broadcast(this.wss, 'tick', diff);
       }
 
-      // Log every 5th tick
-      if (tick % 5 === 0) {
+      // Log every 20th tick (reduced from 5 for production)
+      if (tick % 20 === 0) {
         const agentSummary = [...this.world.agents.values()].map(a => `${a.name}(${a.x},${a.y}:${a.mood})`).join(' ');
-        console.log(`[GameLoop] Tick ${tick}. ${events.length} events. ${agentSummary}`);
+        console.log(`[GameLoop] Tick ${tick}. ${events.length} events. Blds:${this.world.buildingsList.length}. ${agentSummary}`);
       }
     } catch (err) {
       console.error('[GameLoop] Tick error:', err);

@@ -121,6 +121,13 @@ let worldState;
 if (loadedState) {
   worldState = loadedState;
   console.log('[Server] Resumed from saved state');
+  // Reset agent tasks so they re-evaluate on first tick (stale targets from before save)
+  for (const agent of worldState.agents.values()) {
+    agent.mood = 'idle';
+    agent.current_action = null;
+    agent.action_queue = [];
+  }
+  console.log('[Server] All agents reset to idle — will pick new tasks on first tick');
 } else {
   console.log('[Server] Generating new world...');
   const world = WorldGen.generate(WORLD_WIDTH, WORLD_HEIGHT, WORLD_SEED);
@@ -586,14 +593,43 @@ console.log('========================');
 
 // ─── Server Heartbeat (every 60 seconds) ───
 
+// ─── Heartbeat (every 60s) + Full Status (every 5 min) ───
+
 setInterval(() => {
-  const agentCount = worldState.agents.size;
-  const buildingCount = worldState.buildingsList.length;
-  const claimedTiles = [...worldState.tiles.values()].filter(t => t.owner).length;
+  const tick = worldState.tick;
+  const agents = worldState.agents.size;
+  const blds = worldState.buildingsList.length;
+  const complete = worldState.buildingsList.filter(b => b.isComplete()).length;
+  const claimed = [...worldState.tiles.values()].filter(t => t.owner).length;
   const spectators = wss.clients.size;
   const uptime = Math.round(process.uptime());
-  console.log(`[Heartbeat] Tick:${worldState.tick} | Agents:${agentCount} | Buildings:${buildingCount} | Claimed:${claimedTiles} | Spectators:${spectators} | Uptime:${uptime}s`);
+  const mem = Math.round(process.memoryUsage().heapUsed / 1024 / 1024);
+  console.log(`[Heartbeat] Tick:${tick} | Agents:${agents} | Blds:${blds}(${complete}done) | Tiles:${claimed} | Spectators:${spectators} | Mem:${mem}MB | Up:${uptime}s`);
 }, 60000);
+
+// Full status dump every 5 minutes
+setInterval(() => {
+  console.log('\n========== AGENTCRAFT STATUS ==========');
+  console.log(`Tick: ${worldState.tick} | Uptime: ${Math.round(process.uptime())}s`);
+  console.log(`Buildings: ${worldState.buildingsList.length} (${worldState.buildingsList.filter(b => b.isComplete()).length} complete)`);
+  console.log(`Events: ${worldState.events.length} | Spectators: ${wss.clients.size}`);
+  console.log(`Memory: ${Math.round(process.memoryUsage().heapUsed / 1024 / 1024)}MB`);
+  console.log('Agents:');
+  for (const a of worldState.agents.values()) {
+    console.log(`  ${a.name}(${a.faction}/${a.personality}): (${a.x},${a.y}) mood:${a.mood} tiles:${a.owned_tiles.length} blds:${a.buildings.length} work:${a.work_balance.toFixed(1)} res:W${Math.round(a.resources.wood)}/S${Math.round(a.resources.stone)}/G${Math.round(a.resources.gold)}/F${Math.round(a.resources.food)}`);
+  }
+  console.log('========================================\n');
+}, 300000);
+
+// First status dump after 15 seconds
+setTimeout(() => {
+  console.log('\n========== FIRST STATUS CHECK ==========');
+  console.log(`Tick: ${worldState.tick} | Buildings: ${worldState.buildingsList.length}`);
+  for (const a of worldState.agents.values()) {
+    console.log(`  ${a.name}: (${a.x},${a.y}) mood:${a.mood} tiles:${a.owned_tiles.length} blds:${a.buildings.length}`);
+  }
+  console.log('========================================\n');
+}, 15000);
 
 // ─── Graceful Shutdown ───
 

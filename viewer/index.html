@@ -3510,13 +3510,9 @@ for(const a of S.agents){
   // Smooth interpolation toward server position
   v.x+=(v.tx-v.x)*0.12;v.y+=(v.ty-v.y)*0.12;
 }
-// Debug: log agent positions once every 180 frames (~3sec)
-if(frame%180===0){
-  if(S.agents.length===0){console.warn('[RENDER] S.agents is EMPTY — no server data received yet')}
-  else{
-    const a0=S.agents[0],v0=agentVisual.get(a0.id);
-    console.log(`[RENDER] tick:${S.tick} agents:${S.agents.length} blds:${G.clientBuildings.length} | ${a0.name} server:(${a0.x},${a0.y}) visual:(${v0?Math.round(v0.x*WW):'-'},${v0?Math.round(v0.y*WH):'-'}) mood:${a0.mood}`);
-  }
+// Reduced debug: log only every 30 seconds
+if(frame%1800===0&&S.agents.length>0){
+  console.log(`[Status] tick:${S.tick} agents:${S.agents.length} blds:${G.clientBuildings.length}`);
 }
 // Clean up visuals for agents no longer in server state
 {const liveIds=new Set(S.agents.map(a=>a.id));
@@ -4974,15 +4970,6 @@ function syncServerBuildings(serverBlds){
 function handleMsg(msg){
 if(msg.type==='pong')return;
 // === SPECTATOR MODE: Server is authoritative for ALL state ===
-if(msg.type==='world_state'||msg.type==='tick'){
-  if(msg.data&&msg.data.agents){
-    console.log(`[WS] ${msg.type}: ${msg.data.agents.length} agents, ${(msg.data.buildings||[]).length} bldgs, tick:${msg.data.tick}`);
-    if(msg.data.agents.length>0){
-      const a0=msg.data.agents[0];
-      console.log(`[WS] First agent: ${a0.name} pos(${a0.x},${a0.y}) mood:${a0.mood} action:${JSON.stringify(a0.current_action||'none')}`);
-    }
-  }
-}
 if(msg.type==='world_state'&&msg.data){
   S.tick=msg.data.tick||0;S.agents=msg.data.agents||[];S.tiles=msg.data.tiles||[];
   S.buildings=msg.data.buildings||[];S.events=msg.data.events||[];S.leaderboard=msg.data.leaderboard||[];
