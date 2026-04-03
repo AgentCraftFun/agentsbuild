@@ -4614,6 +4614,22 @@ for(let i=bubbles.length-1;i>=0;i--){
 }
 
 // === CHOP/MINE VISUAL EFFECTS (drawn in world-space) ===
+// DEBUG: draw giant red circle for EVERY chopping agent to prove this code runs
+{let _chopDbg=0;
+for(const a of S.agents){
+  const ast4=agentState.get(a.id);
+  if(!ast4)continue;
+  if(ast4.state==='chopping'||ast4.state==='mining'||ast4.state==='mining_gold'){
+    _chopDbg++;
+    const dv=agentVisual.get(a.id);
+    if(dv){
+      // GIANT RED CIRCLE at agent position — impossible to miss
+      ctx.fillStyle='rgba(255,0,0,0.4)';
+      ctx.beginPath();ctx.arc(dv.x*WW*TS+TS/2,dv.y*WH*TS+TS/2,30,0,Math.PI*2);ctx.fill();
+    }
+  }
+}}
+
 for(const a of S.agents){
   const ast4=agentState.get(a.id);
   if(!ast4)continue;
