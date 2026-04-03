@@ -108,36 +108,6 @@ canvas{display:block;image-rendering:pixelated;image-rendering:crisp-edges}
 .deploy-preview{background:#080812;border:1px solid #2a2a4e;border-radius:6px;padding:10px;margin-top:12px}
 .deploy-preview .preview-name{color:#f0c040;font-size:12px;font-weight:bold}
 .deploy-preview .preview-detail{color:#888;font-size:10px;margin-top:2px}
-/* === MOBILE LAYOUT === */
-@media(max-width:768px){
-  #app{grid-template-columns:1fr;grid-template-rows:32px 1fr auto 28px}
-  #header{grid-column:1;padding:0 8px;font-size:10px}
-  #header h1{font-size:10px;letter-spacing:1px}
-  #header-stats{gap:8px;font-size:10px}
-  #header-stats span{display:none}
-  #header-stats .val{display:inline}
-  #sidebar{border-left:none;border-top:1px solid var(--border);max-height:35vh;overflow-y:auto}
-  #agent-section{max-height:none}
-  #bottom-bar{grid-column:1;padding:0 8px;gap:10px;font-size:10px}
-  #bottom-bar span{font-size:9px}
-  #canvas-wrap{min-height:50vh}
-  .section-title{padding:4px 8px;font-size:9px}
-  .agent-row{padding:2px 8px}
-  .agent-name{font-size:10px}
-  .agent-task{font-size:9px}
-  #minimap-section{display:none}
-  #market-section{display:none}
-  #deploy-section{padding:4px 8px}
-  #deploy-section button{padding:6px;font-size:10px}
-  #conn-overlay{padding:12px 16px}
-  #conn-overlay h2{font-size:12px}
-}
-@media(max-width:480px){
-  #header h1{display:none}
-  #header-stats{gap:6px;font-size:9px}
-  #sidebar{max-height:30vh}
-  #canvas-wrap{min-height:55vh}
-}
 </style>
 </head>
 <body>
@@ -4984,21 +4954,86 @@ else{dot.className='';st.textContent='OFFLINE';st.style.color='var(--red)'}}
 
 function updateAll(){updateMaps();updateAgentList();updateEvents();updateBottom();updateHeader()}
 
-// === WebSocket ===
+// === WebSocket (host/spectator relay) ===
 let ws=null,reconTimer=null,reconDelay=1000;
+let _isHost=false;
+let _hostBroadcastInterval=null;
+
 function connectWS(){
 const ov=document.getElementById('conn-overlay');ov.style.display='block';
 try{const p=location.protocol==='https:'?'wss:':'ws:';ws=new WebSocket(`${p}//${location.host}`)}catch(e){schedRecon();return}
 ws.onopen=()=>{S.connected=true;reconDelay=1000;ov.style.display='none';updateHeader()};
-ws.onmessage=e=>{try{handleMsg(JSON.parse(e.data))}catch(ex){console.warn('[WS] Message error:',ex.message,e.data?.slice?.(0,200))}};
-ws.onclose=()=>{S.connected=false;updateHeader();ov.style.display='block';ov.querySelector('h2').textContent='Disconnected';schedRecon()};
+ws.onmessage=e=>{try{handleMsg(JSON.parse(e.data))}catch(ex){console.warn('[WS] Message error:',ex.message)}};
+ws.onclose=()=>{S.connected=false;_isHost=false;if(_hostBroadcastInterval){clearInterval(_hostBroadcastInterval);_hostBroadcastInterval=null}updateHeader();ov.style.display='block';ov.querySelector('h2').textContent='Disconnected';schedRecon()};
 ws.onerror=()=>{}}
 function schedRecon(){if(reconTimer)clearTimeout(reconTimer);reconTimer=setTimeout(()=>{reconDelay=Math.min(reconDelay*1.5,15000);connectWS()},reconDelay)}
-let _initialSyncDone=true;
-function syncServerBuildings(serverBlds){
-  return;// Client manages its own buildings via localStorage — ignore server
-  if(!_initialSyncDone&&serverBlds.length>0){
-    _initialSyncDone=true;
+
+// Host broadcasts its game state to the server for relay to spectators
+function broadcastHostState(){
+  if(!ws||ws.readyState!==1||!_isHost)return;
+  try{
+    ws.send(JSON.stringify({type:'host_state',data:{
+      tick:frame,
+      agents:S.agents.map(a=>({id:a.id,name:a.name,faction:a.faction,personality:a.personality,
+        x:a.x,y:a.y,mood:a.mood,current_action:a.current_action,
+        owned_tiles:typeof a.owned_tiles==='number'?a.owned_tiles:0,
+        buildings_count:0,work_balance:0,message:a.message||'',
+        resources:{wood:G.wood,stone:G.stone,gold:G.gold,food:G.food}})),
+      buildings:G.clientBuildings.map(b=>({type:b.type,name:b.name,x:b.x,y:b.y,
+        progress:b.progress,complete:b.complete,faction:b.faction,
+        width:b.width,height:b.height,pw:b.pw,ph:b.ph,tall:b.tall,
+        builder:b.builder||b.ownerName||'',settlement:b.settlement})),
+      events:(S.events||[]).slice(-20),
+      leaderboard:S.leaderboard||[],
+      era:G.era,
+      resources:{wood:G.wood,stone:G.stone,gold:G.gold,food:G.food}
+    }}));
+  }catch(e){}
+}
+
+function handleMsg(msg){
+if(msg.type==='pong')return;
+// Server tells us our role
+if(msg.type==='role'){
+  _isHost=(msg.role==='host');
+  console.log('[WS] Role:',msg.role);
+  if(_isHost){
+    // Host: broadcast state every 500ms
+    if(_hostBroadcastInterval)clearInterval(_hostBroadcastInterval);
+    _hostBroadcastInterval=setInterval(broadcastHostState,500);
+    console.log('[WS] Broadcasting as HOST');
+  }else{
+    // Spectator: stop broadcasting, wait for state
+    if(_hostBroadcastInterval){clearInterval(_hostBroadcastInterval);_hostBroadcastInterval=null}
+  }
+  return;
+}
+// Spectator receives world state from host
+if(msg.type==='world_state'&&msg.data&&!_isHost){
+  S.tick=msg.data.tick||0;
+  if(msg.data.agents)S.agents=msg.data.agents;
+  if(msg.data.buildings){
+    S.buildings=msg.data.buildings;
+    // Replace client buildings with host's buildings
+    G.clientBuildings.length=0;
+    for(const sb of msg.data.buildings){
+      G.clientBuildings.push({...sb,complete:sb.complete||sb.progress>=1,building:!sb.complete,
+        pw:sb.pw||(sb.width||3)*TS,ph:sb.ph||(sb.height||3)*TS});
+    }
+  }
+  if(msg.data.events)S.events=msg.data.events;
+  if(msg.data.leaderboard)S.leaderboard=msg.data.leaderboard;
+  if(msg.data.era!==undefined)G.era=msg.data.era;
+  if(msg.data.resources){G.wood=msg.data.resources.wood||0;G.stone=msg.data.resources.stone||0;G.gold=msg.data.resources.gold||0;G.food=msg.data.resources.food||0}
+  // Sync agent visual positions
+  for(const a of S.agents){const v=agentVisual.get(a.id);if(v){v.tx=a.x/WW;v.ty=a.y/WH}}
+  // Sync frame for day/time display
+  if(msg.data.tick>0){const sf=msg.data.tick;if(sf>frame)frame=sf}
+  updateAll();
+}
+// Keep old tick handler for backward compat with old server
+if(msg.type==='tick'&&msg.data){S.tick=msg.data.tick||S.tick;if(msg.data.agents)S.agents=msg.data.agents;if(msg.data.tiles)S.tiles=msg.data.tiles;if(msg.data.events){S.events=S.events.concat(msg.data.events);if(S.events.length>200)S.events=S.events.slice(-100)}if(msg.data.leaderboard)S.leaderboard=msg.data.leaderboard;updateAll()}
+}
     G.clientBuildings.length=0;
     for(const sb of serverBlds){
       G.clientBuildings.push({...sb,
@@ -5019,36 +5054,7 @@ function syncServerBuildings(serverBlds){
     }
   }
 }
-let _needsServerSeed=false;
-function handleMsg(msg){
-if(msg.type==='pong')return;
-if(msg.type==='world_state'||msg.type==='tick'){
-  if(!msg.data)return;
-  S.tick=msg.data.tick||S.tick;
-  if(msg.data.agents)S.agents=msg.data.agents;
-  if(msg.data.tiles)S.tiles=msg.data.tiles;
-  if(msg.data.events){
-    if(msg.type==='world_state')S.events=msg.data.events||[];
-    else{S.events=S.events.concat(msg.data.events);if(S.events.length>200)S.events=S.events.slice(-100)}
-  }
-  if(msg.data.leaderboard)S.leaderboard=msg.data.leaderboard;
-  // SERVER IS AUTHORITATIVE: replace buildings, sync resources/era/frame
-  if(msg.data.buildings){
-    S.buildings=msg.data.buildings;
-    G.clientBuildings.length=0;
-    for(const sb of msg.data.buildings){
-      G.clientBuildings.push({...sb,complete:sb.complete||sb.progress>=1,building:!sb.complete,
-        pw:sb.pw||(sb.width||3)*TS,ph:sb.ph||(sb.height||3)*TS});
-    }
-  }
-  if(msg.data.resources){G.wood=msg.data.resources.wood||0;G.stone=msg.data.resources.stone||0;G.gold=msg.data.resources.gold||0;G.food=msg.data.resources.food||0}
-  if(msg.data.era!==undefined)G.era=msg.data.era;
-  if(msg.data.tick>0){const sf=msg.data.tick*60;if(sf>frame)frame=sf}// sync day/time
-  // Sync agent visual positions
-  for(const a of S.agents){const v=agentVisual.get(a.id||a.name);if(v){v.tx=a.x/WW;v.ty=a.y/WH}}
-  updateAll();
-}}
-// old tick handler removed — handled in unified handler above
+// Old handleMsg removed — replaced by new host/spectator handler above
 safeInterval(()=>{if(ws&&ws.readyState===1)ws.send('{"type":"ping"}')},30000);
 
 // === Resource system now driven by agent AI state machine ===
@@ -6360,8 +6366,8 @@ try{
   try{initInfluence()}catch(e){console.warn('Influence init failed:',e)}
   try{document.getElementById('h-points').textContent=specPoints}catch(e){}
   // Try loading saved game
-  didLoad=false;// Server is source of truth — no local save/load
-  if(didLoad){validateGameState()}// clean up any corrupt data from save
+  didLoad=loadGame();// Load saved world — host persists via localStorage
+  if(didLoad)validateGameState();// clean up any corrupt data from save
   let offlineSummary=null;
   if(didLoad){
     console.log('Restored saved game');
@@ -6411,11 +6417,10 @@ try{
 // ALWAYS remove intro overlay after 5 seconds no matter what
 setTimeout(()=>{const io=document.getElementById('intro-overlay');if(io){io.classList.add('fade');setTimeout(()=>{if(io.parentNode)io.remove()},2000)}},5000);
 requestAnimationFrame(render);connectWS();
-// ALL simulation intervals disabled — server is authoritative
-// safeInterval(tickFood,10000);
-// safeInterval(saveGame,30000);
-// safeInterval(regrowResources,60000);
-// window.addEventListener('beforeunload',saveGame);
+safeInterval(tickFood,10000);
+safeInterval(saveGame,30000);// auto-save every 30 seconds
+safeInterval(regrowResources,60000);// regrow every 1 min (faster)
+window.addEventListener('beforeunload',saveGame);
 // Debug: reset world
 window.resetWorld=function(){localStorage.removeItem(SAVE_KEY);location.reload()}
 </script>

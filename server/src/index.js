@@ -1,2 +1,2 @@
-// Redirect to new clean server.js at project root
+// Redirect to clean relay server at project root
 require('../../server.js');
