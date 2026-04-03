@@ -2199,27 +2199,13 @@ function initHarvestables(){
   }
 }
 
-// === BUILDING LIMITS ===
-const MAX_BUILDINGS=60;
-const BUILD_COOLDOWN_FRAMES=60*45;// ~45 seconds at 60fps
-let _lastBuildFrame=0;
-function canBuildNow(){
-  if(G.clientBuildings.length>=MAX_BUILDINGS)return false;
-  if(frame-_lastBuildFrame<BUILD_COOLDOWN_FRAMES)return false;
-  return true;
-}
-function registerBuild(){_lastBuildFrame=frame}
-
 function getNextBuilding(){
-  // Enforce per-settlement variety limits
   const builtTypes=new Set(G.clientBuildings.map(b=>b.type));
-  // Check era advancement — requires building count thresholds
-  const completedCount=G.clientBuildings.filter(b=>b.complete).length;
+  // Check era advancement
   if(G.era<3){
     const eraBuildings=TECH_TREE.filter(b=>b.era===G.era&&!b.decorative);
     const allBuilt=eraBuildings.every(b=>builtTypes.has(b.type));
-    const minForEra=[0,12,25,40];// min completed buildings to advance
-    if(allBuilt&&completedCount>=(minForEra[G.era+1]||999)){G.era++;document.getElementById('h-era').textContent=G.eraNames[G.era]}
+    if(allBuilt){G.era++;document.getElementById('h-era').textContent=G.eraNames[G.era]}
   }
   // Priority 1: unbuilt non-decorative types in current era (cheapest first)
   const unbuilt=TECH_TREE.filter(b=>b.era<=G.era&&!b.decorative&&!builtTypes.has(b.type))
@@ -3046,15 +3032,14 @@ function updateAgentMovement(){
       const roll=Math.random();
       const pers=a.personality||'optimist';
       let action='gather';// default
-      // Reduced build chances — agents should mostly gather
-      if(pers==='aggressive'){action=roll<0.5?'chop':roll<0.85?'mine':'build'}
+      if(pers==='aggressive'){action=roll<0.6?'chop':roll<0.9?'mine':'build'}
       else if(pers==='grinder'){action='gather_needed'}
-      else if(pers==='analyst'){action=roll<0.15?'build':'gather_needed'}
-      else if(pers==='optimist'){action=roll<0.4?'chop':roll<0.75?'mine':roll<0.9?'gather_needed':'build'}
-      else if(pers==='chaotic'){action=['chop','mine','chop','gold'][Math.floor(roll*4)]}
+      else if(pers==='analyst'){action=roll<0.8?'build':'gather_needed'}
+      else if(pers==='optimist'){action=roll<0.33?'chop':roll<0.66?'mine':'build'}
+      else if(pers==='chaotic'){action=['chop','mine','build','gold'][Math.floor(roll*4)]}
       else if(pers==='lazy'){action=roll<0.5?'chop':'mine'}
-      else if(pers==='confused'){action=['chop','mine','mine','idle'][Math.floor(roll*4)]}
-      else{action=roll<0.15?'build':'gather_needed'}// overachiever etc
+      else if(pers==='confused'){action=['chop','mine','build','idle'][Math.floor(roll*4)]}
+      else{action='gather_needed'}// overachiever etc
 
       // Resolve 'gather_needed' to specific resource
       if(action==='gather'||action==='gather_needed'){
@@ -3099,8 +3084,7 @@ function updateAgentMovement(){
                   x:site.x,y:site.y,progress:0,complete:false,faction:a.faction||'human',
                   width:bp.width,height:bp.height,pw:bpw,ph:bph,tall:bp.height>=4,
                   claimedBy:a.id,builder:a.name,settlement:site.settlement||null};
-                if(!canBuildNow()){action='chop';continue}
-                G.clientBuildings.push(cb);registerBuild();
+                G.clientBuildings.push(cb);
                 G.wood-=(bp.cost.wood||0);G.stone-=(bp.cost.stone||0);G.gold-=(bp.cost.gold||0);
                 st.state='building';st.target=cb;st.timer=0;
                 v.tx=site.x/WW;v.ty=site.y/WH;
@@ -3157,13 +3141,12 @@ function updateAgentMovement(){
               // Per-settlement cap: max 30 buildings per settlement
               if(site.settlement){
                 const settBldCount=G.clientBuildings.filter(b3=>b3.settlement===site.settlement).length;
-                if(settBldCount>=20){action='chop';continue}
+                if(settBldCount>=9999){action='chop';continue}
               }
-              // Building limits + duplicate check
-              if(!canBuildNow()){action='chop';continue}
+              // Duplicate check before push
               const _isDup2=G.clientBuildings.some(b4=>Math.abs(b4.x-site.x)<2&&Math.abs(b4.y-site.y)<2&&b4.type===cb.type);
-              if(_isDup2){continue}
-              G.clientBuildings.push(cb);registerBuild();
+              if(_isDup2){console.log('[DUP] Blocked predefined building:',cb.type,'at',site.x,site.y);continue}
+              G.clientBuildings.push(cb);
               G.wood-=next.cost.wood;G.stone-=next.cost.stone;G.gold-=next.cost.gold;
               st.state='building';st.target=cb;st.timer=0;
               v.tx=site.x/WW;v.ty=site.y/WH;
@@ -4971,87 +4954,35 @@ else{dot.className='';st.textContent='OFFLINE';st.style.color='var(--red)'}}
 
 function updateAll(){updateMaps();updateAgentList();updateEvents();updateBottom();updateHeader()}
 
-// === WebSocket (host/spectator relay) ===
+// === WebSocket ===
 let ws=null,reconTimer=null,reconDelay=1000;
-let _isHost=false;
-let _hostBroadcastInterval=null;
-
 function connectWS(){
 const ov=document.getElementById('conn-overlay');ov.style.display='block';
 try{const p=location.protocol==='https:'?'wss:':'ws:';ws=new WebSocket(`${p}//${location.host}`)}catch(e){schedRecon();return}
 ws.onopen=()=>{S.connected=true;reconDelay=1000;ov.style.display='none';updateHeader()};
-ws.onmessage=e=>{try{handleMsg(JSON.parse(e.data))}catch(ex){console.warn('[WS] Message error:',ex.message)}};
-ws.onclose=()=>{S.connected=false;_isHost=false;if(_hostBroadcastInterval){clearInterval(_hostBroadcastInterval);_hostBroadcastInterval=null}updateHeader();ov.style.display='block';ov.querySelector('h2').textContent='Disconnected';schedRecon()};
+ws.onmessage=e=>{try{handleMsg(JSON.parse(e.data))}catch(ex){console.warn('[WS] Message error:',ex.message,e.data?.slice?.(0,200))}};
+ws.onclose=()=>{S.connected=false;updateHeader();ov.style.display='block';ov.querySelector('h2').textContent='Disconnected';schedRecon()};
 ws.onerror=()=>{}}
 function schedRecon(){if(reconTimer)clearTimeout(reconTimer);reconTimer=setTimeout(()=>{reconDelay=Math.min(reconDelay*1.5,15000);connectWS()},reconDelay)}
-
-// Host broadcasts its game state to the server for relay to spectators
-function broadcastHostState(){
-  if(!ws||ws.readyState!==1||!_isHost)return;
-  try{
-    ws.send(JSON.stringify({type:'host_state',data:{
-      tick:frame,
-      agents:S.agents.map(a=>({id:a.id,name:a.name,faction:a.faction,personality:a.personality,
-        x:a.x,y:a.y,mood:a.mood,current_action:a.current_action,
-        owned_tiles:typeof a.owned_tiles==='number'?a.owned_tiles:0,
-        buildings_count:0,work_balance:0,message:a.message||'',
-        resources:{wood:G.wood,stone:G.stone,gold:G.gold,food:G.food}})),
-      buildings:G.clientBuildings.map(b=>({type:b.type,name:b.name,x:b.x,y:b.y,
-        progress:b.progress,complete:b.complete,faction:b.faction,
-        width:b.width,height:b.height,pw:b.pw,ph:b.ph,tall:b.tall,
-        builder:b.builder||b.ownerName||'',settlement:b.settlement})),
-      events:(S.events||[]).slice(-20),
-      leaderboard:S.leaderboard||[],
-      era:G.era,
-      resources:{wood:G.wood,stone:G.stone,gold:G.gold,food:G.food}
-    }}));
-  }catch(e){}
+function syncServerBuildings(serverBlds){
+  // Server buildings are authoritative for server-side state (S.buildings)
+  // but should NOT be blindly pushed into client buildings (G.clientBuildings)
+  // because client uses its own coordinate system and building lifecycle.
+  // Only update progress/completion on buildings that already exist client-side.
+  for(const sb of serverBlds){
+    // Try to find matching client building by proximity (within 2 tiles)
+    const match=G.clientBuildings.find(cb=>cb.type===sb.type&&Math.abs(cb.x-sb.x)<3&&Math.abs(cb.y-sb.y)<3);
+    if(match){
+      if(sb.complete)match.complete=true;
+      if(sb.progress>match.progress)match.progress=sb.progress;
+    }
+    // Do NOT push new buildings — client manages its own building creation
+  }
 }
-
 function handleMsg(msg){
 if(msg.type==='pong')return;
-// Server tells us our role
-if(msg.type==='role'){
-  _isHost=(msg.role==='host');
-  console.log('[WS] Role:',msg.role);
-  if(_isHost){
-    // Host: broadcast state every 500ms
-    if(_hostBroadcastInterval)clearInterval(_hostBroadcastInterval);
-    _hostBroadcastInterval=setInterval(broadcastHostState,500);
-    console.log('[WS] Broadcasting as HOST');
-  }else{
-    // Spectator: stop broadcasting, wait for state
-    if(_hostBroadcastInterval){clearInterval(_hostBroadcastInterval);_hostBroadcastInterval=null}
-  }
-  return;
-}
-// Spectator receives world state from host
-if(msg.type==='world_state'&&msg.data&&!_isHost){
-  S.tick=msg.data.tick||0;
-  if(msg.data.agents)S.agents=msg.data.agents;
-  if(msg.data.buildings){
-    S.buildings=msg.data.buildings;
-    // Replace client buildings with host's buildings
-    G.clientBuildings.length=0;
-    for(const sb of msg.data.buildings){
-      G.clientBuildings.push({...sb,complete:sb.complete||sb.progress>=1,building:!sb.complete,
-        pw:sb.pw||(sb.width||3)*TS,ph:sb.ph||(sb.height||3)*TS});
-    }
-  }
-  if(msg.data.events)S.events=msg.data.events;
-  if(msg.data.leaderboard)S.leaderboard=msg.data.leaderboard;
-  if(msg.data.era!==undefined)G.era=msg.data.era;
-  if(msg.data.resources){G.wood=msg.data.resources.wood||0;G.stone=msg.data.resources.stone||0;G.gold=msg.data.resources.gold||0;G.food=msg.data.resources.food||0}
-  // Sync agent visual positions
-  for(const a of S.agents){const v=agentVisual.get(a.id);if(v){v.tx=a.x/WW;v.ty=a.y/WH}}
-  // Sync frame for day/time display
-  if(msg.data.tick>0){const sf=msg.data.tick;if(sf>frame)frame=sf}
-  updateAll();
-}
-// Keep old tick handler for backward compat with old server
-if(msg.type==='tick'&&msg.data){S.tick=msg.data.tick||S.tick;if(msg.data.agents)S.agents=msg.data.agents;if(msg.data.tiles)S.tiles=msg.data.tiles;if(msg.data.events){S.events=S.events.concat(msg.data.events);if(S.events.length>200)S.events=S.events.slice(-100)}if(msg.data.leaderboard)S.leaderboard=msg.data.leaderboard;updateAll()}
-}
-// Old sync code removed — replaced by new host/spectator handler above
+if(msg.type==='world_state'&&msg.data){S.tick=msg.data.tick||0;S.agents=msg.data.agents||[];S.tiles=msg.data.tiles||[];S.buildings=msg.data.buildings||[];S.events=msg.data.events||[];S.leaderboard=msg.data.leaderboard||[];syncServerBuildings(msg.data.buildings||[]);updateAll()}
+if(msg.type==='tick'&&msg.data){S.tick=msg.data.tick||S.tick;if(msg.data.agents)S.agents=msg.data.agents;if(msg.data.tiles)S.tiles=msg.data.tiles;if(msg.data.buildings){S.buildings=msg.data.buildings;syncServerBuildings(msg.data.buildings)}if(msg.data.events){S.events=S.events.concat(msg.data.events);if(S.events.length>200)S.events=S.events.slice(-100)}if(msg.data.leaderboard)S.leaderboard=msg.data.leaderboard;updateAll()}}
 safeInterval(()=>{if(ws&&ws.readyState===1)ws.send('{"type":"ping"}')},30000);
 
 // === Resource system now driven by agent AI state machine ===
@@ -6363,7 +6294,7 @@ try{
   try{initInfluence()}catch(e){console.warn('Influence init failed:',e)}
   try{document.getElementById('h-points').textContent=specPoints}catch(e){}
   // Try loading saved game
-  didLoad=loadGame();// Load saved world — host persists via localStorage
+  didLoad=loadGame();
   if(didLoad)validateGameState();// clean up any corrupt data from save
   let offlineSummary=null;
   if(didLoad){
@@ -6415,7 +6346,7 @@ try{
 setTimeout(()=>{const io=document.getElementById('intro-overlay');if(io){io.classList.add('fade');setTimeout(()=>{if(io.parentNode)io.remove()},2000)}},5000);
 requestAnimationFrame(render);connectWS();
 safeInterval(tickFood,10000);
-safeInterval(saveGame,30000);// auto-save every 30 seconds
+safeInterval(saveGame,30000);// save every 30 seconds
 safeInterval(regrowResources,60000);// regrow every 1 min (faster)
 window.addEventListener('beforeunload',saveGame);
 // Debug: reset world
