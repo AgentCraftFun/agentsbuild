@@ -3550,7 +3550,7 @@ if(panHighlight&&panHighlight.timer>0)panHighlight.timer--;
 // === CLIENT IS SPECTATOR ONLY — server runs all simulation ===
 // Run visual agent movement + animation state machine
 // Server controls positions (a.x, a.y) and mood — client drives animations
-updateAgentMovement();
+try{updateAgentMovement()}catch(e){console.error('[updateAgentMovement CRASH]',e.message,e.stack)}
 // Stuck building scanner (every 300 frames = ~5 sec)
 if(frame%300===0){
   for(const b of G.clientBuildings){
@@ -3568,14 +3568,15 @@ if(frame%300===0){
     }
   }
 }
-// === CLIENT-SIDE VISUAL SYSTEMS (not simulation — just animations/effects) ===
-if(frame%60===0)try{tickNeeds()}catch(e){}// visual mood indicators
-if(frame%90===0)try{checkSocialInteractions()}catch(e){}// speech bubbles, relationships
-socialCheckTimer--;if(socialCheckTimer<=0){socialCheckTimer=600;try{checkClanFormation()}catch(e){};try{checkVillages()}catch(e){}}
-if(frame%30===0)try{updateConflicts()}catch(e){}// clan tension visuals
-if(frame%3===0)try{updateWildlife()}catch(e){}// animal movement (client-side decoration)
-// Drama events for visual interest
-dramaTimer--;if(dramaTimer<=0){dramaTimer=60*(90+Math.random()*30);try{triggerDramaEvent()}catch(e){}}
+// === CLIENT-SIDE VISUAL SYSTEMS — all wrapped in try/catch to prevent crashes ===
+try{
+if(frame%60===0)tickNeeds();
+if(frame%90===0)checkSocialInteractions();
+socialCheckTimer--;if(socialCheckTimer<=0){socialCheckTimer=600;checkClanFormation();checkVillages()}
+if(frame%30===0)updateConflicts();
+if(frame%3===0)updateWildlife();
+dramaTimer--;if(dramaTimer<=0){dramaTimer=60*(90+Math.random()*30);triggerDramaEvent()}
+}catch(e){if(frame%300===0)console.warn('[Visual systems error]',e.message)}
 // Spotlight
 // Banner cooldown tick
 if(_bannerCooldown>0)_bannerCooldown--;
@@ -4970,7 +4971,7 @@ const st=document.getElementById('h-status');
 if(S.connected){dot.className='on';st.textContent='LIVE';st.style.color='var(--green)'}
 else{dot.className='';st.textContent='OFFLINE';st.style.color='var(--red)'}}
 
-function updateAll(){updateMaps();updateAgentList();updateEvents();updateBottom();updateHeader()}
+function updateAll(){try{updateMaps();updateAgentList();updateEvents();updateBottom();updateHeader()}catch(e){console.error('[updateAll CRASH]',e.message)}}
 
 // === WebSocket ===
 let ws=null,reconTimer=null,reconDelay=1000;
@@ -4978,7 +4979,7 @@ function connectWS(){
 const ov=document.getElementById('conn-overlay');ov.style.display='block';
 try{const p=location.protocol==='https:'?'wss:':'ws:';ws=new WebSocket(`${p}//${location.host}`)}catch(e){schedRecon();return}
 ws.onopen=()=>{S.connected=true;reconDelay=1000;ov.style.display='none';updateHeader()};
-ws.onmessage=e=>{try{handleMsg(JSON.parse(e.data))}catch(ex){console.warn('[WS] Message error:',ex.message,e.data?.slice?.(0,200))}};
+ws.onmessage=e=>{try{const d=JSON.parse(e.data);handleMsg(d)}catch(ex){console.error('[WS] Message handling CRASHED:',ex.message,ex.stack?.split('\n')[1]||'')}};
 ws.onclose=()=>{S.connected=false;updateHeader();ov.style.display='block';ov.querySelector('h2').textContent='Disconnected';schedRecon()};
 ws.onerror=()=>{}}
 function schedRecon(){if(reconTimer)clearTimeout(reconTimer);reconTimer=setTimeout(()=>{reconDelay=Math.min(reconDelay*1.5,15000);connectWS()},reconDelay)}
