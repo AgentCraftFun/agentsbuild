@@ -2,7 +2,7 @@
  * Rich Game Loop — server-side simulation matching the viewer's game systems.
  *
  * Manages: agent AI, resource gathering, building construction,
- * settlement formation, era progression, day/night cycle.
+ * settlement formation, era progression.
  *
  * All state is authoritative — clients are pure renderers.
  */
@@ -30,12 +30,12 @@ const TECH_TREE = [
   { type:'factory', name:'Factory', abbr:'FY', w:5, h:3, pw:110, ph:65, tall:false, cost:{wood:22,stone:60,gold:8}, era:3, faction:'orc' },
 ];
 
-// Build times in ticks (at 3s/tick) — 30% faster than original
+// Build times in ticks — 50% faster than previous (Prompt 2)
 const BUILD_TIMES = {
-  campfire:7, wood_hut:14, log_cabin:21, lumber_mill:21, farm:14,
-  stone_house:28, quarry:28, blacksmith:28, watchtower:28, well:10,
-  town_hall:42, barracks:42, church:42, market:42,
-  brick_house:35, factory:49,
+  campfire:5, wood_hut:10, log_cabin:14, lumber_mill:14, farm:10,
+  stone_house:19, quarry:19, blacksmith:19, watchtower:19, well:7,
+  town_hall:28, barracks:28, church:28, market:28,
+  brick_house:24, factory:33,
 };
 
 class RichGameLoop {
@@ -45,7 +45,6 @@ class RichGameLoop {
     this.intervalId = null;
     this.tickRate = parseInt(process.env.TICK_RATE_MS, 10) || 3000;
 
-    // Shared resources (global economy like the viewer)
     if (this.world.resources === undefined) {
       this.world.resources = { wood: 0, stone: 0, gold: 0, food: 10 };
     }
@@ -53,14 +52,13 @@ class RichGameLoop {
     if (!this.world.richBuildings) this.world.richBuildings = [];
     if (!this.world.settlements) this.world.settlements = [];
 
-    // Agent states: agentId -> { state, target, timer, taskCooldown }
     this.agentStates = new Map();
   }
 
   start() {
     console.log(`[RichLoop] Starting at ${this.tickRate}ms/tick`);
     this.intervalId = setInterval(() => this.tick(), this.tickRate);
-    this.tick(); // first tick immediately
+    this.tick();
   }
 
   stop() {
@@ -73,7 +71,6 @@ class RichGameLoop {
       const tick = this.world.tick;
       const events = [];
 
-      // Process each agent
       for (const agent of this.world.agents.values()) {
         try { this._processAgent(agent, tick, events); } catch (e) {
           console.error(`[RichLoop] Agent ${agent.name} error:`, e.message);
@@ -83,7 +80,7 @@ class RichGameLoop {
       // Advance building construction
       for (const b of this.world.richBuildings) {
         if (!b.complete && b.builderPresent) {
-          const buildTicks = BUILD_TIMES[b.type] || 30;
+          const buildTicks = BUILD_TIMES[b.type] || 20;
           b.progress = Math.min(1, b.progress + 1.0 / buildTicks);
           if (b.progress >= 1) {
             b.complete = true;
@@ -93,21 +90,19 @@ class RichGameLoop {
         }
       }
 
-      // Era progression
       this._checkEra(events);
 
-      // Store events
+      // Settlement formation (Prompt 3): every 20 ticks
+      if (tick % 20 === 0) this._formSettlements(events);
+
       if (!this.world.events) this.world.events = [];
       this.world.events.push(...events);
       if (this.world.events.length > 300) this.world.events.splice(0, this.world.events.length - 300);
 
-      // Broadcast to clients
       if (this.wss) {
-        const state = this._buildBroadcast(events);
-        broadcast(this.wss, 'tick', state);
+        broadcast(this.wss, 'tick', this._buildBroadcast(events));
       }
 
-      // Log
       if (tick % 10 === 0) {
         const r = this.world.resources;
         const agentSummary = [...this.world.agents.values()].map(a => {
@@ -123,6 +118,16 @@ class RichGameLoop {
 
   // ─── AGENT AI ───
 
+  _getAgentSpeed(agent, st) {
+    // Prompt 4: Variable speed based on personality and task
+    let speed = 0.8;
+    if (agent.personality === 'aggressive' || agent.personality === 'chaotic') speed *= 1.3;
+    if (agent.personality === 'lazy') speed *= 0.6;
+    if (agent.personality === 'grinder' || agent.personality === 'overachiever') speed *= 1.15;
+    if (st && st.state === 'claiming') speed *= 1.2;
+    return speed;
+  }
+
   _processAgent(agent, tick, events) {
     let st = this.agentStates.get(agent.id);
     if (!st) {
@@ -130,7 +135,7 @@ class RichGameLoop {
       this.agentStates.set(agent.id, st);
     }
 
-    const speed = agent.personality === 'lazy' ? 0.3 : 0.8; // tiles per tick
+    const speed = this._getAgentSpeed(agent, st);
 
     switch (st.state) {
       case 'idle':
@@ -142,7 +147,6 @@ class RichGameLoop {
 
       case 'walking':
         if (this._moveToward(agent, st.target.x, st.target.y, speed)) {
-          // Arrived at destination
           if (st.nextState) { st.state = st.nextState; st.timer = st.nextTimer || 0; }
           else { st.state = 'idle'; st.taskCooldown = 3; }
         }
@@ -151,11 +155,10 @@ class RichGameLoop {
 
       case 'chopping':
         st.timer--;
-        agent.mood = 'moving'; // shows as active
+        agent.mood = 'chopping'; // Prompt 7: send 'chopping' not 'moving'
         if (st.timer <= 0) {
-          const woodAmt = 8;
-          this.world.resources.wood += woodAmt;
-          events.push({ tick, type: 'gather', agent: agent.name, message: `${agent.name} chopped a tree (+${woodAmt} wood)` });
+          this.world.resources.wood += 8;
+          events.push({ tick, type: 'gather', agent: agent.name, message: `${agent.name} chopped a tree (+8 wood)` });
           st.state = 'idle'; st.taskCooldown = 3;
           agent.mood = 'idle';
         }
@@ -163,11 +166,10 @@ class RichGameLoop {
 
       case 'mining':
         st.timer--;
-        agent.mood = 'moving';
+        agent.mood = 'mining'; // Prompt 7: send 'mining' not 'moving'
         if (st.timer <= 0) {
-          const stoneAmt = 5;
-          this.world.resources.stone += stoneAmt;
-          events.push({ tick, type: 'gather', agent: agent.name, message: `${agent.name} mined stone (+${stoneAmt} stone)` });
+          this.world.resources.stone += 5;
+          events.push({ tick, type: 'gather', agent: agent.name, message: `${agent.name} mined stone (+5 stone)` });
           st.state = 'idle'; st.taskCooldown = 3;
           agent.mood = 'idle';
         }
@@ -175,7 +177,7 @@ class RichGameLoop {
 
       case 'mining_gold':
         st.timer--;
-        agent.mood = 'moving';
+        agent.mood = 'mining_gold';
         if (st.timer <= 0) {
           this.world.resources.gold += 3;
           events.push({ tick, type: 'gather', agent: agent.name, message: `${agent.name} found gold (+3 gold)` });
@@ -187,7 +189,6 @@ class RichGameLoop {
       case 'building':
         agent.mood = 'building';
         if (!st.target || st.target.complete) { st.state = 'idle'; st.taskCooldown = 3; break; }
-        // Must be at building site
         const dist = Math.abs(agent.x - st.target.x) + Math.abs(agent.y - st.target.y);
         if (dist > 3) {
           this._moveToward(agent, st.target.x, st.target.y, speed);
@@ -204,7 +205,6 @@ class RichGameLoop {
         agent.mood = 'claiming';
         if (st.target) {
           if (this._moveToward(agent, st.target.x, st.target.y, speed)) {
-            // Claim the tile
             const tileId = `${st.target.x},${st.target.y}`;
             const tile = this.world.tiles.get(tileId);
             if (tile && !tile.owner) {
@@ -220,8 +220,8 @@ class RichGameLoop {
         st.state = 'idle'; st.taskCooldown = 3;
     }
 
-    // Update agent mood for broadcast
     if (!agent.mood) agent.mood = 'idle';
+    // Prompt 7: include state in current_action for client animation
     agent.current_action = { type: st.state };
   }
 
@@ -229,57 +229,43 @@ class RichGameLoop {
     const r = this.world.resources;
     const pers = agent.personality || 'analyst';
 
-    // Priority 1: Gather wood if low (need wood to build anything)
     if (r.wood < 15 || (r.wood < 40 && Math.random() < 0.6)) {
       const tree = this._findNearbyBiome(agent, ['forest', 'dense_forest'], 15);
       if (tree) {
-        st.state = 'walking';
-        st.target = tree;
-        st.nextState = 'chopping';
-        st.nextTimer = 5; // 5 ticks to chop (15 seconds)
-        st.taskCooldown = 0;
-        return;
+        st.state = 'walking'; st.target = tree;
+        st.nextState = 'chopping'; st.nextTimer = 5;
+        st.taskCooldown = 0; return;
       }
     }
 
-    // Priority 2: Mine stone if in stone age+ and low
     if (this.world.era >= 1 && r.stone < 10) {
       const rock = this._findNearbyBiome(agent, ['hills', 'mountain'], 15);
       if (rock) {
-        st.state = 'walking';
-        st.target = rock;
-        st.nextState = 'mining';
-        st.nextTimer = 6;
-        st.taskCooldown = 0;
-        return;
+        st.state = 'walking'; st.target = rock;
+        st.nextState = 'mining'; st.nextTimer = 6;
+        st.taskCooldown = 0; return;
       }
     }
 
-    // Priority 3: Mine gold if in gold age+ and low
     if (this.world.era >= 2 && r.gold < 5) {
       const gold = this._findNearbyBiome(agent, ['gold_vein'], 20);
       if (gold) {
-        st.state = 'walking';
-        st.target = gold;
-        st.nextState = 'mining_gold';
-        st.nextTimer = 8;
-        st.taskCooldown = 0;
-        return;
+        st.state = 'walking'; st.target = gold;
+        st.nextState = 'mining_gold'; st.nextTimer = 8;
+        st.taskCooldown = 0; return;
       }
     }
 
-    // Priority 4: Build if we can afford something (personality-driven)
+    // Build — use settlement-aware placement (Prompt 3)
     const buildChance = { overachiever: 0.5, analyst: 0.4, grinder: 0.3, aggressive: 0.2, lazy: 0.1, chaotic: 0.35, optimist: 0.4, confused: 0.2 };
     if (Math.random() < (buildChance[pers] || 0.3)) {
       const building = this._pickBuilding();
       if (building) {
         const spot = this._findBuildSpot(agent);
         if (spot) {
-          // Deduct resources
           r.wood -= building.cost.wood;
           r.stone -= building.cost.stone;
           r.gold -= building.cost.gold;
-          // Create building
           const b = {
             type: building.type, name: building.name, abbr: building.abbr,
             x: spot.x, y: spot.y, progress: 0, complete: false,
@@ -289,42 +275,29 @@ class RichGameLoop {
             builderPresent: false,
           };
           this.world.richBuildings.push(b);
-          st.state = 'building';
-          st.target = b;
-          st.taskCooldown = 0;
+          st.state = 'building'; st.target = b; st.taskCooldown = 0;
           events.push({ tick, type: 'build_started', agent: agent.name, message: `${agent.name} started building ${building.name}` });
           return;
         }
       }
     }
 
-    // Priority 5: Claim nearby unclaimed tile
     const unclaimed = this._findNearbyUnclaimed(agent, 8);
     if (unclaimed) {
-      st.state = 'claiming';
-      st.target = unclaimed;
-      st.taskCooldown = 0;
-      return;
+      st.state = 'claiming'; st.target = unclaimed; st.taskCooldown = 0; return;
     }
 
-    // Priority 6: Gather more wood (always useful)
     const tree2 = this._findNearbyBiome(agent, ['forest', 'dense_forest'], 20);
     if (tree2) {
-      st.state = 'walking';
-      st.target = tree2;
-      st.nextState = 'chopping';
-      st.nextTimer = 5;
-      st.taskCooldown = 0;
-      return;
+      st.state = 'walking'; st.target = tree2;
+      st.nextState = 'chopping'; st.nextTimer = 5;
+      st.taskCooldown = 0; return;
     }
 
-    // Default: wander
     st.state = 'walking';
     st.target = { x: Math.max(2, Math.min(this.world.width - 3, agent.x + Math.floor(Math.random() * 11) - 5)),
                   y: Math.max(2, Math.min(this.world.height - 3, agent.y + Math.floor(Math.random() * 11) - 5)) };
-    st.nextState = 'idle';
-    st.nextTimer = 0;
-    st.taskCooldown = 0;
+    st.nextState = 'idle'; st.nextTimer = 0; st.taskCooldown = 0;
   }
 
   _pickBuilding() {
@@ -332,46 +305,62 @@ class RichGameLoop {
     const era = this.world.era;
     const builtTypes = new Set(this.world.richBuildings.filter(b => b.complete).map(b => b.type));
 
-    // Find affordable buildings in current era
     const available = TECH_TREE.filter(b => {
       if (b.era > era) return false;
       if (b.cost.wood > r.wood || b.cost.stone > r.stone || b.cost.gold > r.gold) return false;
-      // Limit duplicates: max 5 of each type
       const count = this.world.richBuildings.filter(eb => eb.type === b.type).length;
       if (count >= 5) return false;
       return true;
     });
 
     if (available.length === 0) return null;
-
-    // Prefer unbuilt types first (variety)
     const unbuilt = available.filter(b => !builtTypes.has(b.type));
     if (unbuilt.length > 0) return unbuilt[Math.floor(Math.random() * unbuilt.length)];
     return available[Math.floor(Math.random() * available.length)];
   }
 
+  // Prompt 3: Settlement-aware build spot
   _findBuildSpot(agent) {
     const tiles = this.world.tiles;
     const width = this.world.width, height = this.world.height;
     const buildings = this.world.richBuildings;
 
-    // Build NEAR the agent, biased toward existing building clusters
-    let cx = agent.x, cy = agent.y;
-    const nearby = buildings.filter(b => Math.abs(b.x - agent.x) + Math.abs(b.y - agent.y) < 20);
-    if (nearby.length >= 2) {
-      cx = Math.round(nearby.reduce((s, b) => s + b.x, 0) / nearby.length);
-      cy = Math.round(nearby.reduce((s, b) => s + b.y, 0) / nearby.length);
+    // First: try to build near an existing settlement center
+    if (this.world.settlements.length > 0) {
+      let nearestS = null, nearestD = Infinity;
+      for (const s of this.world.settlements) {
+        const d = Math.abs(agent.x - s.cx) + Math.abs(agent.y - s.cy);
+        if (d < nearestD) { nearestD = d; nearestS = s; }
+      }
+      if (nearestS && nearestD < 30) {
+        const spot = this._findSpotNear(nearestS.cx, nearestS.cy, 2, 10, tiles, width, height, buildings);
+        if (spot) { spot.settlement = nearestS.name; return spot; }
+      }
     }
 
-    for (let radius = 2; radius < 12; radius++) {
-      for (let attempt = 0; attempt < 8; attempt++) {
-        const angle = Math.random() * Math.PI * 2;
+    // Second: build near existing building cluster
+    const nearby = buildings.filter(b => Math.abs(b.x - agent.x) + Math.abs(b.y - agent.y) < 20);
+    if (nearby.length >= 2) {
+      const cx = Math.round(nearby.reduce((s, b) => s + b.x, 0) / nearby.length);
+      const cy = Math.round(nearby.reduce((s, b) => s + b.y, 0) / nearby.length);
+      return this._findSpotNear(cx, cy, 2, 8, tiles, width, height, buildings);
+    }
+
+    // Third: build near agent
+    return this._findSpotNear(agent.x, agent.y, 2, 6, tiles, width, height, buildings);
+  }
+
+  _findSpotNear(cx, cy, minR, maxR, tiles, width, height, buildings) {
+    const startAngle = Math.random() * Math.PI * 2;
+    for (let radius = minR; radius <= maxR; radius++) {
+      for (let i = 0; i < 12; i++) {
+        const angle = startAngle + (i * Math.PI * 2 / 12);
         const rx = Math.max(2, Math.min(width - 3, cx + Math.round(Math.cos(angle) * radius)));
         const ry = Math.max(2, Math.min(height - 3, cy + Math.round(Math.sin(angle) * radius)));
         const tile = tiles.get(`${rx},${ry}`);
         if (!tile) continue;
         if (['deep_water', 'shallow_water', 'river'].includes(tile.biome)) continue;
-        // Check all tiles in footprint for water
+        // Check full footprint for water
         let onWater = false;
         for (let dy = 0; dy <= 3 && !onWater; dy++) {
           for (let dx = 0; dx <= 3 && !onWater; dx++) {
@@ -380,7 +369,6 @@ class RichGameLoop {
           }
         }
         if (onWater) continue;
-        // Min spacing from other buildings
         const tooClose = buildings.some(b => Math.abs(b.x - rx) + Math.abs(b.y - ry) < 4);
         if (tooClose) continue;
         return { x: rx, y: ry };
@@ -389,16 +377,54 @@ class RichGameLoop {
     return null;
   }
 
+  // Prompt 3: Settlement formation
+  _formSettlements(events) {
+    const buildings = this.world.richBuildings.filter(b => b.complete);
+    const unassigned = buildings.filter(b => !b.settlement);
+
+    for (const b of unassigned) {
+      // Check if near existing settlement
+      let joined = false;
+      for (const s of this.world.settlements) {
+        if (Math.abs(b.x - s.cx) + Math.abs(b.y - s.cy) < 12) {
+          b.settlement = s.name;
+          s.buildingCount = buildings.filter(b2 => b2.settlement === s.name).length;
+          joined = true;
+          break;
+        }
+      }
+      if (joined) continue;
+
+      // Check if 2+ nearby unassigned buildings → form settlement
+      const nearbyUnassigned = unassigned.filter(b2 =>
+        b2 !== b && Math.abs(b2.x - b.x) + Math.abs(b2.y - b.y) < 8
+      );
+      if (nearbyUnassigned.length >= 1) {
+        const prefixes = ['Oak', 'Pine', 'Maple', 'Iron', 'Silver', 'Sun', 'Storm', 'Frost', 'Meadow', 'River', 'Hill', 'Stone', 'Ember', 'Shadow', 'Moon'];
+        const suffixes = ['wood', 'dale', 'heim', 'keep', 'haven', 'hollow', 'ridge', 'field', 'crest', 'vale', ' Village', ' Camp'];
+        let name = prefixes[Math.floor(Math.random() * prefixes.length)] + suffixes[Math.floor(Math.random() * suffixes.length)];
+        // Ensure unique
+        while (this.world.settlements.find(s => s.name === name)) {
+          name = prefixes[Math.floor(Math.random() * prefixes.length)] + suffixes[Math.floor(Math.random() * suffixes.length)];
+        }
+        const s = { name, cx: b.x, cy: b.y, buildingCount: nearbyUnassigned.length + 1 };
+        this.world.settlements.push(s);
+        b.settlement = name;
+        nearbyUnassigned.forEach(nb => nb.settlement = name);
+        events.push({ tick: this.world.tick, type: 'settlement_formed', message: `🏘️ ${name} was founded!` });
+      }
+    }
+  }
+
   _moveToward(agent, tx, ty, speed) {
     const dx = tx - agent.x, dy = ty - agent.y;
     const dist = Math.abs(dx) + Math.abs(dy);
     if (dist <= speed) {
       agent.x = tx; agent.y = ty;
-      return true; // arrived
+      return true;
     }
     agent.x += Math.sign(dx) * Math.min(Math.abs(dx), speed);
     agent.y += Math.sign(dy) * Math.min(Math.abs(dy), speed);
-    // Clamp to world
     agent.x = Math.max(0, Math.min(this.world.width - 1, Math.round(agent.x)));
     agent.y = Math.max(0, Math.min(this.world.height - 1, Math.round(agent.y)));
     return false;
@@ -449,6 +475,7 @@ class RichGameLoop {
     }
   }
 
+  // Prompt 7: Include _state and target in broadcast for client animations
   _buildBroadcast(events) {
     const agents = [];
     for (const agent of this.world.agents.values()) {
@@ -461,7 +488,6 @@ class RichGameLoop {
         buildings_count: this.world.richBuildings.filter(b => b.builder === agent.name).length,
         work_balance: 0, resources: this.world.resources,
         message: agent.message || '',
-        // Client needs state info for animations
         _state: st ? st.state : 'idle',
         _targetX: st && st.target ? st.target.x : undefined,
         _targetY: st && st.target ? st.target.y : undefined,
