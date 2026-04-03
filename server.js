@@ -143,6 +143,12 @@ function loadState() {
     if (!fs.existsSync(STATE_FILE)) return null;
     const data = JSON.parse(fs.readFileSync(STATE_FILE, 'utf8'));
     if (data && data.agents && data.agents.length > 0) {
+      // Reject corrupted saves from old server
+      if (data.buildings && data.buildings.length > 100) {
+        console.log(`[Load] Rejecting corrupted save: ${data.buildings.length} buildings. Starting fresh.`);
+        fs.unlinkSync(STATE_FILE);
+        return null;
+      }
       console.log(`[Load] Tick:${data.tick} Bld:${data.buildings.length} Agents:${data.agents.length}`);
       return data;
     }
