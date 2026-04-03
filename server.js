@@ -269,8 +269,8 @@ function pickTask(agent) {
     const tree = findNearby(agent, ['forest','dense_forest'], 15);
     if (tree) { agent.task='walk'; agent.targetX=tree.x; agent.targetY=tree.y; agent.nextTask='chop'; agent.nextTimer=5; return; }
   }
-  // Priority 4: Mine stone if stone age+
-  if (GS.era>=1 && r.stone<10) {
+  // Priority 4: Mine stone (always useful, not just stone age+)
+  if (r.stone < 15 && Math.random() < 0.4) {
     const rock = findNearby(agent, ['hills','mountain'], 15);
     if (rock) { agent.task='walk'; agent.targetX=rock.x; agent.targetY=rock.y; agent.nextTask='mine'; agent.nextTimer=6; return; }
   }
@@ -298,7 +298,12 @@ function pickTask(agent) {
       }
     }
   }
-  // Priority 7: Claim / gather more wood
+  // Priority 7: Gather stone if low
+  if (r.stone < 20) {
+    const rock2 = findNearby(agent, ['hills','mountain'], 20);
+    if (rock2) { agent.task='walk'; agent.targetX=rock2.x; agent.targetY=rock2.y; agent.nextTask='mine'; agent.nextTimer=6; return; }
+  }
+  // Priority 8: Gather more wood
   const tree2 = findNearby(agent, ['forest','dense_forest'], 20);
   if (tree2) { agent.task='walk'; agent.targetX=tree2.x; agent.targetY=tree2.y; agent.nextTask='chop'; agent.nextTimer=5; return; }
   // Default: wander
