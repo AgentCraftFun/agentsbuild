@@ -108,6 +108,36 @@ canvas{display:block;image-rendering:pixelated;image-rendering:crisp-edges}
 .deploy-preview{background:#080812;border:1px solid #2a2a4e;border-radius:6px;padding:10px;margin-top:12px}
 .deploy-preview .preview-name{color:#f0c040;font-size:12px;font-weight:bold}
 .deploy-preview .preview-detail{color:#888;font-size:10px;margin-top:2px}
+/* === MOBILE LAYOUT === */
+@media(max-width:768px){
+  #app{grid-template-columns:1fr;grid-template-rows:32px 1fr auto 28px}
+  #header{grid-column:1;padding:0 8px;font-size:10px}
+  #header h1{font-size:10px;letter-spacing:1px}
+  #header-stats{gap:8px;font-size:10px}
+  #header-stats span{display:none}
+  #header-stats .val{display:inline}
+  #sidebar{border-left:none;border-top:1px solid var(--border);max-height:35vh;overflow-y:auto}
+  #agent-section{max-height:none}
+  #bottom-bar{grid-column:1;padding:0 8px;gap:10px;font-size:10px}
+  #bottom-bar span{font-size:9px}
+  #canvas-wrap{min-height:50vh}
+  .section-title{padding:4px 8px;font-size:9px}
+  .agent-row{padding:2px 8px}
+  .agent-name{font-size:10px}
+  .agent-task{font-size:9px}
+  #minimap-section{display:none}
+  #market-section{display:none}
+  #deploy-section{padding:4px 8px}
+  #deploy-section button{padding:6px;font-size:10px}
+  #conn-overlay{padding:12px 16px}
+  #conn-overlay h2{font-size:12px}
+}
+@media(max-width:480px){
+  #header h1{display:none}
+  #header-stats{gap:6px;font-size:9px}
+  #sidebar{max-height:30vh}
+  #canvas-wrap{min-height:55vh}
+}
 </style>
 </head>
 <body>
