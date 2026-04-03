@@ -930,29 +930,20 @@ function drawDetail(c,d,fr){
   const key=`${d.x},${d.y}`;
   const anim=harvestAnim.get(key);
 
-  // Apply smooth chop animation
+  // Apply shake + scale for harvested objects
   if(anim){
     c.save();
-    if(anim.type==='tree'){
-      // Smooth slow sway + progress bar style shrinking
-      const sway=Math.sin(fr*0.08)*3*(1-anim.progress);// slow gentle sway, decreases as tree shrinks
-      const scale=Math.max(0.1,1-anim.progress*0.9);// shrink to 10%
-      const lean=anim.progress*15;// lean more as progress increases (up to 15 degrees)
-      c.translate(d.x+TS/2,d.y+TS);// pivot at tree base
-      c.rotate(lean*Math.PI/180);
-      c.scale(scale,scale);
-      c.translate(-d.x-TS/2-sway,-d.y-TS);
-      // Progress bar above tree
-      if(anim.progress>0&&anim.progress<1){
-        const barW=20,barH=3,barX=d.x+TS/2-barW/2,barY=d.y-8;
-        c.fillStyle='#333';c.fillRect(barX/scale,barY/scale,barW/scale,barH/scale);
-        c.fillStyle='#44cc44';c.fillRect(barX/scale,barY/scale,(barW*anim.progress)/scale,barH/scale);
-      }
-    }else{
-      // Rock: just shake slightly
-      const shakeX=Math.sin(fr*0.15)*2;
-      c.translate(d.x+TS/2+shakeX,d.y+TS);
-      c.translate(-d.x-TS/2,-d.y-TS);
+    const shakeX=anim.shakeTimer>0?Math.sin(fr*2)*3:0;
+    if(anim.shakeTimer>0)anim.shakeTimer--;
+    const scale=anim.type==='tree'?Math.max(0.3,1-anim.progress*0.7):1;
+    const lean=anim.type==='tree'?anim.progress*5:0;// degrees
+    c.translate(d.x+TS/2+shakeX,d.y+TS);
+    c.rotate(lean*Math.PI/180);
+    c.scale(scale,scale);
+    c.translate(-d.x-TS/2,-d.y-TS);
+    // Draw crack lines on rocks
+    if(anim.type==='rock'&&anim.progress>0.25){
+      // Will draw after the rock
     }
   }
 
@@ -3235,10 +3226,22 @@ function updateAgentMovement(){
         }
       }
       if(st.timer<=0){
-        // SERVER HANDLES RESOURCES — just loop the animation
-        st.timer=hasLumberMill?50:100;// reset for continuous animation
-        // Spawn particles on each cycle for visual feedback
-        if(st.target){for(let i=0;i<3;i++)spawnParticle(st.target.x+TS/2+(Math.random()-0.5)*16,st.target.y+TS*0.4,'debris')}
+        const q2=getQuirk(a.name),gm=q2?q2.gatherMult:1,cm=q2?q2.chopMult||1:1;
+        const woodAmt=Math.round(8*gm*cm);
+        G.wood+=woodAmt;worldStats.totalWood+=woodAmt;
+        const soc3=getAgentSocial(a.id);soc3.morale=Math.min(100,soc3.morale+5);soc3.stats.treesChopped++;
+        milestones.trees++;checkMilestones();
+        if(q2&&q2.regrows&&st.target){const rk=`${st.target.x},${st.target.y}`;setTimeout(()=>harvestables.delete(rk),60000)}
+        // Batched in summary — no individual event spam
+        if(st.target){
+          const key2=`${st.target.x},${st.target.y}`;
+          harvestables.set(key2,true);harvestAnim.delete(key2);
+          // Leave stump
+          stumps.push({x:st.target.x,y:st.target.y,type:'stump',timer:1800});
+          // Tree fall particles
+          for(let i=0;i<6;i++)spawnParticle(st.target.x+TS/2+(Math.random()-0.5)*16,st.target.y+TS*0.4,'debris');
+        }
+        st.state='idle';st.taskCooldown=5;
       }
     }
     else if(st.state==='mining'){
@@ -3254,9 +3257,17 @@ function updateAgentMovement(){
         }
       }
       if(st.timer<=0){
-        // SERVER HANDLES RESOURCES — just loop the animation
-        st.timer=hasQuarry?70:140;
-        if(st.target){for(let i=0;i<3;i++)spawnParticle(st.target.x+TS/2+(Math.random()-0.5)*14,st.target.y+TS/2,'debris')}
+        G.stone+=5;worldStats.totalStone+=5;
+        const soc4=getAgentSocial(a.id);soc4.morale=Math.min(100,soc4.morale+5);soc4.stats.stoneMined++;
+        milestones.stones++;checkMilestones();
+        // Batched in summary
+        if(st.target){
+          const key2=`${st.target.x},${st.target.y}`;
+          harvestables.set(key2,true);harvestAnim.delete(key2);
+          stumps.push({x:st.target.x,y:st.target.y,type:'rubble',timer:1200});
+          for(let i=0;i<5;i++)spawnParticle(st.target.x+TS/2+(Math.random()-0.5)*14,st.target.y+TS/2,'debris');
+        }
+        st.state='idle';st.taskCooldown=5;
       }
     }
     else if(st.state==='mining_gold'){
@@ -3265,9 +3276,10 @@ function updateAgentMovement(){
         spawnParticle(st.target.x+TS/2,st.target.y+TS/2,'gold');
       }
       if(st.timer<=0){
-        // SERVER HANDLES RESOURCES — just loop the animation
-        st.timer=200;
-        if(st.target){for(let i=0;i<2;i++)spawnParticle(st.target.x+TS/2,st.target.y+TS/2,'gold')}
+        G.gold+=3;worldStats.totalGold+=3;getAgentSocial(a.id).stats.goldMined++;
+        // Batched in summary
+        if(st.target)st.target.alive=false;
+        st.state='idle';st.taskCooldown=5;
       }
     }
     else if(st.state==='building'){
@@ -3503,7 +3515,7 @@ if(tvMode){
         // Cinematic: zoom out first, then zoom in on subject
         panToWorld(v2.x*WW,v2.y*WH,2.0,40);
         followAgent=pick.a.id;// track them
-        panHighlight={id:pick.a.id,timer:60};
+        panHighlight={id:pick.a.id,timer:480};
       }
     }
   }
@@ -3511,65 +3523,7 @@ if(tvMode){
   if(tvModeTimer%480>400&&followAgent){followAgent=null}
 }
 if(panHighlight&&panHighlight.timer>0)panHighlight.timer--;
-// SERVER CONTROLS ALL SIMULATION — client only interpolates visuals
-for(const a of S.agents){
-  let v=agentVisual.get(a.id);
-  if(!v){v={x:a.x/WW,y:a.y/WH,tx:a.x/WW,ty:a.y/WH};agentVisual.set(a.id,v)}
-  v.tx=a.x/WW;v.ty=a.y/WH;
-  const speed=(a.personality==='lazy')?0.012:0.025;
-  v.x+=(v.tx-v.x)*speed;v.y+=(v.ty-v.y)*speed;
-  // Drive visual animation state from server
-  let st=agentState.get(a.id);
-  if(!st){st={state:'idle',target:null,timer:0,taskCooldown:0};agentState.set(a.id,st)}
-  const ss=a._state||a.mood||'idle';
-  if(ss==='chopping'){
-    st.state='chopping';
-    if(st.timer<20)st.timer=100;
-    // Use findNearestDetail to get EXACT detail object coordinates (guaranteed key match with drawDetail)
-    if(!st.target||st.target.x===undefined){
-      const tree=findNearestDetail(v.x,v.y,['deciduous','oak','pine','birch','fruittree']);
-      if(tree){st.target=tree}
-      else{st.target={x:Math.floor(v.x*WW)*TS,y:Math.floor(v.y*WH)*TS}}
-    }
-  }else if(ss==='mining'){
-    st.state='mining';
-    if(st.timer<20)st.timer=140;
-    if(!st.target||st.target.x===undefined){
-      const rock=findNearestDetail(v.x,v.y,['rock','lgboulder','mdboulder']);
-      if(rock){st.target=rock}
-      else{st.target={x:Math.floor(v.x*WW)*TS,y:Math.floor(v.y*WH)*TS}}
-    }
-  }else if(ss==='mining_gold'){
-    if(st.state!=='mining_gold'){st.state='mining_gold';st.timer=200;st.target={x:Math.floor(v.x*WW)*TS,y:Math.floor(v.y*WH)*TS}}
-    if(st.timer<20)st.timer=200;
-    if(st.target&&frame%20===0)spawnParticle(st.target.x+TS/2,st.target.y+TS/2,'gold');
-  }else if(ss==='building'){
-    const bld=G.clientBuildings.find(b2=>!b2.complete&&b2.builder===a.name);
-    if(bld){st.state='building';st.target=bld}
-    else{st.state='idle';st.taskCooldown=3}
-  }else{
-    // Server says idle/walking/claiming — clear stuck animations
-    if(st.state==='chopping'&&st.target){
-      // Tree was chopped — mark it as harvested so it disappears + leave stump
-      const hk=`${st.target.x},${st.target.y}`;
-      harvestables.set(hk,true);harvestAnim.delete(hk);
-      stumps.push({x:st.target.x,y:st.target.y,type:'stump',timer:3600});
-      for(let pi=0;pi<6;pi++)spawnParticle(st.target.x+TS/2+(Math.random()-0.5)*16,st.target.y+TS*0.4,'debris');
-    }
-    if(st.state==='mining'&&st.target){
-      const hk=`${st.target.x},${st.target.y}`;
-      harvestables.set(hk,true);harvestAnim.delete(hk);
-      stumps.push({x:st.target.x,y:st.target.y,type:'rubble',timer:2400});
-    }
-    if(st.state==='chopping'||st.state==='mining'||st.state==='mining_gold'||st.state==='building'){
-      st._chopProgress=0;// reset chop progress for next tree
-      st.state='idle';st.taskCooldown=3;
-    }
-  }
-}
-// Cleanup dead agents
-{const liveIds=new Set(S.agents.map(a=>a.id));
-for(const id of agentVisual.keys()){if(!liveIds.has(id)){agentVisual.delete(id);agentState.delete(id)}}}
+updateAgentMovement();
 // Agent watchdog: force idle agents to act (every 30 frames)
 if(frame%30===0){
   for(const a of S.agents){
@@ -3594,9 +3548,15 @@ if(frame%300===0){
     }
   }
 }
-// ALL SIMULATION DISABLED — server is authoritative
-// Client-side decorations only:
-if(frame%3===0)try{updateWildlife()}catch(e){}// visual wildlife (harmless decoration)
+// Social/needs systems (throttled)
+if(frame%60===0)tickNeeds();
+if(frame%90===0)checkSocialInteractions();
+socialCheckTimer--;if(socialCheckTimer<=0){socialCheckTimer=600;checkClanFormation();checkVillages()}
+if(frame%30===0)updateConflicts();
+if(frame%300===0){ensureResourceAbundance();batchResourceSummary()}
+if(frame%3===0)try{updateWildlife()}catch(e){}// wildlife every 3 frames
+// Drama events
+dramaTimer--;if(dramaTimer<=0){dramaTimer=60*(90+Math.random()*30);triggerDramaEvent()}
 // Spotlight
 // Banner cooldown tick
 if(_bannerCooldown>0)_bannerCooldown--;
@@ -4370,7 +4330,6 @@ for(const item of renderItems){
     const agTx=Math.floor(ad.vx),agTy=Math.floor(ad.vy);
     const agOnWater=(agTx>=0&&agTx<WW&&agTy>=0&&agTy<WH)?(tBiomes[agTy*WW+agTx]===0||tBiomes[agTy*WW+agTx]===1||tBiomes[agTy*WW+agTx]===10):false;
     drawAgentPixelArt(ctx,ax,ay,ad.a,sel,frame,{walking:ad.isWalking,building:ad.isBuilding,faceLeft:ad.faceLeft,idleFrames:ad.a._idleFrames||0,resting:isResting,carrying,chopping:isChopping2,mining:isMining2,onWater:agOnWater});
-
     // Highlight circle for pan-to-agent
     if(panHighlight&&panHighlight.id===ad.a.id&&panHighlight.timer>0){
       const hAlpha=0.3+0.3*Math.sin(frame*0.15);
@@ -4621,37 +4580,6 @@ for(let i=bubbles.length-1;i>=0;i--){
   ctx.fillText(txt,bax,bay);
   ctx.globalAlpha=1;
   ctx.lineWidth=1;
-}
-
-// === CHOP/MINE VISUAL EFFECTS (drawn in world-space) ===
-for(const a of S.agents){
-  const ast4=agentState.get(a.id);
-  if(!ast4)continue;
-  const v4=agentVisual.get(a.id);
-  if(!v4)continue;
-
-  // Use target if available, otherwise use agent's visual position
-  let tx,ty;
-  if(ast4.target&&ast4.target.x!==undefined){tx=ast4.target.x;ty=ast4.target.y}
-  else{tx=Math.floor(v4.x*WW)*TS;ty=Math.floor(v4.y*WH)*TS}
-
-  if(ast4.state==='chopping'){
-    const key=`${tx},${ty}`;
-    // Smooth progress that increases over time (doesn't oscillate with timer resets)
-    if(!ast4._chopProgress)ast4._chopProgress=0;
-    ast4._chopProgress=Math.min(0.95,ast4._chopProgress+0.003);// ~5 seconds to full
-    harvestAnim.set(key,{progress:ast4._chopProgress,shakeTimer:0,type:'tree'});
-    if(frame%20===0)spawnParticle(tx+TS/2,ty+TS*0.6,'debris');
-  }
-
-  if(ast4.state==='mining'||ast4.state==='mining_gold'){
-    // Drive the EXISTING drawDetail animation system for rocks
-    const key=`${tx},${ty}`;
-    const mineTimer=ast4.timer||140;
-    const mineProg=Math.max(0,Math.min(1,1-mineTimer/140));
-    harvestAnim.set(key,{progress:mineProg,shakeTimer:4,type:'rock'});
-    if(frame%20===0)spawnParticle(tx+TS/2,ty+TS/2,'debris');
-  }
 }
 
 ctx.restore();
@@ -4986,7 +4914,7 @@ function selAg(id){
     const tx=v?v.x*WW:a.x,ty=v?v.y*WH:a.y;
     panToWorld(tx,ty,1.8,30);
     targetZoom=1.8;
-    panHighlight={id:a.id,timer:60};// 1 sec highlight
+    panHighlight={id:a.id,timer:300};// 5 sec highlight
     // Show tracking indicator
     const ti2=document.getElementById('tracking-indicator');
     if(ti2){ti2.textContent=`\uD83D\uDD12 Tracking: ${a.name}`;ti2.style.display=''}
@@ -5036,45 +4964,52 @@ ws.onmessage=e=>{try{handleMsg(JSON.parse(e.data))}catch(ex){console.warn('[WS] 
 ws.onclose=()=>{S.connected=false;updateHeader();ov.style.display='block';ov.querySelector('h2').textContent='Disconnected';schedRecon()};
 ws.onerror=()=>{}}
 function schedRecon(){if(reconTimer)clearTimeout(reconTimer);reconTimer=setTimeout(()=>{reconDelay=Math.min(reconDelay*1.5,15000);connectWS()},reconDelay)}
-function handleMsg(msg){
-if(msg.type==='pong')return;
-if((msg.type==='world_state'||msg.type==='tick')&&msg.data){
-  S.tick=msg.data.tick||S.tick;
-  if(msg.data.agents)S.agents=msg.data.agents;
-  if(msg.data.tiles)S.tiles=msg.data.tiles;
-  if(msg.data.events){
-    if(msg.type==='world_state')S.events=msg.data.events||[];
-    else{S.events=S.events.concat(msg.data.events);if(S.events.length>200)S.events=S.events.slice(-100)}
-  }
-  if(msg.data.leaderboard)S.leaderboard=msg.data.leaderboard;
-  if(msg.data.era!==undefined)G.era=msg.data.era;
-  // SERVER BUILDINGS ARE THE ONLY TRUTH — replace client buildings entirely
-  if(msg.data.buildings){
-    S.buildings=msg.data.buildings;
+let _initialSyncDone=false;
+function syncServerBuildings(serverBlds){
+  if(!_initialSyncDone&&serverBlds.length>0){
+    // FIRST SYNC: seed client with server buildings so all clients start from same state
+    _initialSyncDone=true;
     G.clientBuildings.length=0;
-    for(const sb of msg.data.buildings){
+    for(const sb of serverBlds){
       G.clientBuildings.push({...sb,
         complete:sb.complete||sb.progress>=1,building:!sb.complete,
         pw:sb.pw||(sb.width||3)*TS,ph:sb.ph||(sb.height||3)*TS
       });
     }
+    try{for(const b of G.clientBuildings){if(b.complete)clearDetailsAtBuilding(b.x,b.y,b.pw||TS*2,b.ph||TS*2)}}catch(e){}
+    console.log('[SYNC] Seeded',G.clientBuildings.length,'buildings from server');
+    return;
   }
-  // Sync agent visual targets from server positions
-  for(const a of S.agents){
-    const v=agentVisual.get(a.id);
-    if(v){v.tx=a.x/WW;v.ty=a.y/WH}
-    // Drive agent animation state from server
-    let st=agentState.get(a.id);
-    if(st){
-      // Animation states handled by interpolation loop (lines 3516+)
-      // WS handler only handles building state (needs building reference)
-      const ss=a._state||a.mood||'idle';
-      if(ss==='building'&&st.state!=='building'){
-        const nearBld=G.clientBuildings.find(b2=>!b2.complete&&b2.builder===a.name);
-        if(nearBld){st.state='building';st.target=nearBld;st.timer=0}
-      }
+  // After first sync: only update progress on existing buildings (original behavior)
+  for(const sb of serverBlds){
+    const match=G.clientBuildings.find(cb=>cb.type===sb.type&&Math.abs(cb.x-sb.x)<3&&Math.abs(cb.y-sb.y)<3);
+    if(match){
+      if(sb.complete)match.complete=true;
+      if(sb.progress>match.progress)match.progress=sb.progress;
     }
   }
+}
+function handleMsg(msg){
+if(msg.type==='pong')return;
+if(msg.type==='world_state'&&msg.data){
+  S.tick=msg.data.tick||0;S.agents=msg.data.agents||[];S.tiles=msg.data.tiles||[];
+  S.buildings=msg.data.buildings||[];S.events=msg.data.events||[];S.leaderboard=msg.data.leaderboard||[];
+  syncServerBuildings(msg.data.buildings||[]);
+  // Sync agent positions from server
+  for(const a of S.agents){const v=agentVisual.get(a.id);if(v){v.tx=a.x/WW;v.ty=a.y/WH}}
+  if(msg.data.era!==undefined)G.era=msg.data.era;
+  updateAll();
+}
+if(msg.type==='tick'&&msg.data){
+  S.tick=msg.data.tick||S.tick;
+  if(msg.data.agents)S.agents=msg.data.agents;
+  if(msg.data.tiles)S.tiles=msg.data.tiles;
+  if(msg.data.buildings){S.buildings=msg.data.buildings;syncServerBuildings(msg.data.buildings)}
+  if(msg.data.events){S.events=S.events.concat(msg.data.events);if(S.events.length>200)S.events=S.events.slice(-100)}
+  if(msg.data.leaderboard)S.leaderboard=msg.data.leaderboard;
+  // Sync agent positions from server
+  for(const a of S.agents){const v=agentVisual.get(a.id);if(v){v.tx=a.x/WW;v.ty=a.y/WH}}
+  if(msg.data.era!==undefined)G.era=msg.data.era;
   updateAll();
 }}
 safeInterval(()=>{if(ws&&ws.readyState===1)ws.send('{"type":"ping"}')},30000);
@@ -5640,7 +5575,7 @@ function triggerSpotlight(){
   // Pan to agent
   const v2=agentVisual.get(a.id);
   if(v2){panTarget={vpX:canvasEl.width/(2*1.3)-v2.x*WW*TS-TS/2,vpY:canvasEl.height/(2*1.3)-v2.y*WH*TS-TS/2,zoom:1.3};panFrames=30}
-  panHighlight={id:a.id,timer:60};// 1 sec highlight
+  panHighlight={id:a.id,timer:600};// 10 sec highlight
 }
 
 // === Drama Banners ===
@@ -6439,11 +6374,10 @@ try{
 // ALWAYS remove intro overlay after 5 seconds no matter what
 setTimeout(()=>{const io=document.getElementById('intro-overlay');if(io){io.classList.add('fade');setTimeout(()=>{if(io.parentNode)io.remove()},2000)}},5000);
 requestAnimationFrame(render);connectWS();
-// ALL LOCAL SIMULATION INTERVALS DISABLED — server is authoritative
-// safeInterval(tickFood,10000);
-// safeInterval(saveGame,30000);
-// safeInterval(regrowResources,60000);
-// window.addEventListener('beforeunload',saveGame);
+safeInterval(tickFood,10000);
+// safeInterval(saveGame,30000) — disabled, server persists state
+safeInterval(regrowResources,60000);// regrow every 1 min (faster)
+// window.addEventListener('beforeunload',saveGame); — server persists
 // Debug: reset world
 window.resetWorld=function(){localStorage.removeItem(SAVE_KEY);location.reload()}
 </script>
