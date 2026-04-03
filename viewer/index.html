@@ -3534,19 +3534,41 @@ for(const a of S.agents){
   let st=agentState.get(a.id);
   if(!st){st={state:'idle',target:null,timer:0,taskCooldown:0};agentState.set(a.id,st)}
   const ss=a._state||a.mood||'idle';
-  // Tick down existing animation timers
-  if(st.state==='chopping'||st.state==='mining'||st.state==='mining_gold'){
-    st.timer--;if(st.timer<=0){st.state='idle';st.taskCooldown=3}
-  }else if(st.state==='building'){
-    if(!st.target||st.target.complete){st.state='idle';st.taskCooldown=3}
-  }
-  // Server state drives new animations
-  if(ss==='chopping'&&st.state==='idle'){st.state='chopping';st.timer=60}
-  if(ss==='mining'&&st.state==='idle'){st.state='mining';st.timer=60}
-  if(ss==='mining_gold'&&st.state==='idle'){st.state='mining_gold';st.timer=60}
-  if(ss==='building'&&st.state!=='building'){
-    const nearBld=G.clientBuildings.find(b2=>!b2.complete&&b2.builder===a.name);
-    if(nearBld){st.state='building';st.target=nearBld;st.timer=0}
+  // Server state DIRECTLY drives animation — no timers, server is authoritative
+  if(ss==='chopping'){
+    st.state='chopping';st.timer=999;// keep chopping until server says otherwise
+    // Find nearest tree for visual target
+    if(!st.target||st.target.type!=='tree'){
+      const gx=Math.floor(v.x*WW),gy=Math.floor(v.y*WH);
+      for(let r=1;r<4;r++){for(let dx=-r;dx<=r;dx++){for(let dy=-r;dy<=r;dy++){
+        if(Math.abs(dx)!==r&&Math.abs(dy)!==r)continue;
+        const bi=tBiomes[(gy+dy)*WW+(gx+dx)];
+        if(bi!==undefined&&(BL[bi]==='forest'||BL[bi]==='dense_forest')){st.target={x:(gx+dx)*TS,y:(gy+dy)*TS,type:'tree'};r=99;break}
+      }}}
+    }
+  }else if(ss==='mining'){
+    st.state='mining';st.timer=999;
+  }else if(ss==='mining_gold'){
+    st.state='mining_gold';st.timer=999;
+  }else if(ss==='building'){
+    // Find the building this agent is working on from CURRENT client buildings
+    const bld=G.clientBuildings.find(b2=>!b2.complete&&b2.builder===a.name);
+    if(bld){st.state='building';st.target=bld;st.timer=0}
+    else{st.state='idle';st.taskCooldown=3}// building complete, go idle
+  }else if(ss==='walking'||ss==='moving'||ss==='claiming'){
+    // Agent is moving — show as walking (not stuck in old animation)
+    if(st.state==='building'||st.state==='chopping'||st.state==='mining'){
+      st.state='idle';st.taskCooldown=1;
+    }
+  }else{
+    // Server says idle — clear any lingering animation
+    if(st.state==='chopping'||st.state==='mining'||st.state==='mining_gold'){
+      st.state='idle';st.taskCooldown=3;
+    }
+    if(st.state==='building'){
+      const bld2=G.clientBuildings.find(b2=>!b2.complete&&b2.builder===a.name);
+      if(!bld2){st.state='idle';st.taskCooldown=3}// no incomplete building = done
+    }
   }
 }
 // Cleanup dead agents
