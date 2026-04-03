@@ -3519,34 +3519,16 @@ for(const a of S.agents){
       st.state='chopping';st.timer=100;
       const gx=Math.floor(v.x*WW),gy=Math.floor(v.y*WH);
       st.target=null;
-      // Find nearest tile that actually HAS a tree detail (not just forest biome)
       for(let r=0;r<6&&!st.target;r++){for(let dx=-r;dx<=r&&!st.target;dx++){for(let dy=-r;dy<=r&&!st.target;dy++){
         if(r>0&&Math.abs(dx)!==r&&Math.abs(dy)!==r)continue;
         const tx2=gx+dx,ty2=gy+dy;if(tx2<0||tx2>=WW||ty2<0||ty2>=WH)continue;
-        const bi=tBiomes[ty2*WW+tx2];
-        const biName=BL[bi];
-        // Check biome has trees AND the detail hash produces a tree at this tile
-        if(biName==='forest'||biName==='dense_forest'){
-          const h1=detailHash(tx2,ty2)%100;
-          if(h1<12){st.target={x:tx2*TS,y:ty2*TS}}// pine tree exists here
-        }else if(biName==='grassland'){
-          const h1=detailHash(tx2,ty2)%100;
-          if(h1<8){st.target={x:tx2*TS,y:ty2*TS}}// deciduous tree here
+        const bi=tBiomes[ty2*WW+tx2];const biName=BL[bi];
+        if(biName==='forest'||biName==='dense_forest'||biName==='grassland'){
+          st.target={x:tx2*TS,y:ty2*TS}
         }
       }}}
     }
-    // Keep timer alive and drive harvestAnim directly for tree shake
     if(st.timer<20)st.timer=100;
-    // Animate the tree: shake + particles
-    if(st.target){
-      const chopProg=1-st.timer/100;
-      const key=`${st.target.x},${st.target.y}`;
-      harvestAnim.set(key,{progress:chopProg,shakeTimer:0,type:'tree'});
-      if(frame%15===0){
-        const ha=harvestAnim.get(key);if(ha)ha.shakeTimer=5;
-        spawnParticle(st.target.x+TS/2,st.target.y+TS*0.6,'debris');
-      }
-    }
   }else if(ss==='mining'){
     if(st.state!=='mining'){
       st.state='mining';st.timer=140;
@@ -3561,16 +3543,6 @@ for(const a of S.agents){
       }}}
     }
     if(st.timer<20)st.timer=140;
-    // Animate the rock: shake + particles
-    if(st.target){
-      const mineProg=1-st.timer/140;
-      const key=`${st.target.x},${st.target.y}`;
-      harvestAnim.set(key,{progress:mineProg,shakeTimer:0,type:'rock'});
-      if(frame%20===0){
-        const ha=harvestAnim.get(key);if(ha)ha.shakeTimer=4;
-        spawnParticle(st.target.x+TS/2,st.target.y+TS/2,'debris');
-      }
-    }
   }else if(ss==='mining_gold'){
     if(st.state!=='mining_gold'){st.state='mining_gold';st.timer=200;st.target={x:Math.floor(v.x*WW)*TS,y:Math.floor(v.y*WH)*TS}}
     if(st.timer<20)st.timer=200;
@@ -4390,48 +4362,6 @@ for(const item of renderItems){
     const agOnWater=(agTx>=0&&agTx<WW&&agTy>=0&&agTy<WH)?(tBiomes[agTy*WW+agTx]===0||tBiomes[agTy*WW+agTx]===1||tBiomes[agTy*WW+agTx]===10):false;
     drawAgentPixelArt(ctx,ax,ay,ad.a,sel,frame,{walking:ad.isWalking,building:ad.isBuilding,faceLeft:ad.faceLeft,idleFrames:ad.a._idleFrames||0,resting:isResting,carrying,chopping:isChopping2,mining:isMining2,onWater:agOnWater});
 
-    // === DIRECT CHOP/MINE VISUAL EFFECTS on nearby tree/rock ===
-    if(isChopping2&&ast2&&ast2.target){
-      const tx=ast2.target.x,ty=ast2.target.y;
-      // Tree shake effect — wobble the tree at the target position
-      const shakeX=Math.sin(frame*0.5)*3;
-      const shakeIntensity=Math.sin(frame*0.3)*2;
-      ctx.save();
-      ctx.translate(tx+TS/2+shakeX,ty+TS);
-      ctx.rotate(shakeIntensity*Math.PI/180*3);
-      ctx.translate(-tx-TS/2,-ty-TS);
-      // Draw a "hit" flash on the tree trunk area
-      if(frame%15<3){
-        ctx.fillStyle='rgba(255,255,200,0.4)';
-        ctx.fillRect(tx+TS/2-4,ty+TS*0.6,8,8);
-      }
-      // Wood chip particles every 10 frames
-      if(frame%10<2){
-        ctx.fillStyle='#8B6914';
-        for(let i=0;i<3;i++){
-          ctx.fillRect(tx+TS/2+(Math.random()-0.5)*16,ty+TS*0.5+(Math.random()-0.5)*10,3,2);
-        }
-      }
-      ctx.restore();
-    }
-    if(isMining2&&ast2&&ast2.target){
-      const tx=ast2.target.x,ty=ast2.target.y;
-      // Rock crack/shake effect
-      const shakeX=Math.sin(frame*0.7)*2;
-      ctx.save();
-      // Spark flash on impact
-      if(frame%20<3){
-        ctx.fillStyle='rgba(255,255,220,0.5)';
-        ctx.fillRect(tx+TS/2-3+shakeX,ty+TS/2-3,6,6);
-        // Stone chip particles
-        ctx.fillStyle='#888';
-        for(let i=0;i<2;i++){
-          ctx.fillRect(tx+TS/2+(Math.random()-0.5)*12,ty+TS/2+(Math.random()-0.5)*8,2,2);
-        }
-      }
-      ctx.restore();
-    }
-
     // Highlight circle for pan-to-agent
     if(panHighlight&&panHighlight.id===ad.a.id&&panHighlight.timer>0){
       const hAlpha=0.3+0.3*Math.sin(frame*0.15);
@@ -4682,6 +4612,61 @@ for(let i=bubbles.length-1;i>=0;i--){
   ctx.fillText(txt,bax,bay);
   ctx.globalAlpha=1;
   ctx.lineWidth=1;
+}
+
+// === CHOP/MINE VISUAL EFFECTS (drawn in world-space) ===
+for(const a of S.agents){
+  const ast4=agentState.get(a.id);
+  if(!ast4||!ast4.target)continue;
+  const v4=agentVisual.get(a.id);
+  if(!v4)continue;
+  const tx=ast4.target.x,ty=ast4.target.y;
+
+  if(ast4.state==='chopping'){
+    // TREE WOBBLE — the tree shakes side to side
+    const wobble=Math.sin(frame*0.5)*4;
+    const lean=Math.sin(frame*0.15)*2;
+    ctx.save();
+    ctx.translate(tx+TS/2,ty+TS);
+    ctx.rotate(lean*Math.PI/180*2);
+    // Draw an animated tree overlay that wobbles
+    // Trunk shaking
+    ctx.fillStyle='#5C3A1E';
+    ctx.fillRect(-3+wobble*0.3,-28,6,28);
+    // Canopy wobbling
+    ctx.fillStyle='#2D8B2D';
+    ctx.beginPath();ctx.arc(wobble*0.5,-35,16,0,Math.PI*2);ctx.fill();
+    ctx.fillStyle='#3CAF3C';
+    ctx.beginPath();ctx.arc(-3+wobble*0.4,-38,10,0,Math.PI*2);ctx.fill();
+    ctx.restore();
+    // Impact flash + wood chips every 12 frames
+    if(frame%12<3){
+      ctx.fillStyle='rgba(255,255,200,0.5)';
+      ctx.beginPath();ctx.arc(tx+TS/2,ty+TS*0.6,8,0,Math.PI*2);ctx.fill();
+    }
+    if(frame%12===0){
+      for(let i=0;i<3;i++){
+        const px=tx+TS/2+(Math.random()-0.5)*16,py=ty+TS*0.5-Math.random()*10;
+        ctx.fillStyle=Math.random()<0.5?'#8B6914':'#A0782C';
+        ctx.fillRect(px,py,3,2);
+      }
+    }
+  }
+
+  if(ast4.state==='mining'||ast4.state==='mining_gold'){
+    // ROCK SPARK — flash and stone chips
+    if(frame%15<3){
+      ctx.fillStyle='rgba(255,255,220,0.6)';
+      ctx.beginPath();ctx.arc(tx+TS/2,ty+TS/2,7,0,Math.PI*2);ctx.fill();
+    }
+    if(frame%15===0){
+      for(let i=0;i<3;i++){
+        const px=tx+TS/2+(Math.random()-0.5)*14,py=ty+TS/2-Math.random()*8;
+        ctx.fillStyle=ast4.state==='mining_gold'?'#FFD700':(Math.random()<0.5?'#888':'#AAA');
+        ctx.fillRect(px,py,2,2);
+      }
+    }
+  }
 }
 
 ctx.restore();
