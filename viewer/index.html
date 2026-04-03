@@ -127,6 +127,7 @@ setTimeout(function(){var io=document.getElementById('intro-overlay');if(io)io.r
       <span>B: <span class="val" id="h-bldcount">0</span></span>
       <span>A: <span class="val" id="h-animalcount">0</span></span>
       <span>FPS: <span class="val" id="h-fps">0</span></span>
+      <span>Tick: <span class="val" id="h-tick">0</span></span>
       <span id="h-time-wrap" style="display:flex;align-items:center;gap:3px"><span id="h-time-icon">☀️</span><span class="val" id="h-time-name">Morning</span></span>
       <span>🗓<span class="val" id="h-playtime">Day 1, 06:00</span></span>
       <span>🪙<span class="val" id="h-points">0</span></span>
@@ -3509,10 +3510,13 @@ for(const a of S.agents){
   // Smooth interpolation toward server position
   v.x+=(v.tx-v.x)*0.12;v.y+=(v.ty-v.y)*0.12;
 }
-// Debug: log agent positions once every 300 frames (~5sec)
-if(frame%300===0&&S.agents.length>0){
-  const a0=S.agents[0],v0=agentVisual.get(a0.id);
-  console.log(`[Lerp] ${a0.name} server:(${a0.x},${a0.y}) visual:(${v0?Math.round(v0.x*WW):'-'},${v0?Math.round(v0.y*WH):'-'}) mood:${a0.mood} agents:${S.agents.length}`);
+// Debug: log agent positions once every 180 frames (~3sec)
+if(frame%180===0){
+  if(S.agents.length===0){console.warn('[RENDER] S.agents is EMPTY — no server data received yet')}
+  else{
+    const a0=S.agents[0],v0=agentVisual.get(a0.id);
+    console.log(`[RENDER] tick:${S.tick} agents:${S.agents.length} blds:${G.clientBuildings.length} | ${a0.name} server:(${a0.x},${a0.y}) visual:(${v0?Math.round(v0.x*WW):'-'},${v0?Math.round(v0.y*WH):'-'}) mood:${a0.mood}`);
+  }
 }
 // Clean up visuals for agents no longer in server state
 {const liveIds=new Set(S.agents.map(a=>a.id));
@@ -4668,6 +4672,7 @@ if(frame%60===0){try{
   document.getElementById('h-playtime').textContent=`Day ${days+1}, ${String(hours).padStart(2,'0')}:${String(mins).padStart(2,'0')}`;
   document.getElementById('h-agents').textContent=S.agents.length;
   document.getElementById('h-bldcount').textContent=G.clientBuildings.length;
+  try{document.getElementById('h-tick').textContent=S.tick||0}catch(e){}
   try{document.getElementById('h-animalcount').textContent=wildAnimals.length}catch(e){}
   // FPS counter
   const _fps=_frameTimes.length>0?Math.round(1000/(_frameTimes.reduce((a2,b2)=>a2+b2,0)/_frameTimes.length)):0;
