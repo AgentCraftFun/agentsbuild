@@ -1,2 +1,3 @@
 // Redirect to clean relay server at project root
-require('../../server.js');
+const path = require('path');
+require(path.resolve(__dirname, '..', '..', 'server.js'));

@@ -5034,27 +5034,7 @@ if(msg.type==='world_state'&&msg.data&&!_isHost){
 // Keep old tick handler for backward compat with old server
 if(msg.type==='tick'&&msg.data){S.tick=msg.data.tick||S.tick;if(msg.data.agents)S.agents=msg.data.agents;if(msg.data.tiles)S.tiles=msg.data.tiles;if(msg.data.events){S.events=S.events.concat(msg.data.events);if(S.events.length>200)S.events=S.events.slice(-100)}if(msg.data.leaderboard)S.leaderboard=msg.data.leaderboard;updateAll()}
 }
-    G.clientBuildings.length=0;
-    for(const sb of serverBlds){
-      G.clientBuildings.push({...sb,
-        complete:sb.complete||sb.progress>=1,building:!sb.complete,
-        pw:sb.pw||(sb.width||3)*TS,ph:sb.ph||(sb.height||3)*TS
-      });
-    }
-    try{for(const b of G.clientBuildings){if(b.complete)clearDetailsAtBuilding(b.x,b.y,b.pw||TS*2,b.ph||TS*2)}}catch(e){}
-    console.log('[SYNC] Seeded',G.clientBuildings.length,'buildings from server');
-    return;
-  }
-  // After first sync: only update progress on existing buildings (original behavior)
-  for(const sb of serverBlds){
-    const match=G.clientBuildings.find(cb=>cb.type===sb.type&&Math.abs(cb.x-sb.x)<3&&Math.abs(cb.y-sb.y)<3);
-    if(match){
-      if(sb.complete)match.complete=true;
-      if(sb.progress>match.progress)match.progress=sb.progress;
-    }
-  }
-}
-// Old handleMsg removed — replaced by new host/spectator handler above
+// Old sync code removed — replaced by new host/spectator handler above
 safeInterval(()=>{if(ws&&ws.readyState===1)ws.send('{"type":"ping"}')},30000);
 
 // === Resource system now driven by agent AI state machine ===
