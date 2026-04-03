@@ -2680,8 +2680,7 @@ function updateConflicts(){
           tgt.progress=Math.max(0,tgt.progress-0.15);
           if(tgt.progress<=0){
             // Building destroyed!
-            const idx=G.clientBuildings.indexOf(tgt);
-            if(idx>=0)G.clientBuildings.splice(idx,1);
+            // Server controls buildings — no client-side demolition
             gameEvent(`💀 ${tgt.name} was destroyed by ${s1.clan}!`,'raid_success');
             for(let i=0;i<8;i++)spawnParticle(tgt.x*TS+Math.random()*40,tgt.y*TS+Math.random()*30,'debris');
           }else{tgt.complete=false}
@@ -2820,7 +2819,7 @@ function tryUpgrade(agent,building){
   if(!up)return false;
   if(!canAfford(up.cost))return false;
   if(building.owner!==agent.id)return false;
-  G.wood-=up.cost.wood;G.stone-=up.cost.stone;G.gold-=up.cost.gold;
+  // Server handles resources — no client deduction
   const oldName=building.name;
   const newDef=TECH_TREE.find(t=>t.type===up.to);
   if(newDef){
@@ -3084,8 +3083,8 @@ function updateAgentMovement(){
                   x:site.x,y:site.y,progress:0,complete:false,faction:a.faction||'human',
                   width:bp.width,height:bp.height,pw:bpw,ph:bph,tall:bp.height>=4,
                   claimedBy:a.id,builder:a.name,settlement:site.settlement||null};
-                G.clientBuildings.push(cb);
-                G.wood-=(bp.cost.wood||0);G.stone-=(bp.cost.stone||0);G.gold-=(bp.cost.gold||0);
+                // SERVER CREATES BUILDINGS — client only animates
+                // G.clientBuildings.push(cb); — disabled, server is authoritative
                 st.state='building';st.target=cb;st.timer=0;
                 v.tx=site.x/WW;v.ty=site.y/WH;
                 gameEvent(`${a.name} is building "${bp.name}" (AI-designed)`,'build_started');
@@ -3134,7 +3133,7 @@ function updateAgentMovement(){
                   const target=demolishable[0];
                   const tdef=TECH_TREE.find(t3=>t3.type===target.type);
                   if(tdef){G.wood+=Math.round(tdef.cost.wood*0.3);G.stone+=Math.round(tdef.cost.stone*0.3)}
-                  G.clientBuildings=G.clientBuildings.filter(b3=>b3!==target);
+                  // Server controls buildings — no client-side demolition
                   gameEvent(`${a.name} demolished an old ${target.name||target.type} to make room`,'build_started');
                 }else{action='chop';continue}// truly at limit, gather instead
               }
@@ -3146,8 +3145,8 @@ function updateAgentMovement(){
               // Duplicate check before push
               const _isDup2=G.clientBuildings.some(b4=>Math.abs(b4.x-site.x)<2&&Math.abs(b4.y-site.y)<2&&b4.type===cb.type);
               if(_isDup2){console.log('[DUP] Blocked predefined building:',cb.type,'at',site.x,site.y);continue}
-              G.clientBuildings.push(cb);
-              G.wood-=next.cost.wood;G.stone-=next.cost.stone;G.gold-=next.cost.gold;
+              // SERVER CREATES BUILDINGS — client only animates
+              // G.clientBuildings.push(cb); — disabled, server is authoritative
               st.state='building';st.target=cb;st.timer=0;
               v.tx=site.x/WW;v.ty=site.y/WH;
               gameEvent(`${a.name} started building ${next.name}!`,'build_started');
@@ -6266,10 +6265,10 @@ function runOfflineSim(){
       const by2=Math.floor(0.15*WH+rng3.next()*0.7*WH);
       const _offDup=G.clientBuildings.some(b=>Math.abs(b.x-bx2)<2&&Math.abs(b.y-by2)<2);
       if(_offDup)continue;// skip this chunk's building
-      G.wood-=next.cost.wood;G.stone-=next.cost.stone;G.gold-=next.cost.gold;
-      G.clientBuildings.push({type:next.type,name:next.name,abbr:next.abbr,x:bx2,y:by2,
+      // Server controls buildings — offline sim building disabled
+      if(false){G.clientBuildings.push({type:next.type,name:next.name,abbr:next.abbr,x:bx2,y:by2,
         progress:0.5,complete:false,faction:next.faction,width:next.w,height:next.h,
-        pw:next.pw,ph:next.ph,tall:next.tall,claimedBy:null});
+        pw:next.pw,ph:next.ph,tall:next.tall,claimedBy:null})}
       summary.buildings++;
     }
     // Era check
