@@ -4966,27 +4966,20 @@ ws.onerror=()=>{}}
 function schedRecon(){if(reconTimer)clearTimeout(reconTimer);reconTimer=setTimeout(()=>{reconDelay=Math.min(reconDelay*1.5,15000);connectWS()},reconDelay)}
 let _initialSyncDone=false;
 function syncServerBuildings(serverBlds){
-  if(!_initialSyncDone&&serverBlds.length>0){
-    // FIRST SYNC: seed client with server buildings so all clients start from same state
-    _initialSyncDone=true;
-    G.clientBuildings.length=0;
-    for(const sb of serverBlds){
-      G.clientBuildings.push({...sb,
-        complete:sb.complete||sb.progress>=1,building:!sb.complete,
-        pw:sb.pw||(sb.width||3)*TS,ph:sb.ph||(sb.height||3)*TS
-      });
-    }
-    try{for(const b of G.clientBuildings){if(b.complete)clearDetailsAtBuilding(b.x,b.y,b.pw||TS*2,b.ph||TS*2)}}catch(e){}
-    console.log('[SYNC] Seeded',G.clientBuildings.length,'buildings from server');
-    return;
-  }
-  // After first sync: only update progress on existing buildings (original behavior)
+  // ALWAYS replace client buildings with server buildings — server is authoritative
+  // This ensures ALL browsers show the same buildings
+  G.clientBuildings.length=0;
   for(const sb of serverBlds){
-    const match=G.clientBuildings.find(cb=>cb.type===sb.type&&Math.abs(cb.x-sb.x)<3&&Math.abs(cb.y-sb.y)<3);
-    if(match){
-      if(sb.complete)match.complete=true;
-      if(sb.progress>match.progress)match.progress=sb.progress;
-    }
+    G.clientBuildings.push({...sb,
+      complete:sb.complete||sb.progress>=1,building:!sb.complete,
+      pw:sb.pw||(sb.width||3)*TS,ph:sb.ph||(sb.height||3)*TS
+    });
+  }
+  // Clear terrain details at building footprints
+  if(!_initialSyncDone&&serverBlds.length>0){
+    _initialSyncDone=true;
+    try{for(const b of G.clientBuildings){if(b.complete)clearDetailsAtBuilding(b.x,b.y,b.pw||TS*2,b.ph||TS*2)}}catch(e){}
+    console.log('[SYNC] Initial load:',G.clientBuildings.length,'buildings from server');
   }
 }
 function handleMsg(msg){
