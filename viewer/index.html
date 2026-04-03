@@ -127,7 +127,6 @@ setTimeout(function(){var io=document.getElementById('intro-overlay');if(io)io.r
       <span>B: <span class="val" id="h-bldcount">0</span></span>
       <span>A: <span class="val" id="h-animalcount">0</span></span>
       <span>FPS: <span class="val" id="h-fps">0</span></span>
-      <span>Tick: <span class="val" id="h-tick">0</span></span>
       <span id="h-time-wrap" style="display:flex;align-items:center;gap:3px"><span id="h-time-icon">☀️</span><span class="val" id="h-time-name">Morning</span></span>
       <span>🗓<span class="val" id="h-playtime">Day 1, 06:00</span></span>
       <span>🪙<span class="val" id="h-points">0</span></span>
@@ -2971,25 +2970,6 @@ function pickBuildSite(bdef,agentId){
   return null;// No valid spot — agent should gather instead
 }
 
-// Helper: find nearest tree/rock near agent for visual animation targets
-function findNearestDetailForVisual(wx,wy,type){
-  const gx=Math.floor(wx),gy=Math.floor(wy);
-  for(let r=1;r<6;r++){
-    for(let dx=-r;dx<=r;dx++){
-      for(let dy=-r;dy<=r;dy++){
-        if(Math.abs(dx)!==r&&Math.abs(dy)!==r)continue;
-        const tx2=gx+dx,ty2=gy+dy;
-        if(tx2<0||tx2>=WW||ty2<0||ty2>=WH)continue;
-        const bi=tBiomes?tBiomes[ty2*WW+tx2]:3;
-        const biome=BL[bi];
-        if(type==='tree'&&(biome==='forest'||biome==='dense_forest'))return{x:tx2,y:ty2};
-        if(type==='rock'&&(biome==='hills'||biome==='mountain'))return{x:tx2,y:ty2};
-      }
-    }
-  }
-  return null;
-}
-
 function updateAgentMovement(){
   const hasLumberMill=G.clientBuildings.some(b=>b.type==='lumber_mill'&&b.complete);
   const hasQuarry=G.clientBuildings.some(b=>b.type==='quarry'&&b.complete);
@@ -3005,60 +2985,31 @@ function updateAgentMovement(){
     let st=agentState.get(a.id);
     if(!st){st={state:'idle',target:null,timer:0,taskCooldown:0};agentState.set(a.id,st)}
 
-    // === SERVER DRIVES POSITION — sync visual target from server data ===
-    v.tx=a.x/WW;v.ty=a.y/WH;
-
-    // Map server mood to client visual state for animations
-    const serverMood=a.mood||'idle';
-    const serverAction=a.current_action;
-
-    // Drive visual state from server mood — triggers walking/chopping/mining/building animations
-    if(serverMood==='moving'||serverMood==='claiming'){
-      if(st.state==='idle'||st.state==='walking'){st.state='walking';st.timer=0}
-    }
-    if(serverMood==='building'){
-      if(st.state!=='building'){
-        const nearBld=G.clientBuildings.find(b=>!b.complete&&Math.abs(b.x-a.x)<8&&Math.abs(b.y-a.y)<8);
-        if(nearBld){st.state='building';st.target=nearBld;st.timer=0}
-        else{st.state='chopping';st.timer=120}// fallback: show work animation
-      }
-    }
-    // If server action is move/claim and visual is idle, start walking
-    if(serverAction&&serverAction.type==='move'&&st.state==='idle'){st.state='walking';st.timer=0}
-    if(serverAction&&serverAction.type==='claim'&&st.state==='idle'){st.state='walking';st.timer=0}
-    // Show chopping animation when agent mood is active but not building
-    if((serverMood==='moving'||serverMood==='claiming')&&st.state==='idle'&&Math.random()<0.3){
-      // Randomly assign resource-gathering visual activity
-      const visualAct=['chopping','mining','walking'][Math.floor(Math.random()*3)];
-      if(visualAct==='chopping'){
-        // Find nearest tree for visual
-        const treeTarget=findNearestDetailForVisual(v.x*WW,v.y*WH,'tree');
-        if(treeTarget){st.state='walking_to_tree';st.target=treeTarget;v.tx=treeTarget.x/WW;v.ty=treeTarget.y/WH}
-        else{st.state='walking';st.timer=0}
-      }else if(visualAct==='mining'){
-        const rockTarget=findNearestDetailForVisual(v.x*WW,v.y*WH,'rock');
-        if(rockTarget){st.state='walking_to_rock';st.target=rockTarget;v.tx=rockTarget.x/WW;v.ty=rockTarget.y/WH}
-        else{st.state='walking';st.timer=0}
-      }else{st.state='walking';st.timer=0}
-    }
-    // Return to idle when server says idle
-    if(serverMood==='idle'&&(st.state==='walking')&&atTarget){st.state='idle';st.taskCooldown=15}
-
     const isLazy=a.personality==='lazy';
     const speed=isLazy?0.012:0.025;
     v.x+=(v.tx-v.x)*speed;
     v.y+=(v.ty-v.y)*speed;
     const atTarget=Math.abs(v.x-v.tx)<0.005&&Math.abs(v.y-v.ty)<0.005;
 
-    // === VISUAL-ONLY IDLE: pick visual activities (no simulation) ===
     if(st.state==='idle'){
       st.taskCooldown--;
       if(st.taskCooldown>0)continue;
+      // Lazy agents take short breaks, everyone else acts fast
       if(isLazy){st.taskCooldown=45;if(Math.random()<0.3)continue}
-      else{st.taskCooldown=8}
+      else{st.taskCooldown=8}// instant decision
 
-      // Skip needs system — server handles resources
-      if(false){// DISABLED: was client-side simulation
+      const soc=getAgentSocial(a.id);
+      // Needs override: hungry agents forage, exhausted agents rest
+      if(soc.hunger<30){
+        G.food=Math.max(0,G.food);soc.hunger=Math.min(100,soc.hunger+50);
+        st.taskCooldown=30;continue;// quick eat, back to work
+      }
+      if(soc.energy<15){
+        soc.energy=Math.min(100,soc.energy+30);// quick rest boost
+        st.taskCooldown=60;// ~1 sec rest max
+        if(soc.home){v.tx=soc.home.x/WW;v.ty=soc.home.y/WH}
+        continue;
+      }
       // Morale affects speed (stored for use in movement)
       const moraleSpeedMult=Math.max(0.5,soc.morale/100);
 
@@ -3451,7 +3402,17 @@ for(let i=bubbles.length-1;i>=0;i--){if(!bubbles[i]||bubbles[i].life<=0)bubbles.
 for(let i=impactTexts.length-1;i>=0;i--){if(!impactTexts[i]||impactTexts[i].life>=impactTexts[i].maxLife)impactTexts.splice(i,1)}
 for(let i=particles.length-1;i>=0;i--){if(!particles[i]||particles[i].life>=particles[i].maxLife)particles.splice(i,1)}
 for(let i=footprints.length-1;i>=0;i--){if(!footprints[i]||footprints[i].life<=0)footprints.splice(i,1)}
-// SPECTATOR MODE: server controls buildings — no client-side filtering/dedup needed
+// Filter corrupt building entries
+G.clientBuildings=G.clientBuildings.filter(b=>b&&typeof b.x==='number'&&isFinite(b.x)&&typeof b.y==='number'&&isFinite(b.y));
+// Deduplicate buildings + enforce cap — only every 300 frames (~5 sec) to avoid O(n²) per frame
+if(frame%300===1){
+  const seen2=[];G.clientBuildings=G.clientBuildings.filter(b=>{
+    const dup=seen2.find(s=>s.type===b.type&&Math.abs(s.x-b.x)<2&&Math.abs(s.y-b.y)<2);
+    if(dup)return false;seen2.push(b);return true;
+  });
+  // Hard cap: remove oldest non-complete buildings first, then oldest complete
+  // No building cap — agents build infinitely
+}
 // Frame timing — CAP deltaTime to prevent simulation explosions after tab-switch
 const _now=performance.now();
 let _dt=_now-_lastFrameTime;_lastFrameTime=_now;
@@ -3547,10 +3508,14 @@ if(tvMode){
   if(tvModeTimer%480>400&&followAgent){followAgent=null}
 }
 if(panHighlight&&panHighlight.timer>0)panHighlight.timer--;
-// === CLIENT IS SPECTATOR ONLY — server runs all simulation ===
-// Run visual agent movement + animation state machine
-// Server controls positions (a.x, a.y) and mood — client drives animations
-try{updateAgentMovement()}catch(e){console.error('[updateAgentMovement CRASH]',e.message,e.stack)}
+updateAgentMovement();
+// Agent watchdog: force idle agents to act (every 30 frames)
+if(frame%30===0){
+  for(const a of S.agents){
+    const st=agentState.get(a.id);
+    if(st&&st.state==='idle'&&st.taskCooldown<=0){st.taskCooldown=1}// force immediate re-evaluation
+  }
+}
 // Stuck building scanner (every 300 frames = ~5 sec)
 if(frame%300===0){
   for(const b of G.clientBuildings){
@@ -3568,15 +3533,15 @@ if(frame%300===0){
     }
   }
 }
-// === CLIENT-SIDE VISUAL SYSTEMS — all wrapped in try/catch to prevent crashes ===
-try{
+// Social/needs systems (throttled)
 if(frame%60===0)tickNeeds();
 if(frame%90===0)checkSocialInteractions();
 socialCheckTimer--;if(socialCheckTimer<=0){socialCheckTimer=600;checkClanFormation();checkVillages()}
 if(frame%30===0)updateConflicts();
-if(frame%3===0)updateWildlife();
+if(frame%300===0){ensureResourceAbundance();batchResourceSummary()}
+if(frame%3===0)try{updateWildlife()}catch(e){}// wildlife every 3 frames
+// Drama events
 dramaTimer--;if(dramaTimer<=0){dramaTimer=60*(90+Math.random()*30);triggerDramaEvent()}
-}catch(e){if(frame%300===0)console.warn('[Visual systems error]',e.message)}
 // Spotlight
 // Banner cooldown tick
 if(_bannerCooldown>0)_bannerCooldown--;
@@ -3592,8 +3557,10 @@ updateGameUI();
 updateWorldEvents();
 checkEraAnnounce();
 smoothResources();
-// SPECTATOR MODE: S.buildings comes from server via WS, don't overwrite
-// S.buildings=G.clientBuildings.map(...) — DISABLED
+// Sync client buildings into S.buildings for rendering
+S.buildings=G.clientBuildings.map(b=>({type:b.type,name:b.name,x:b.x,y:b.y,progress:b.progress,
+  complete:b.complete,faction:b.faction,width:b.width,height:b.height,pw:b.pw,ph:b.ph,tall:b.tall,
+  owner:b.owner,ownerName:b.ownerName,isHome:b.isHome,personalized:b.personalized,personalFaction:b.personalFaction}));
 // Safety: ensure zoom is valid
 if(!isFinite(zoom)||zoom<=0)zoom=1;
 if(!isFinite(vpX))vpX=0;if(!isFinite(vpY))vpY=0;
@@ -4699,7 +4666,6 @@ if(frame%60===0){try{
   document.getElementById('h-playtime').textContent=`Day ${days+1}, ${String(hours).padStart(2,'0')}:${String(mins).padStart(2,'0')}`;
   document.getElementById('h-agents').textContent=S.agents.length;
   document.getElementById('h-bldcount').textContent=G.clientBuildings.length;
-  try{document.getElementById('h-tick').textContent=S.tick||0}catch(e){}
   try{document.getElementById('h-animalcount').textContent=wildAnimals.length}catch(e){}
   // FPS counter
   const _fps=_frameTimes.length>0?Math.round(1000/(_frameTimes.reduce((a2,b2)=>a2+b2,0)/_frameTimes.length)):0;
@@ -4971,7 +4937,7 @@ const st=document.getElementById('h-status');
 if(S.connected){dot.className='on';st.textContent='LIVE';st.style.color='var(--green)'}
 else{dot.className='';st.textContent='OFFLINE';st.style.color='var(--red)'}}
 
-function updateAll(){try{updateMaps();updateAgentList();updateEvents();updateBottom();updateHeader()}catch(e){console.error('[updateAll CRASH]',e.message)}}
+function updateAll(){updateMaps();updateAgentList();updateEvents();updateBottom();updateHeader()}
 
 // === WebSocket ===
 let ws=null,reconTimer=null,reconDelay=1000;
@@ -4979,7 +4945,7 @@ function connectWS(){
 const ov=document.getElementById('conn-overlay');ov.style.display='block';
 try{const p=location.protocol==='https:'?'wss:':'ws:';ws=new WebSocket(`${p}//${location.host}`)}catch(e){schedRecon();return}
 ws.onopen=()=>{S.connected=true;reconDelay=1000;ov.style.display='none';updateHeader()};
-ws.onmessage=e=>{try{const d=JSON.parse(e.data);handleMsg(d)}catch(ex){console.error('[WS] Message handling CRASHED:',ex.message,ex.stack?.split('\n')[1]||'')}};
+ws.onmessage=e=>{try{handleMsg(JSON.parse(e.data))}catch(ex){console.warn('[WS] Message error:',ex.message,e.data?.slice?.(0,200))}};
 ws.onclose=()=>{S.connected=false;updateHeader();ov.style.display='block';ov.querySelector('h2').textContent='Disconnected';schedRecon()};
 ws.onerror=()=>{}}
 function schedRecon(){if(reconTimer)clearTimeout(reconTimer);reconTimer=setTimeout(()=>{reconDelay=Math.min(reconDelay*1.5,15000);connectWS()},reconDelay)}
@@ -5000,23 +4966,8 @@ function syncServerBuildings(serverBlds){
 }
 function handleMsg(msg){
 if(msg.type==='pong')return;
-// === SPECTATOR MODE: Server is authoritative for ALL state ===
-if(msg.type==='world_state'&&msg.data){
-  S.tick=msg.data.tick||0;S.agents=msg.data.agents||[];S.tiles=msg.data.tiles||[];
-  S.buildings=msg.data.buildings||[];S.events=msg.data.events||[];S.leaderboard=msg.data.leaderboard||[];
-  // Server buildings are the truth — sync to client rendering array
-  G.clientBuildings=S.buildings.map(b=>({...b,complete:b.complete||b.progress>=1,building:!b.complete}));
-  updateAll();
-}
-if(msg.type==='tick'&&msg.data){
-  S.tick=msg.data.tick||S.tick;
-  if(msg.data.agents)S.agents=msg.data.agents;
-  if(msg.data.tiles)S.tiles=msg.data.tiles;
-  if(msg.data.buildings){S.buildings=msg.data.buildings;G.clientBuildings=S.buildings.map(b=>({...b,complete:b.complete||b.progress>=1,building:!b.complete}))}
-  if(msg.data.events){S.events=S.events.concat(msg.data.events);if(S.events.length>200)S.events=S.events.slice(-100)}
-  if(msg.data.leaderboard)S.leaderboard=msg.data.leaderboard;
-  updateAll();
-}}
+if(msg.type==='world_state'&&msg.data){S.tick=msg.data.tick||0;S.agents=msg.data.agents||[];S.tiles=msg.data.tiles||[];S.buildings=msg.data.buildings||[];S.events=msg.data.events||[];S.leaderboard=msg.data.leaderboard||[];syncServerBuildings(msg.data.buildings||[]);updateAll()}
+if(msg.type==='tick'&&msg.data){S.tick=msg.data.tick||S.tick;if(msg.data.agents)S.agents=msg.data.agents;if(msg.data.tiles)S.tiles=msg.data.tiles;if(msg.data.buildings){S.buildings=msg.data.buildings;syncServerBuildings(msg.data.buildings)}if(msg.data.events){S.events=S.events.concat(msg.data.events);if(S.events.length>200)S.events=S.events.slice(-100)}if(msg.data.leaderboard)S.leaderboard=msg.data.leaderboard;updateAll()}}
 safeInterval(()=>{if(ws&&ws.readyState===1)ws.send('{"type":"ping"}')},30000);
 
 // === Resource system now driven by agent AI state machine ===
@@ -5490,9 +5441,10 @@ let specPoints=parseInt(localStorage.getItem('specPoints')||'0');
 function addPoints(n){specPoints+=n;localStorage.setItem('specPoints',String(specPoints));document.getElementById('h-points').textContent=specPoints}
 // Passive +1 per 10 sec
 safeInterval(()=>addPoints(1),10000);
-// AI building queue disabled — server handles building decisions
-// safeInterval(()=>processAiQueue(),5000);
-// safeInterval(()=>{...requestAiBuilding...},600000);
+// Process AI building queue every 5 seconds
+safeInterval(()=>processAiQueue(),5000);
+// Every 10 minutes, request a new AI blueprint for a random agent
+safeInterval(()=>{if(S.agents.length>0){const ra=S.agents[Math.floor(Math.random()*S.agents.length)];requestAiBuilding(ra.id)}},600000);
 
 // === Prediction Mini-Game ===
 let predState={active:false,type:null,question:'',answer:null,timer:0,choices:[],pick:null,correct:0,total:0};
@@ -5560,9 +5512,7 @@ window.useInfluence=function(idx){
   const inf=INFLUENCES[idx];
   specPoints-=inf.cost;localStorage.setItem('specPoints',String(specPoints));
   document.getElementById('h-points').textContent=specPoints;
-  inf.fn();// local visual feedback
-  // Send influence command to server
-  if(ws&&ws.readyState===1){ws.send(JSON.stringify({type:'influence',action:inf.name,idx:idx}))}
+  inf.fn();
   influenceCooldown=180*60;// 3 min cooldown
 };
 
@@ -6329,11 +6279,10 @@ try{
   try{initInfluence()}catch(e){console.warn('Influence init failed:',e)}
   try{document.getElementById('h-points').textContent=specPoints}catch(e){}
   // Try loading saved game
-  // === CLIENT IS SPECTATOR — no local save/load, server is authoritative ===
-  const didLoad=false;// skip local save/load entirely
-  // didLoad=loadGame(); — DISABLED: server sends state via WebSocket
+  didLoad=loadGame();
+  if(didLoad)validateGameState();// clean up any corrupt data from save
   let offlineSummary=null;
-  if(false){// offline sim disabled — server ran continuously
+  if(didLoad){
     console.log('Restored saved game');
     // Clear trees from all existing building footprints
     for(const b of G.clientBuildings){if(b.complete)clearDetailsAtBuilding(b.x,b.y,b.pw||TS*2,b.ph||TS*2)}
@@ -6381,10 +6330,10 @@ try{
 // ALWAYS remove intro overlay after 5 seconds no matter what
 setTimeout(()=>{const io=document.getElementById('intro-overlay');if(io){io.classList.add('fade');setTimeout(()=>{if(io.parentNode)io.remove()},2000)}},5000);
 requestAnimationFrame(render);connectWS();
-// safeInterval(tickFood,10000) — DISABLED: server handles resources
-// safeInterval(saveGame,30000) — DISABLED: server handles persistence
-// safeInterval(regrowResources,60000) — DISABLED: server handles regeneration
-// window.addEventListener('beforeunload',saveGame) — DISABLED: server handles persistence
+safeInterval(tickFood,10000);
+safeInterval(saveGame,30000);// save every 30 seconds
+safeInterval(regrowResources,60000);// regrow every 1 min (faster)
+window.addEventListener('beforeunload',saveGame);
 // Debug: reset world
 window.resetWorld=function(){localStorage.removeItem(SAVE_KEY);location.reload()}
 </script>
