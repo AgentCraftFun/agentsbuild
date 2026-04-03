@@ -43,7 +43,11 @@ class GameLoop {
       // Process agents — LLM agents may be async
       const agentPromises = [];
       for (const agent of this.world.agents.values()) {
-        agentPromises.push(this._processAgent(agent, tick, events));
+        agentPromises.push(
+          this._processAgent(agent, tick, events).catch(e => {
+            console.error(`[GameLoop] Agent ${agent.name} processing CRASHED:`, e.message);
+          })
+        );
       }
       await Promise.all(agentPromises);
 

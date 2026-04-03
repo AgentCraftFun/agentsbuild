@@ -508,18 +508,80 @@ gameLoop.start();
 
 // ─── Startup Validation ───
 
+// ─── Validate & Repair Agents ───
+
+function validateAndRepairAgents() {
+  if (worldState.agents.size === 0) {
+    console.error('[REPAIR] No agents found — re-seeding demo agents');
+    seedAgents(worldState);
+  }
+
+  for (const agent of worldState.agents.values()) {
+    let repaired = false;
+    // Fix invalid positions
+    if (!Number.isFinite(agent.x) || !Number.isFinite(agent.y) || agent.x < 0 || agent.x >= worldState.width || agent.y < 0 || agent.y >= worldState.height) {
+      console.warn(`[REPAIR] ${agent.name} has invalid position (${agent.x},${agent.y}) — relocating`);
+      for (let i = 0; i < 500; i++) {
+        const tx = Math.floor(Math.random() * worldState.width);
+        const ty = Math.floor(Math.random() * worldState.height);
+        const tile = worldState.tiles.get(`${tx},${ty}`);
+        if (tile && !['deep_water', 'shallow_water', 'river'].includes(tile.biome)) {
+          agent.x = tx; agent.y = ty; break;
+        }
+      }
+      repaired = true;
+    }
+    // Fix missing resources
+    if (!agent.resources) { agent.resources = { food: 10, wood: 10, stone: 5, gold: 0 }; repaired = true; }
+    if (!Number.isFinite(agent.work_balance)) { agent.work_balance = 0; repaired = true; }
+    if (!agent.owned_tiles) { agent.owned_tiles = []; repaired = true; }
+    if (!agent.buildings) { agent.buildings = []; repaired = true; }
+    if (!agent.action_queue) { agent.action_queue = []; repaired = true; }
+
+    if (repaired) console.log(`[REPAIR] Fixed ${agent.name}`);
+  }
+}
+
+validateAndRepairAgents();
+
+// ─── Verify Terrain ───
+
+function verifyTerrain() {
+  if (!worldState.tiles || worldState.tiles.size === 0) {
+    console.error('[TERRAIN] Tiles map is empty — regenerating!');
+    const world = WorldGen.generate(worldState.width, worldState.height, worldState.seed);
+    worldState.tiles = world.tiles;
+  }
+
+  let treeCount = 0, waterCount = 0, grassCount = 0;
+  for (let y = 0; y < 20; y++) {
+    for (let x = 0; x < 20; x++) {
+      const tile = worldState.tiles.get(`${x},${y}`);
+      if (!tile) { console.error(`[TERRAIN] getTile(${x},${y}) returned null!`); continue; }
+      if (tile.biome === 'forest' || tile.biome === 'dense_forest') treeCount++;
+      if (tile.biome === 'deep_water' || tile.biome === 'shallow_water') waterCount++;
+      if (tile.biome === 'grassland') grassCount++;
+    }
+  }
+  console.log(`[TERRAIN] 20x20 sample: trees=${treeCount} water=${waterCount} grass=${grassCount}`);
+  if (treeCount === 0 && waterCount === 0 && grassCount === 0) {
+    console.error('[TERRAIN] Terrain lookup is BROKEN — no biomes found!');
+  }
+}
+
+verifyTerrain();
+
+// ─── Full State Validation Log ───
+
 console.log('=== STATE VALIDATION ===');
 console.log('Tick:', worldState.tick);
 console.log('World:', worldState.width, 'x', worldState.height, 'seed:', worldState.seed);
-console.log('Agents:', worldState.agents.size, [...worldState.agents.values()].map(a => `${a.name}(${a.faction}/${a.personality})`).join(', '));
+console.log('Tile count:', worldState.tiles.size);
+for (const agent of worldState.agents.values()) {
+  console.log(`  ${agent.name}(${agent.faction}/${agent.personality}): pos(${agent.x},${agent.y}) mood:${agent.mood} tiles:${agent.owned_tiles.length} blds:${agent.buildings.length} work:${agent.work_balance.toFixed(2)} res:W${Math.round(agent.resources.wood)}/S${Math.round(agent.resources.stone)}/G${Math.round(agent.resources.gold)}/F${Math.round(agent.resources.food)}`);
+}
 console.log('Buildings:', worldState.buildingsList.length);
 console.log('Events:', worldState.events.length);
-console.log('Tile count:', worldState.tiles.size);
-// Spot-check terrain generation
-const testTile = worldState.tiles.get('50,50');
-if (testTile) console.log('Tile (50,50):', testTile.biome, testTile.owner ? `owned by ${testTile.owner}` : 'unclaimed');
-const testTile2 = worldState.tiles.get('100,100');
-if (testTile2) console.log('Tile (100,100):', testTile2.biome);
 console.log('========================');
 
 // ─── Server Heartbeat (every 60 seconds) ───
