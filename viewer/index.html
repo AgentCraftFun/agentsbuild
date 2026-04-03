@@ -2199,13 +2199,27 @@ function initHarvestables(){
   }
 }
 
+// === BUILDING LIMITS ===
+const MAX_BUILDINGS=60;
+const BUILD_COOLDOWN_FRAMES=60*45;// ~45 seconds at 60fps
+let _lastBuildFrame=0;
+function canBuildNow(){
+  if(G.clientBuildings.length>=MAX_BUILDINGS)return false;
+  if(frame-_lastBuildFrame<BUILD_COOLDOWN_FRAMES)return false;
+  return true;
+}
+function registerBuild(){_lastBuildFrame=frame}
+
 function getNextBuilding(){
+  // Enforce per-settlement variety limits
   const builtTypes=new Set(G.clientBuildings.map(b=>b.type));
-  // Check era advancement
+  // Check era advancement — requires building count thresholds
+  const completedCount=G.clientBuildings.filter(b=>b.complete).length;
   if(G.era<3){
     const eraBuildings=TECH_TREE.filter(b=>b.era===G.era&&!b.decorative);
     const allBuilt=eraBuildings.every(b=>builtTypes.has(b.type));
-    if(allBuilt){G.era++;document.getElementById('h-era').textContent=G.eraNames[G.era]}
+    const minForEra=[0,12,25,40];// min completed buildings to advance
+    if(allBuilt&&completedCount>=(minForEra[G.era+1]||999)){G.era++;document.getElementById('h-era').textContent=G.eraNames[G.era]}
   }
   // Priority 1: unbuilt non-decorative types in current era (cheapest first)
   const unbuilt=TECH_TREE.filter(b=>b.era<=G.era&&!b.decorative&&!builtTypes.has(b.type))
@@ -3032,14 +3046,15 @@ function updateAgentMovement(){
       const roll=Math.random();
       const pers=a.personality||'optimist';
       let action='gather';// default
-      if(pers==='aggressive'){action=roll<0.6?'chop':roll<0.9?'mine':'build'}
+      // Reduced build chances — agents should mostly gather
+      if(pers==='aggressive'){action=roll<0.5?'chop':roll<0.85?'mine':'build'}
       else if(pers==='grinder'){action='gather_needed'}
-      else if(pers==='analyst'){action=roll<0.8?'build':'gather_needed'}
-      else if(pers==='optimist'){action=roll<0.33?'chop':roll<0.66?'mine':'build'}
-      else if(pers==='chaotic'){action=['chop','mine','build','gold'][Math.floor(roll*4)]}
+      else if(pers==='analyst'){action=roll<0.15?'build':'gather_needed'}
+      else if(pers==='optimist'){action=roll<0.4?'chop':roll<0.75?'mine':roll<0.9?'gather_needed':'build'}
+      else if(pers==='chaotic'){action=['chop','mine','chop','gold'][Math.floor(roll*4)]}
       else if(pers==='lazy'){action=roll<0.5?'chop':'mine'}
-      else if(pers==='confused'){action=['chop','mine','build','idle'][Math.floor(roll*4)]}
-      else{action='gather_needed'}// overachiever etc
+      else if(pers==='confused'){action=['chop','mine','mine','idle'][Math.floor(roll*4)]}
+      else{action=roll<0.15?'build':'gather_needed'}// overachiever etc
 
       // Resolve 'gather_needed' to specific resource
       if(action==='gather'||action==='gather_needed'){
@@ -3084,7 +3099,8 @@ function updateAgentMovement(){
                   x:site.x,y:site.y,progress:0,complete:false,faction:a.faction||'human',
                   width:bp.width,height:bp.height,pw:bpw,ph:bph,tall:bp.height>=4,
                   claimedBy:a.id,builder:a.name,settlement:site.settlement||null};
-                G.clientBuildings.push(cb);
+                if(!canBuildNow()){action='chop';continue}
+                G.clientBuildings.push(cb);registerBuild();
                 G.wood-=(bp.cost.wood||0);G.stone-=(bp.cost.stone||0);G.gold-=(bp.cost.gold||0);
                 st.state='building';st.target=cb;st.timer=0;
                 v.tx=site.x/WW;v.ty=site.y/WH;
@@ -3141,12 +3157,13 @@ function updateAgentMovement(){
               // Per-settlement cap: max 30 buildings per settlement
               if(site.settlement){
                 const settBldCount=G.clientBuildings.filter(b3=>b3.settlement===site.settlement).length;
-                if(settBldCount>=9999){action='chop';continue}
+                if(settBldCount>=20){action='chop';continue}
               }
-              // Duplicate check before push
+              // Building limits + duplicate check
+              if(!canBuildNow()){action='chop';continue}
               const _isDup2=G.clientBuildings.some(b4=>Math.abs(b4.x-site.x)<2&&Math.abs(b4.y-site.y)<2&&b4.type===cb.type);
-              if(_isDup2){console.log('[DUP] Blocked predefined building:',cb.type,'at',site.x,site.y);continue}
-              G.clientBuildings.push(cb);
+              if(_isDup2){continue}
+              G.clientBuildings.push(cb);registerBuild();
               G.wood-=next.cost.wood;G.stone-=next.cost.stone;G.gold-=next.cost.gold;
               st.state='building';st.target=cb;st.timer=0;
               v.tx=site.x/WW;v.ty=site.y/WH;
