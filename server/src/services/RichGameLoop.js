@@ -30,12 +30,12 @@ const TECH_TREE = [
   { type:'factory', name:'Factory', abbr:'FY', w:5, h:3, pw:110, ph:65, tall:false, cost:{wood:22,stone:60,gold:8}, era:3, faction:'orc' },
 ];
 
-// Build times in ticks — 50% faster than previous (Prompt 2)
+// Build times in ticks — fast paced gameplay
 const BUILD_TIMES = {
-  campfire:5, wood_hut:10, log_cabin:14, lumber_mill:14, farm:10,
-  stone_house:19, quarry:19, blacksmith:19, watchtower:19, well:7,
-  town_hall:28, barracks:28, church:28, market:28,
-  brick_house:24, factory:33,
+  campfire:3, wood_hut:7, log_cabin:10, lumber_mill:10, farm:7,
+  stone_house:13, quarry:13, blacksmith:13, watchtower:13, well:5,
+  town_hall:20, barracks:20, church:20, market:20,
+  brick_house:17, factory:23,
 };
 
 class RichGameLoop {

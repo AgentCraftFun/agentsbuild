@@ -112,7 +112,31 @@ function seedAgents(worldState) {
       }
     }
 
-    // NO HQ buildings — agents start with nothing and must build everything
+    // First agent gets a starter community
+    if (index === 0 && worldState.richBuildings) {
+      const starterTypes = [
+        { type:'campfire', name:'Campfire', abbr:'CF', w:2, h:1, pw:30, ph:20, tall:false, faction:'neutral' },
+        { type:'wood_hut', name:'Wood Hut', abbr:'WH', w:3, h:2, pw:56, ph:48, tall:false, faction:'human' },
+        { type:'wood_hut', name:'Wood Hut', abbr:'WH', w:3, h:2, pw:56, ph:48, tall:false, faction:'human' },
+        { type:'log_cabin', name:'Log Cabin', abbr:'LC', w:3, h:3, pw:72, ph:56, tall:false, faction:'human' },
+        { type:'farm', name:'Farm', abbr:'FA', w:3, h:2, pw:64, ph:40, tall:false, faction:'neutral' },
+      ];
+      const offsets = [[0,3],[3,0],[-3,1],[1,-3],[4,3]];
+      for (let si = 0; si < starterTypes.length; si++) {
+        const ox = startX + offsets[si][0], oy = startY + offsets[si][1];
+        const t2 = tiles.get(`${ox},${oy}`);
+        if (t2 && !['deep_water','shallow_water','river'].includes(t2.biome)) {
+          worldState.richBuildings.push({
+            ...starterTypes[si], x: ox, y: oy, progress: 1, complete: true,
+            builder: def.name, settlement: 'Founders Camp', builderPresent: false,
+          });
+        }
+      }
+      if (!worldState.settlements) worldState.settlements = [];
+      worldState.settlements.push({ name: 'Founders Camp', cx: startX, cy: startY, buildingCount: 5 });
+      worldState.resources = { wood: 30, stone: 0, gold: 0, food: 20 };
+      console.log(`[Seed] Starter community "Founders Camp" placed near ${def.name}`);
+    }
 
     worldState.events.push({
       tick: 0,

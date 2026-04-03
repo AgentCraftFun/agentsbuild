@@ -930,20 +930,29 @@ function drawDetail(c,d,fr){
   const key=`${d.x},${d.y}`;
   const anim=harvestAnim.get(key);
 
-  // Apply shake + scale for harvested objects
+  // Apply smooth chop animation
   if(anim){
     c.save();
-    const shakeX=anim.shakeTimer>0?Math.sin(fr*2)*3:0;
-    if(anim.shakeTimer>0)anim.shakeTimer--;
-    const scale=anim.type==='tree'?Math.max(0.3,1-anim.progress*0.7):1;
-    const lean=anim.type==='tree'?anim.progress*5:0;// degrees
-    c.translate(d.x+TS/2+shakeX,d.y+TS);
-    c.rotate(lean*Math.PI/180);
-    c.scale(scale,scale);
-    c.translate(-d.x-TS/2,-d.y-TS);
-    // Draw crack lines on rocks
-    if(anim.type==='rock'&&anim.progress>0.25){
-      // Will draw after the rock
+    if(anim.type==='tree'){
+      // Smooth slow sway + progress bar style shrinking
+      const sway=Math.sin(fr*0.08)*3*(1-anim.progress);// slow gentle sway, decreases as tree shrinks
+      const scale=Math.max(0.1,1-anim.progress*0.9);// shrink to 10%
+      const lean=anim.progress*15;// lean more as progress increases (up to 15 degrees)
+      c.translate(d.x+TS/2,d.y+TS);// pivot at tree base
+      c.rotate(lean*Math.PI/180);
+      c.scale(scale,scale);
+      c.translate(-d.x-TS/2-sway,-d.y-TS);
+      // Progress bar above tree
+      if(anim.progress>0&&anim.progress<1){
+        const barW=20,barH=3,barX=d.x+TS/2-barW/2,barY=d.y-8;
+        c.fillStyle='#333';c.fillRect(barX/scale,barY/scale,barW/scale,barH/scale);
+        c.fillStyle='#44cc44';c.fillRect(barX/scale,barY/scale,(barW*anim.progress)/scale,barH/scale);
+      }
+    }else{
+      // Rock: just shake slightly
+      const shakeX=Math.sin(fr*0.15)*2;
+      c.translate(d.x+TS/2+shakeX,d.y+TS);
+      c.translate(-d.x-TS/2,-d.y-TS);
     }
   }
 
@@ -3553,6 +3562,7 @@ for(const a of S.agents){
       stumps.push({x:st.target.x,y:st.target.y,type:'rubble',timer:2400});
     }
     if(st.state==='chopping'||st.state==='mining'||st.state==='mining_gold'||st.state==='building'){
+      st._chopProgress=0;// reset chop progress for next tree
       st.state='idle';st.taskCooldown=3;
     }
   }
@@ -4626,15 +4636,12 @@ for(const a of S.agents){
   else{tx=Math.floor(v4.x*WW)*TS;ty=Math.floor(v4.y*WH)*TS}
 
   if(ast4.state==='chopping'){
-    // Drive the EXISTING drawDetail animation system (harvestAnim at line 928)
-    // This makes the ACTUAL terrain tree shake, lean, and shrink — the smooth animation
     const key=`${tx},${ty}`;
-    const chopTimer=ast4.timer||100;
-    const maxT=100;
-    const chopProg=Math.max(0,Math.min(1,1-chopTimer/maxT));
-    harvestAnim.set(key,{progress:chopProg,shakeTimer:5,type:'tree'});
-    // Small debris particles at trunk base
-    if(frame%15===0)spawnParticle(tx+TS/2,ty+TS*0.6,'debris');
+    // Smooth progress that increases over time (doesn't oscillate with timer resets)
+    if(!ast4._chopProgress)ast4._chopProgress=0;
+    ast4._chopProgress=Math.min(0.95,ast4._chopProgress+0.003);// ~5 seconds to full
+    harvestAnim.set(key,{progress:ast4._chopProgress,shakeTimer:0,type:'tree'});
+    if(frame%20===0)spawnParticle(tx+TS/2,ty+TS*0.6,'debris');
   }
 
   if(ast4.state==='mining'||ast4.state==='mining_gold'){
