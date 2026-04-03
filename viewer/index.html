@@ -3516,31 +3516,19 @@ for(const a of S.agents){
   if(ss==='chopping'){
     st.state='chopping';
     if(st.timer<20)st.timer=100;
-    // Always ensure target exists for animation
+    // Use findNearestDetail to get EXACT detail object coordinates (guaranteed key match with drawDetail)
     if(!st.target||st.target.x===undefined){
-      const gx=Math.floor(v.x*WW),gy=Math.floor(v.y*WH);
-      st.target={x:gx*TS,y:gy*TS};// default to agent tile
-      for(let r=0;r<6;r++){for(let dx=-r;dx<=r;dx++){for(let dy=-r;dy<=r;dy++){
-        if(r>0&&Math.abs(dx)!==r&&Math.abs(dy)!==r)continue;
-        const tx2=gx+dx,ty2=gy+dy;if(tx2<0||tx2>=WW||ty2<0||ty2>=WH)continue;
-        const bi=tBiomes[ty2*WW+tx2];const biName=BL[bi];
-        if(biName==='forest'||biName==='dense_forest'||biName==='grassland'){
-          st.target={x:tx2*TS,y:ty2*TS};r=99;break;
-        }
-      }}}
+      const tree=findNearestDetail(v.x,v.y,['deciduous','oak','pine','birch','fruittree']);
+      if(tree){st.target=tree}
+      else{st.target={x:Math.floor(v.x*WW)*TS,y:Math.floor(v.y*WH)*TS}}
     }
   }else if(ss==='mining'){
     st.state='mining';
     if(st.timer<20)st.timer=140;
     if(!st.target||st.target.x===undefined){
-      const gx=Math.floor(v.x*WW),gy=Math.floor(v.y*WH);
-      st.target={x:gx*TS,y:gy*TS};
-      for(let r=0;r<6;r++){for(let dx=-r;dx<=r;dx++){for(let dy=-r;dy<=r;dy++){
-        if(r>0&&Math.abs(dx)!==r&&Math.abs(dy)!==r)continue;
-        const tx2=gx+dx,ty2=gy+dy;if(tx2<0||tx2>=WW||ty2<0||ty2>=WH)continue;
-        const bi=tBiomes[ty2*WW+tx2];const biName=BL[bi];
-        if(biName==='hills'||biName==='mountain'){st.target={x:tx2*TS,y:ty2*TS};r=99;break}
-      }}}
+      const rock=findNearestDetail(v.x,v.y,['rock','lgboulder','mdboulder']);
+      if(rock){st.target=rock}
+      else{st.target={x:Math.floor(v.x*WW)*TS,y:Math.floor(v.y*WH)*TS}}
     }
   }else if(ss==='mining_gold'){
     if(st.state!=='mining_gold'){st.state='mining_gold';st.timer=200;st.target={x:Math.floor(v.x*WW)*TS,y:Math.floor(v.y*WH)*TS}}
