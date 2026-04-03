@@ -4966,47 +4966,25 @@ ws.onmessage=e=>{try{handleMsg(JSON.parse(e.data))}catch(ex){console.warn('[WS] 
 ws.onclose=()=>{S.connected=false;updateHeader();ov.style.display='block';ov.querySelector('h2').textContent='Disconnected';schedRecon()};
 ws.onerror=()=>{}}
 function schedRecon(){if(reconTimer)clearTimeout(reconTimer);reconTimer=setTimeout(()=>{reconDelay=Math.min(reconDelay*1.5,15000);connectWS()},reconDelay)}
-// Sync agent visual positions toward server-reported positions
-function syncAgentPositions(){
-  for(const a of S.agents){
-    const v=agentVisual.get(a.id);
-    if(v){
-      // Set visual target to server position so agents smoothly move there
-      v.tx=a.x/WW;v.ty=a.y/WH;
-    }
-  }
-}
-let _serverSynced=false;// has client received initial state from server?
 function syncServerBuildings(serverBlds){
-  if(!_serverSynced){
-    // FIRST SYNC: replace client buildings entirely with server state
-    _serverSynced=true;
-    G.clientBuildings.length=0;
-    for(const sb of serverBlds){
-      G.clientBuildings.push({...sb,complete:sb.complete||sb.progress>=1,building:!sb.complete,
-        pw:sb.pw||(sb.width||3)*TS,ph:sb.ph||(sb.height||3)*TS});
-    }
-    console.log('[SYNC] Initial sync: replaced client buildings with',serverBlds.length,'server buildings');
-    return;
-  }
-  // SUBSEQUENT SYNCS: merge server buildings into client state
+  // Server buildings are authoritative for server-side state (S.buildings)
+  // but should NOT be blindly pushed into client buildings (G.clientBuildings)
+  // because client uses its own coordinate system and building lifecycle.
+  // Only update progress/completion on buildings that already exist client-side.
   for(const sb of serverBlds){
+    // Try to find matching client building by proximity (within 2 tiles)
     const match=G.clientBuildings.find(cb=>cb.type===sb.type&&Math.abs(cb.x-sb.x)<3&&Math.abs(cb.y-sb.y)<3);
     if(match){
-      if(sb.complete){match.complete=true;match.progress=1}
+      if(sb.complete)match.complete=true;
       if(sb.progress>match.progress)match.progress=sb.progress;
-    }else{
-      // NEW building from server — add it to client
-      G.clientBuildings.push({...sb,complete:sb.complete||sb.progress>=1,building:!sb.complete,
-        pw:sb.pw||(sb.width||3)*TS,ph:sb.ph||(sb.height||3)*TS});
     }
+    // Do NOT push new buildings — client manages its own building creation
   }
-}
 }
 function handleMsg(msg){
 if(msg.type==='pong')return;
-if(msg.type==='world_state'&&msg.data){S.tick=msg.data.tick||0;S.agents=msg.data.agents||[];S.tiles=msg.data.tiles||[];S.buildings=msg.data.buildings||[];S.events=msg.data.events||[];S.leaderboard=msg.data.leaderboard||[];syncServerBuildings(msg.data.buildings||[]);syncAgentPositions();updateAll()}
-if(msg.type==='tick'&&msg.data){S.tick=msg.data.tick||S.tick;if(msg.data.agents)S.agents=msg.data.agents;if(msg.data.tiles)S.tiles=msg.data.tiles;if(msg.data.buildings){S.buildings=msg.data.buildings;syncServerBuildings(msg.data.buildings)}if(msg.data.events){S.events=S.events.concat(msg.data.events);if(S.events.length>200)S.events=S.events.slice(-100)}if(msg.data.leaderboard)S.leaderboard=msg.data.leaderboard;syncAgentPositions();updateAll()}}
+if(msg.type==='world_state'&&msg.data){S.tick=msg.data.tick||0;S.agents=msg.data.agents||[];S.tiles=msg.data.tiles||[];S.buildings=msg.data.buildings||[];S.events=msg.data.events||[];S.leaderboard=msg.data.leaderboard||[];syncServerBuildings(msg.data.buildings||[]);updateAll()}
+if(msg.type==='tick'&&msg.data){S.tick=msg.data.tick||S.tick;if(msg.data.agents)S.agents=msg.data.agents;if(msg.data.tiles)S.tiles=msg.data.tiles;if(msg.data.buildings){S.buildings=msg.data.buildings;syncServerBuildings(msg.data.buildings)}if(msg.data.events){S.events=S.events.concat(msg.data.events);if(S.events.length>200)S.events=S.events.slice(-100)}if(msg.data.leaderboard)S.leaderboard=msg.data.leaderboard;updateAll()}}
 safeInterval(()=>{if(ws&&ws.readyState===1)ws.send('{"type":"ping"}')},30000);
 
 // === Resource system now driven by agent AI state machine ===
@@ -6318,8 +6296,7 @@ try{
   try{initInfluence()}catch(e){console.warn('Influence init failed:',e)}
   try{document.getElementById('h-points').textContent=specPoints}catch(e){}
   // Try loading saved game
-  // didLoad=loadGame() — DISABLED: server sends shared world state via WebSocket
-  didLoad=false;
+  didLoad=loadGame();
   if(didLoad)validateGameState();// clean up any corrupt data from save
   let offlineSummary=null;
   if(didLoad){
@@ -6371,7 +6348,7 @@ try{
 setTimeout(()=>{const io=document.getElementById('intro-overlay');if(io){io.classList.add('fade');setTimeout(()=>{if(io.parentNode)io.remove()},2000)}},5000);
 requestAnimationFrame(render);connectWS();
 safeInterval(tickFood,10000);
-// safeInterval(saveGame,30000) — DISABLED: server is source of truth for shared world
+safeInterval(saveGame,30000);// save every 30 seconds
 safeInterval(regrowResources,60000);// regrow every 1 min (faster)
 window.addEventListener('beforeunload',saveGame);
 // Debug: reset world
