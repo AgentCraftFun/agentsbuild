@@ -6,3 +6,4 @@ dist/
 contracts/out/
 contracts/cache/
 gamestate.json
+# Force restart
