@@ -112,25 +112,7 @@ function seedAgents(worldState) {
       }
     }
 
-    // Place the faction HQ building on the starting tile
-    const hqType = Building.getHQ(def.faction);
-    const hqTileId = `${startX},${startY}`;
-    const hqTile = tiles.get(hqTileId);
-
-    const hqBuilding = new Building({
-      type: hqType,
-      x: startX,
-      y: startY,
-      owner: agent.id,
-      progress: 1.0,
-      startTick: 0,
-    });
-
-    if (hqTile) {
-      hqTile.building = hqBuilding;
-    }
-    agent.buildings.push(hqBuilding);
-    worldState.buildingsList.push(hqBuilding);
+    // NO HQ buildings — agents start with nothing and must build everything
 
     worldState.events.push({
       tick: 0,

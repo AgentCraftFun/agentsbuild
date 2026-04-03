@@ -11,7 +11,7 @@ const path = require('path');
 const { WebSocketServer } = require('ws');
 
 const WorldGen = require('./services/WorldGen');
-const GameLoop = require('./services/GameLoop');
+const RichGameLoop = require('./services/RichGameLoop');
 const LLMBrain = require('./services/LLMBrain');
 const { seedAgents } = require('./seed');
 const { sendWorldState } = require('./ws/broadcast');
@@ -510,7 +510,7 @@ wss.on('connection', (ws, req) => {
 
 // ─── Start Game Loop ───
 
-const gameLoop = new GameLoop(worldState, wss);
+const gameLoop = new RichGameLoop(worldState, wss);
 gameLoop.start();
 
 // ─── Startup Validation ───

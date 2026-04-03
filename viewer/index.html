@@ -3523,7 +3523,35 @@ if(tvMode){
   if(tvModeTimer%480>400&&followAgent){followAgent=null}
 }
 if(panHighlight&&panHighlight.timer>0)panHighlight.timer--;
-updateAgentMovement();
+// SERVER CONTROLS ALL SIMULATION — client only interpolates visuals
+for(const a of S.agents){
+  let v=agentVisual.get(a.id);
+  if(!v){v={x:a.x/WW,y:a.y/WH,tx:a.x/WW,ty:a.y/WH};agentVisual.set(a.id,v)}
+  v.tx=a.x/WW;v.ty=a.y/WH;
+  const speed=(a.personality==='lazy')?0.012:0.025;
+  v.x+=(v.tx-v.x)*speed;v.y+=(v.ty-v.y)*speed;
+  // Drive visual animation state from server
+  let st=agentState.get(a.id);
+  if(!st){st={state:'idle',target:null,timer:0,taskCooldown:0};agentState.set(a.id,st)}
+  const ss=a._state||a.mood||'idle';
+  // Tick down existing animation timers
+  if(st.state==='chopping'||st.state==='mining'||st.state==='mining_gold'){
+    st.timer--;if(st.timer<=0){st.state='idle';st.taskCooldown=3}
+  }else if(st.state==='building'){
+    if(!st.target||st.target.complete){st.state='idle';st.taskCooldown=3}
+  }
+  // Server state drives new animations
+  if(ss==='chopping'&&st.state==='idle'){st.state='chopping';st.timer=60}
+  if(ss==='mining'&&st.state==='idle'){st.state='mining';st.timer=60}
+  if(ss==='mining_gold'&&st.state==='idle'){st.state='mining_gold';st.timer=60}
+  if(ss==='building'&&st.state!=='building'){
+    const nearBld=G.clientBuildings.find(b2=>!b2.complete&&b2.builder===a.name);
+    if(nearBld){st.state='building';st.target=nearBld;st.timer=0}
+  }
+}
+// Cleanup dead agents
+{const liveIds=new Set(S.agents.map(a=>a.id));
+for(const id of agentVisual.keys()){if(!liveIds.has(id)){agentVisual.delete(id);agentState.delete(id)}}}
 // Agent watchdog: force idle agents to act (every 30 frames)
 if(frame%30===0){
   for(const a of S.agents){
@@ -3548,15 +3576,9 @@ if(frame%300===0){
     }
   }
 }
-// Social/needs systems (throttled)
-if(frame%60===0)tickNeeds();
-if(frame%90===0)checkSocialInteractions();
-socialCheckTimer--;if(socialCheckTimer<=0){socialCheckTimer=600;checkClanFormation();checkVillages()}
-if(frame%30===0)updateConflicts();
-if(frame%300===0){ensureResourceAbundance();batchResourceSummary()}
-if(frame%3===0)try{updateWildlife()}catch(e){}// wildlife every 3 frames
-// Drama events
-dramaTimer--;if(dramaTimer<=0){dramaTimer=60*(90+Math.random()*30);triggerDramaEvent()}
+// ALL SIMULATION DISABLED — server is authoritative
+// Client-side decorations only:
+if(frame%3===0)try{updateWildlife()}catch(e){}// visual wildlife (harmless decoration)
 // Spotlight
 // Banner cooldown tick
 if(_bannerCooldown>0)_bannerCooldown--;
@@ -4964,35 +4986,48 @@ ws.onmessage=e=>{try{handleMsg(JSON.parse(e.data))}catch(ex){console.warn('[WS] 
 ws.onclose=()=>{S.connected=false;updateHeader();ov.style.display='block';ov.querySelector('h2').textContent='Disconnected';schedRecon()};
 ws.onerror=()=>{}}
 function schedRecon(){if(reconTimer)clearTimeout(reconTimer);reconTimer=setTimeout(()=>{reconDelay=Math.min(reconDelay*1.5,15000);connectWS()},reconDelay)}
-let _initialSyncDone=false;
-function syncServerBuildings(serverBlds){
-  if(!_initialSyncDone&&serverBlds.length>0){
-    // FIRST SYNC: seed client with server buildings so all clients start from same state
-    _initialSyncDone=true;
+function handleMsg(msg){
+if(msg.type==='pong')return;
+if((msg.type==='world_state'||msg.type==='tick')&&msg.data){
+  S.tick=msg.data.tick||S.tick;
+  if(msg.data.agents)S.agents=msg.data.agents;
+  if(msg.data.tiles)S.tiles=msg.data.tiles;
+  if(msg.data.events){
+    if(msg.type==='world_state')S.events=msg.data.events||[];
+    else{S.events=S.events.concat(msg.data.events);if(S.events.length>200)S.events=S.events.slice(-100)}
+  }
+  if(msg.data.leaderboard)S.leaderboard=msg.data.leaderboard;
+  if(msg.data.era!==undefined)G.era=msg.data.era;
+  // SERVER BUILDINGS ARE THE ONLY TRUTH — replace client buildings entirely
+  if(msg.data.buildings){
+    S.buildings=msg.data.buildings;
     G.clientBuildings.length=0;
-    for(const sb of serverBlds){
+    for(const sb of msg.data.buildings){
       G.clientBuildings.push({...sb,
         complete:sb.complete||sb.progress>=1,building:!sb.complete,
         pw:sb.pw||(sb.width||3)*TS,ph:sb.ph||(sb.height||3)*TS
       });
     }
-    try{for(const b of G.clientBuildings){if(b.complete)clearDetailsAtBuilding(b.x,b.y,b.pw||TS*2,b.ph||TS*2)}}catch(e){}
-    console.log('[SYNC] Seeded',G.clientBuildings.length,'buildings from server');
-    return;
   }
-  // After first sync: only update progress on existing buildings (original behavior)
-  for(const sb of serverBlds){
-    const match=G.clientBuildings.find(cb=>cb.type===sb.type&&Math.abs(cb.x-sb.x)<3&&Math.abs(cb.y-sb.y)<3);
-    if(match){
-      if(sb.complete)match.complete=true;
-      if(sb.progress>match.progress)match.progress=sb.progress;
+  // Sync agent visual targets from server positions
+  for(const a of S.agents){
+    const v=agentVisual.get(a.id);
+    if(v){v.tx=a.x/WW;v.ty=a.y/WH}
+    // Drive agent animation state from server
+    let st=agentState.get(a.id);
+    if(st){
+      const ss=a._state||a.mood||'idle';
+      if(ss==='chopping'&&st.state==='idle'){st.state='chopping';st.timer=60}
+      if(ss==='mining'&&st.state==='idle'){st.state='mining';st.timer=60}
+      if(ss==='mining_gold'&&st.state==='idle'){st.state='mining_gold';st.timer=60}
+      if(ss==='building'&&st.state!=='building'){
+        const nearBld=G.clientBuildings.find(b2=>!b2.complete&&b2.builder===a.name);
+        if(nearBld){st.state='building';st.target=nearBld;st.timer=0}
+      }
     }
   }
-}
-function handleMsg(msg){
-if(msg.type==='pong')return;
-if(msg.type==='world_state'&&msg.data){S.tick=msg.data.tick||0;S.agents=msg.data.agents||[];S.tiles=msg.data.tiles||[];S.buildings=msg.data.buildings||[];S.events=msg.data.events||[];S.leaderboard=msg.data.leaderboard||[];syncServerBuildings(msg.data.buildings||[]);updateAll()}
-if(msg.type==='tick'&&msg.data){S.tick=msg.data.tick||S.tick;if(msg.data.agents)S.agents=msg.data.agents;if(msg.data.tiles)S.tiles=msg.data.tiles;if(msg.data.buildings){S.buildings=msg.data.buildings;syncServerBuildings(msg.data.buildings)}if(msg.data.events){S.events=S.events.concat(msg.data.events);if(S.events.length>200)S.events=S.events.slice(-100)}if(msg.data.leaderboard)S.leaderboard=msg.data.leaderboard;updateAll()}}
+  updateAll();
+}}
 safeInterval(()=>{if(ws&&ws.readyState===1)ws.send('{"type":"ping"}')},30000);
 
 // === Resource system now driven by agent AI state machine ===
@@ -6355,10 +6390,11 @@ try{
 // ALWAYS remove intro overlay after 5 seconds no matter what
 setTimeout(()=>{const io=document.getElementById('intro-overlay');if(io){io.classList.add('fade');setTimeout(()=>{if(io.parentNode)io.remove()},2000)}},5000);
 requestAnimationFrame(render);connectWS();
-safeInterval(tickFood,10000);
-// safeInterval(saveGame,30000) — disabled, server persists state
-safeInterval(regrowResources,60000);// regrow every 1 min (faster)
-window.addEventListener('beforeunload',saveGame);
+// ALL LOCAL SIMULATION INTERVALS DISABLED — server is authoritative
+// safeInterval(tickFood,10000);
+// safeInterval(saveGame,30000);
+// safeInterval(regrowResources,60000);
+// window.addEventListener('beforeunload',saveGame);
 // Debug: reset world
 window.resetWorld=function(){localStorage.removeItem(SAVE_KEY);location.reload()}
 </script>
