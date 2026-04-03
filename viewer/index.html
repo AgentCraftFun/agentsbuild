@@ -4989,25 +4989,12 @@ function syncServerBuildings(serverBlds){
     }
   }
 }
-let _needsServerSeed=false;// set to true if no localStorage save exists
+let _needsServerSeed=false;// DISABLED — client builds its own world
 function handleMsg(msg){
 if(msg.type==='pong')return;
 if(msg.type==='world_state'&&msg.data){
   S.tick=msg.data.tick||0;S.agents=msg.data.agents||[];S.tiles=msg.data.tiles||[];
   S.buildings=msg.data.buildings||[];S.events=msg.data.events||[];S.leaderboard=msg.data.leaderboard||[];
-  // FIRST VISIT ONLY: seed buildings from server if no localStorage save exists
-  if(_needsServerSeed&&msg.data.buildings&&msg.data.buildings.length>0){
-    _needsServerSeed=false;
-    G.clientBuildings.length=0;
-    for(const sb of msg.data.buildings){
-      G.clientBuildings.push({...sb,complete:sb.complete||sb.progress>=1,building:!sb.complete,
-        pw:sb.pw||(sb.width||3)*TS,ph:sb.ph||(sb.height||3)*TS});
-    }
-    // Set frame to match server time
-    if(msg.data.tick>0)frame=msg.data.tick*180;
-    try{for(const b of G.clientBuildings){if(b.complete)clearDetailsAtBuilding(b.x,b.y,b.pw||TS*2,b.ph||TS*2)}}catch(e){}
-    console.log('[SEED] First visit: loaded',G.clientBuildings.length,'buildings from server at tick',msg.data.tick);
-  }
   updateAll();
 }
 if(msg.type==='tick'&&msg.data){S.tick=msg.data.tick||S.tick;if(msg.data.agents)S.agents=msg.data.agents;if(msg.data.tiles)S.tiles=msg.data.tiles;if(msg.data.buildings){S.buildings=msg.data.buildings;syncServerBuildings(msg.data.buildings)}if(msg.data.events){S.events=S.events.concat(msg.data.events);if(S.events.length>200)S.events=S.events.slice(-100)}if(msg.data.leaderboard)S.leaderboard=msg.data.leaderboard;updateAll()}}
@@ -6324,7 +6311,6 @@ try{
   // Try loading saved game
   didLoad=loadGame();// Load saved world from localStorage
   if(didLoad){validateGameState()}// clean up any corrupt data from save
-  else{_needsServerSeed=true;console.log('[INIT] No localStorage save — will seed from server on first connect')}
   let offlineSummary=null;
   if(didLoad){
     console.log('Restored saved game');
