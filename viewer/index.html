@@ -3534,40 +3534,45 @@ for(const a of S.agents){
   let st=agentState.get(a.id);
   if(!st){st={state:'idle',target:null,timer:0,taskCooldown:0};agentState.set(a.id,st)}
   const ss=a._state||a.mood||'idle';
-  // Server state DIRECTLY drives animation — no timers, server is authoritative
   if(ss==='chopping'){
-    st.state='chopping';st.timer=999;// keep chopping until server says otherwise
-    // Find nearest tree for visual target
-    if(!st.target||st.target.type!=='tree'){
+    // Set chopping with proper pixel-coord target for tree shake/particles
+    if(st.state!=='chopping'){
+      st.state='chopping';st.timer=100;
       const gx=Math.floor(v.x*WW),gy=Math.floor(v.y*WH);
-      for(let r=1;r<4;r++){for(let dx=-r;dx<=r;dx++){for(let dy=-r;dy<=r;dy++){
+      st.target=null;
+      for(let r=1;r<5&&!st.target;r++){for(let dx=-r;dx<=r&&!st.target;dx++){for(let dy=-r;dy<=r&&!st.target;dy++){
         if(Math.abs(dx)!==r&&Math.abs(dy)!==r)continue;
-        const bi=tBiomes[(gy+dy)*WW+(gx+dx)];
-        if(bi!==undefined&&(BL[bi]==='forest'||BL[bi]==='dense_forest')){st.target={x:(gx+dx)*TS,y:(gy+dy)*TS,type:'tree'};r=99;break}
+        const tx2=gx+dx,ty2=gy+dy;if(tx2<0||tx2>=WW||ty2<0||ty2>=WH)continue;
+        const bi=tBiomes[ty2*WW+tx2];
+        if(bi!==undefined&&(BL[bi]==='forest'||BL[bi]==='dense_forest')){st.target={x:tx2*TS,y:ty2*TS}}
       }}}
     }
+    // Keep timer alive so original chopping handler animates continuously
+    if(st.timer<20)st.timer=100;
   }else if(ss==='mining'){
-    st.state='mining';st.timer=999;
+    if(st.state!=='mining'){
+      st.state='mining';st.timer=140;
+      const gx=Math.floor(v.x*WW),gy=Math.floor(v.y*WH);
+      st.target=null;
+      for(let r=1;r<5&&!st.target;r++){for(let dx=-r;dx<=r&&!st.target;dx++){for(let dy=-r;dy<=r&&!st.target;dy++){
+        if(Math.abs(dx)!==r&&Math.abs(dy)!==r)continue;
+        const tx2=gx+dx,ty2=gy+dy;if(tx2<0||tx2>=WW||ty2<0||ty2>=WH)continue;
+        const bi=tBiomes[ty2*WW+tx2];
+        if(bi!==undefined&&(BL[bi]==='hills'||BL[bi]==='mountain')){st.target={x:tx2*TS,y:ty2*TS}}
+      }}}
+    }
+    if(st.timer<20)st.timer=140;
   }else if(ss==='mining_gold'){
-    st.state='mining_gold';st.timer=999;
+    if(st.state!=='mining_gold'){st.state='mining_gold';st.timer=200;st.target={x:Math.floor(v.x*WW)*TS,y:Math.floor(v.y*WH)*TS}}
+    if(st.timer<20)st.timer=200;
   }else if(ss==='building'){
-    // Find the building this agent is working on from CURRENT client buildings
     const bld=G.clientBuildings.find(b2=>!b2.complete&&b2.builder===a.name);
-    if(bld){st.state='building';st.target=bld;st.timer=0}
-    else{st.state='idle';st.taskCooldown=3}// building complete, go idle
-  }else if(ss==='walking'||ss==='moving'||ss==='claiming'){
-    // Agent is moving — show as walking (not stuck in old animation)
-    if(st.state==='building'||st.state==='chopping'||st.state==='mining'){
-      st.state='idle';st.taskCooldown=1;
-    }
+    if(bld){st.state='building';st.target=bld}
+    else{st.state='idle';st.taskCooldown=3}
   }else{
-    // Server says idle — clear any lingering animation
-    if(st.state==='chopping'||st.state==='mining'||st.state==='mining_gold'){
+    // Server says idle/walking/claiming — clear stuck animations
+    if(st.state==='chopping'||st.state==='mining'||st.state==='mining_gold'||st.state==='building'){
       st.state='idle';st.taskCooldown=3;
-    }
-    if(st.state==='building'){
-      const bld2=G.clientBuildings.find(b2=>!b2.complete&&b2.builder===a.name);
-      if(!bld2){st.state='idle';st.taskCooldown=3}// no incomplete building = done
     }
   }
 }
