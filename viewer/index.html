@@ -4626,34 +4626,54 @@ for(const a of S.agents){
   else{tx=Math.floor(v4.x*WW)*TS;ty=Math.floor(v4.y*WH)*TS}
 
   if(ast4.state==='chopping'){
-    // TREE WOBBLE — the tree shakes side to side
-    const wobble=Math.sin(frame*0.5)*4;
-    const lean=Math.sin(frame*0.15)*2;
+    // Tree chop animation — matches drawDeciduous style (canopy r=17, trunk 18px tall)
+    const ox=tx+TS/2,oy=ty+TS-2;// same origin as drawDeciduous
+    const wobble=Math.sin(frame*0.8)*5;// side-to-side shake
+    const lean=Math.sin(frame*0.3)*4;// degrees lean
+    const isHit=frame%12<3;
+
     ctx.save();
-    ctx.translate(tx+TS/2,ty+TS);
-    ctx.rotate(lean*Math.PI/180*2);
-    // Draw an animated tree overlay that wobbles
-    // Trunk shaking
-    ctx.fillStyle='#5C3A1E';
-    ctx.fillRect(-3+wobble*0.3,-28,6,28);
-    // Canopy wobbling
-    ctx.fillStyle='#2D8B2D';
-    ctx.beginPath();ctx.arc(wobble*0.5,-35,16,0,Math.PI*2);ctx.fill();
-    ctx.fillStyle='#3CAF3C';
-    ctx.beginPath();ctx.arc(-3+wobble*0.4,-38,10,0,Math.PI*2);ctx.fill();
+    // Rotate tree around its base (bottom of trunk)
+    ctx.translate(ox,oy);
+    ctx.rotate(lean*Math.PI/180);
+    ctx.translate(-ox,-oy);
+
+    // Trunk (same size as drawDeciduous: 5px wide, 18px tall)
+    ctx.fillStyle=isHit?'#fff':'#5a3a18';
+    ctx.fillRect(ox-3,oy-18+wobble*0.2,6,18);
+    ctx.fillStyle='#3a2208';ctx.fillRect(ox+1,oy-18+wobble*0.2,2,18);
+
+    // 4-layer canopy (same as drawDeciduous)
+    ctx.fillStyle=isHit?'#ffe':'#0a3a06';
+    ctx.beginPath();ctx.arc(ox+1+wobble*0.3,oy-20,17,0,Math.PI*2);ctx.fill();
+    ctx.fillStyle=isHit?'#ffd':'#1a5a10';
+    ctx.beginPath();ctx.arc(ox+wobble*0.4,oy-23,15,0,Math.PI*2);ctx.fill();
+    ctx.fillStyle=isHit?'#ffc':'#2a7a1a';
+    ctx.beginPath();ctx.arc(ox-1+wobble*0.5,oy-26,13,0,Math.PI*2);ctx.fill();
+    ctx.fillStyle=isHit?'#ffb':'#3a9a2a';
+    ctx.beginPath();ctx.arc(ox-2+wobble*0.6,oy-29,10,0,Math.PI*2);ctx.fill();
+    // Highlight
+    ctx.fillStyle=isHit?'#fff':'#5ebc40';
+    ctx.beginPath();ctx.arc(ox-5+wobble*0.4,oy-33,4,0,Math.PI*2);ctx.fill();
+
     ctx.restore();
-    // Impact flash + wood chips every 12 frames
-    if(frame%12<3){
-      ctx.fillStyle='rgba(255,255,200,0.5)';
-      ctx.beginPath();ctx.arc(tx+TS/2,ty+TS*0.6,8,0,Math.PI*2);ctx.fill();
+
+    // Impact flash burst at trunk
+    if(isHit){
+      ctx.fillStyle='rgba(255,255,150,0.6)';
+      ctx.beginPath();ctx.arc(ox,oy-8,10,0,Math.PI*2);ctx.fill();
     }
+    // Wood chip particles
     if(frame%12===0){
-      for(let i=0;i<3;i++){
-        const px=tx+TS/2+(Math.random()-0.5)*16,py=ty+TS*0.5-Math.random()*10;
+      for(let i=0;i<4;i++){
+        const px2=ox+(Math.random()-0.5)*20,py2=oy-10-Math.random()*15;
         ctx.fillStyle=Math.random()<0.5?'#8B6914':'#A0782C';
-        ctx.fillRect(px,py,3,2);
+        ctx.fillRect(px2,py2,3,2);
       }
     }
+    // Shadow wobble
+    ctx.fillStyle='rgba(0,0,0,0.2)';
+    ctx.beginPath();ctx.ellipse(ox+4+wobble*0.3,oy+3,14,5,0,0,Math.PI*2);ctx.fill();
   }
 
   if(ast4.state==='mining'||ast4.state==='mining_gold'){
