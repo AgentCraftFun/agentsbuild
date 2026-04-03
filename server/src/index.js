@@ -477,6 +477,33 @@ wss.on('connection', (ws, req) => {
 const gameLoop = new GameLoop(worldState, wss);
 gameLoop.start();
 
+// ─── Startup Validation ───
+
+console.log('=== STATE VALIDATION ===');
+console.log('Tick:', worldState.tick);
+console.log('World:', worldState.width, 'x', worldState.height, 'seed:', worldState.seed);
+console.log('Agents:', worldState.agents.size, [...worldState.agents.values()].map(a => `${a.name}(${a.faction}/${a.personality})`).join(', '));
+console.log('Buildings:', worldState.buildingsList.length);
+console.log('Events:', worldState.events.length);
+console.log('Tile count:', worldState.tiles.size);
+// Spot-check terrain generation
+const testTile = worldState.tiles.get('50,50');
+if (testTile) console.log('Tile (50,50):', testTile.biome, testTile.owner ? `owned by ${testTile.owner}` : 'unclaimed');
+const testTile2 = worldState.tiles.get('100,100');
+if (testTile2) console.log('Tile (100,100):', testTile2.biome);
+console.log('========================');
+
+// ─── Server Heartbeat (every 60 seconds) ───
+
+setInterval(() => {
+  const agentCount = worldState.agents.size;
+  const buildingCount = worldState.buildingsList.length;
+  const claimedTiles = [...worldState.tiles.values()].filter(t => t.owner).length;
+  const spectators = wss.clients.size;
+  const uptime = Math.round(process.uptime());
+  console.log(`[Heartbeat] Tick:${worldState.tick} | Agents:${agentCount} | Buildings:${buildingCount} | Claimed:${claimedTiles} | Spectators:${spectators} | Uptime:${uptime}s`);
+}, 60000);
+
 // ─── Graceful Shutdown ───
 
 // ─── Auto-Save ───
