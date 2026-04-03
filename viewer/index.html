@@ -2971,6 +2971,25 @@ function pickBuildSite(bdef,agentId){
   return null;// No valid spot — agent should gather instead
 }
 
+// Helper: find nearest tree/rock near agent for visual animation targets
+function findNearestDetailForVisual(wx,wy,type){
+  const gx=Math.floor(wx),gy=Math.floor(wy);
+  for(let r=1;r<6;r++){
+    for(let dx=-r;dx<=r;dx++){
+      for(let dy=-r;dy<=r;dy++){
+        if(Math.abs(dx)!==r&&Math.abs(dy)!==r)continue;
+        const tx2=gx+dx,ty2=gy+dy;
+        if(tx2<0||tx2>=WW||ty2<0||ty2>=WH)continue;
+        const bi=tBiomes?tBiomes[ty2*WW+tx2]:3;
+        const biome=BL[bi];
+        if(type==='tree'&&(biome==='forest'||biome==='dense_forest'))return{x:tx2,y:ty2};
+        if(type==='rock'&&(biome==='hills'||biome==='mountain'))return{x:tx2,y:ty2};
+      }
+    }
+  }
+  return null;
+}
+
 function updateAgentMovement(){
   const hasLumberMill=G.clientBuildings.some(b=>b.type==='lumber_mill'&&b.complete);
   const hasQuarry=G.clientBuildings.some(b=>b.type==='quarry'&&b.complete);
@@ -2986,31 +3005,60 @@ function updateAgentMovement(){
     let st=agentState.get(a.id);
     if(!st){st={state:'idle',target:null,timer:0,taskCooldown:0};agentState.set(a.id,st)}
 
+    // === SERVER DRIVES POSITION — sync visual target from server data ===
+    v.tx=a.x/WW;v.ty=a.y/WH;
+
+    // Map server mood to client visual state for animations
+    const serverMood=a.mood||'idle';
+    const serverAction=a.current_action;
+
+    // Drive visual state from server mood — triggers walking/chopping/mining/building animations
+    if(serverMood==='moving'||serverMood==='claiming'){
+      if(st.state==='idle'||st.state==='walking'){st.state='walking';st.timer=0}
+    }
+    if(serverMood==='building'){
+      if(st.state!=='building'){
+        const nearBld=G.clientBuildings.find(b=>!b.complete&&Math.abs(b.x-a.x)<8&&Math.abs(b.y-a.y)<8);
+        if(nearBld){st.state='building';st.target=nearBld;st.timer=0}
+        else{st.state='chopping';st.timer=120}// fallback: show work animation
+      }
+    }
+    // If server action is move/claim and visual is idle, start walking
+    if(serverAction&&serverAction.type==='move'&&st.state==='idle'){st.state='walking';st.timer=0}
+    if(serverAction&&serverAction.type==='claim'&&st.state==='idle'){st.state='walking';st.timer=0}
+    // Show chopping animation when agent mood is active but not building
+    if((serverMood==='moving'||serverMood==='claiming')&&st.state==='idle'&&Math.random()<0.3){
+      // Randomly assign resource-gathering visual activity
+      const visualAct=['chopping','mining','walking'][Math.floor(Math.random()*3)];
+      if(visualAct==='chopping'){
+        // Find nearest tree for visual
+        const treeTarget=findNearestDetailForVisual(v.x*WW,v.y*WH,'tree');
+        if(treeTarget){st.state='walking_to_tree';st.target=treeTarget;v.tx=treeTarget.x/WW;v.ty=treeTarget.y/WH}
+        else{st.state='walking';st.timer=0}
+      }else if(visualAct==='mining'){
+        const rockTarget=findNearestDetailForVisual(v.x*WW,v.y*WH,'rock');
+        if(rockTarget){st.state='walking_to_rock';st.target=rockTarget;v.tx=rockTarget.x/WW;v.ty=rockTarget.y/WH}
+        else{st.state='walking';st.timer=0}
+      }else{st.state='walking';st.timer=0}
+    }
+    // Return to idle when server says idle
+    if(serverMood==='idle'&&(st.state==='walking')&&atTarget){st.state='idle';st.taskCooldown=15}
+
     const isLazy=a.personality==='lazy';
     const speed=isLazy?0.012:0.025;
     v.x+=(v.tx-v.x)*speed;
     v.y+=(v.ty-v.y)*speed;
     const atTarget=Math.abs(v.x-v.tx)<0.005&&Math.abs(v.y-v.ty)<0.005;
 
+    // === VISUAL-ONLY IDLE: pick visual activities (no simulation) ===
     if(st.state==='idle'){
       st.taskCooldown--;
       if(st.taskCooldown>0)continue;
-      // Lazy agents take short breaks, everyone else acts fast
       if(isLazy){st.taskCooldown=45;if(Math.random()<0.3)continue}
-      else{st.taskCooldown=8}// instant decision
+      else{st.taskCooldown=8}
 
-      const soc=getAgentSocial(a.id);
-      // Needs override: hungry agents forage, exhausted agents rest
-      if(soc.hunger<30){
-        G.food=Math.max(0,G.food);soc.hunger=Math.min(100,soc.hunger+50);
-        st.taskCooldown=30;continue;// quick eat, back to work
-      }
-      if(soc.energy<15){
-        soc.energy=Math.min(100,soc.energy+30);// quick rest boost
-        st.taskCooldown=60;// ~1 sec rest max
-        if(soc.home){v.tx=soc.home.x/WW;v.ty=soc.home.y/WH}
-        continue;
-      }
+      // Skip needs system — server handles resources
+      if(false){// DISABLED: was client-side simulation
       // Morale affects speed (stored for use in movement)
       const moraleSpeedMult=Math.max(0.5,soc.morale/100);
 
@@ -3500,31 +3548,9 @@ if(tvMode){
 }
 if(panHighlight&&panHighlight.timer>0)panHighlight.timer--;
 // === CLIENT IS SPECTATOR ONLY — server runs all simulation ===
-// updateAgentMovement() — DISABLED: server controls agent positions
-// Instead, interpolate agent visuals toward server-provided positions
-for(const a of S.agents){
-  let v=agentVisual.get(a.id);
-  if(!v){v={x:a.x/WW,y:a.y/WH,tx:a.x/WW,ty:a.y/WH};agentVisual.set(a.id,v)}
-  // Server sends new positions — set as target for smooth lerp
-  v.tx=a.x/WW;v.ty=a.y/WH;
-  // Smooth interpolation toward server position
-  v.x+=(v.tx-v.x)*0.12;v.y+=(v.ty-v.y)*0.12;
-}
-// Reduced debug: log only every 30 seconds
-if(frame%1800===0&&S.agents.length>0){
-  console.log(`[Status] tick:${S.tick} agents:${S.agents.length} blds:${G.clientBuildings.length}`);
-}
-// Clean up visuals for agents no longer in server state
-{const liveIds=new Set(S.agents.map(a=>a.id));
-for(const id of agentVisual.keys()){if(!liveIds.has(id)){agentVisual.delete(id);agentState.delete(id)}}
-for(const id of agentBlueprints.keys()){if(!liveIds.has(id))agentBlueprints.delete(id)}}
-// Agent watchdog disabled — server controls agent behavior
-if(false){
-  for(const a of S.agents){
-    const st=agentState.get(a.id);
-    if(st&&st.state==='idle'&&st.taskCooldown<=0){st.taskCooldown=1}
-  }
-}
+// Run visual agent movement + animation state machine
+// Server controls positions (a.x, a.y) and mood — client drives animations
+updateAgentMovement();
 // Stuck building scanner (every 300 frames = ~5 sec)
 if(frame%300===0){
   for(const b of G.clientBuildings){
@@ -3542,10 +3568,14 @@ if(frame%300===0){
     }
   }
 }
-// === SIMULATION DISABLED — server handles all of this ===
-// tickNeeds(), checkSocialInteractions(), checkClanFormation(), checkVillages()
-// updateConflicts(), ensureResourceAbundance(), batchResourceSummary()
-// updateWildlife(), triggerDramaEvent() — all run server-side now
+// === CLIENT-SIDE VISUAL SYSTEMS (not simulation — just animations/effects) ===
+if(frame%60===0)try{tickNeeds()}catch(e){}// visual mood indicators
+if(frame%90===0)try{checkSocialInteractions()}catch(e){}// speech bubbles, relationships
+socialCheckTimer--;if(socialCheckTimer<=0){socialCheckTimer=600;try{checkClanFormation()}catch(e){};try{checkVillages()}catch(e){}}
+if(frame%30===0)try{updateConflicts()}catch(e){}// clan tension visuals
+if(frame%3===0)try{updateWildlife()}catch(e){}// animal movement (client-side decoration)
+// Drama events for visual interest
+dramaTimer--;if(dramaTimer<=0){dramaTimer=60*(90+Math.random()*30);try{triggerDramaEvent()}catch(e){}}
 // Spotlight
 // Banner cooldown tick
 if(_bannerCooldown>0)_bannerCooldown--;
