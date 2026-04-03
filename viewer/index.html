@@ -4991,6 +4991,9 @@ if(msg.type==='world_state'&&msg.data){
   // Sync agent positions from server
   for(const a of S.agents){const v=agentVisual.get(a.id);if(v){v.tx=a.x/WW;v.ty=a.y/WH}}
   if(msg.data.era!==undefined)G.era=msg.data.era;
+  if(msg.data.resources){G.wood=msg.data.resources.wood||0;G.stone=msg.data.resources.stone||0;G.gold=msg.data.resources.gold||0;G.food=msg.data.resources.food||0}
+  // Sync frame counter from server tick so day/time matches across all clients
+  if(msg.data.tick>0)frame=Math.max(frame,msg.data.tick*180);// 3s ticks * 60fps = 180 frames/tick
   updateAll();
 }
 if(msg.type==='tick'&&msg.data){
@@ -5003,6 +5006,9 @@ if(msg.type==='tick'&&msg.data){
   // Sync agent positions from server
   for(const a of S.agents){const v=agentVisual.get(a.id);if(v){v.tx=a.x/WW;v.ty=a.y/WH}}
   if(msg.data.era!==undefined)G.era=msg.data.era;
+  if(msg.data.resources){G.wood=msg.data.resources.wood||0;G.stone=msg.data.resources.stone||0;G.gold=msg.data.resources.gold||0;G.food=msg.data.resources.food||0}
+  // Keep frame synced with server tick
+  if(msg.data.tick>0){const serverFrame=msg.data.tick*180;if(serverFrame>frame)frame=serverFrame}
   updateAll();
 }}
 safeInterval(()=>{if(ws&&ws.readyState===1)ws.send('{"type":"ping"}')},30000);
