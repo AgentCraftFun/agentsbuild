@@ -25,7 +25,11 @@ const WORLD_SEED = parseInt(process.env.WORLD_SEED, 10) || 42;
 const SAVE_INTERVAL = parseInt(process.env.SAVE_INTERVAL_MS, 10) || 30000;
 
 const fs = require('fs');
-const STATE_FILE = path.resolve(__dirname, '..', '..', 'gamestate.json');
+// Use Railway persistent volume if available, otherwise local
+const VOLUME_PATH = process.env.RAILWAY_VOLUME_MOUNT_PATH || path.resolve(__dirname, '..', '..');
+const STATE_FILE = path.join(VOLUME_PATH, 'gamestate.json');
+console.log(`[Server] State file: ${STATE_FILE}`);
+console.log(`[Server] Volume mount: ${process.env.RAILWAY_VOLUME_MOUNT_PATH || 'none (using local)'}`);
 
 // ─── Persistent State: Save/Load to disk ───
 
@@ -147,7 +151,10 @@ app.get('/api/health', (req, res) => {
     tick: worldState.tick,
     agents: worldState.agents.size,
     buildings: worldState.buildingsList.length,
-    uptime: process.uptime(),
+    uptime: Math.round(process.uptime()),
+    spectators: wss ? wss.clients.size : 0,
+    stateFile: STATE_FILE,
+    volumeMounted: !!process.env.RAILWAY_VOLUME_MOUNT_PATH,
   });
 });
 
@@ -424,6 +431,18 @@ app.get('*', (req, res) => {
 
 // ─── Start HTTP Server ───
 
+console.log('========================================');
+console.log('  AGENTCRAFT SERVER');
+console.log('========================================');
+console.log(`Port: ${PORT}`);
+console.log(`Tick rate: ${parseInt(process.env.TICK_RATE_MS, 10) || 10000}ms`);
+console.log(`Save interval: ${SAVE_INTERVAL / 1000}s`);
+console.log(`State file: ${STATE_FILE}`);
+console.log(`State exists: ${fs.existsSync(STATE_FILE)}`);
+console.log(`Agents: ${worldState.agents.size}`);
+console.log(`Buildings: ${worldState.buildingsList.length}`);
+console.log('========================================');
+
 const httpServer = app.listen(PORT, '0.0.0.0', () => {
   console.log(`[Server] HTTP server listening on port ${PORT}`);
   console.log(`[Server] Viewer served from ${viewerPath}`);
@@ -521,18 +540,23 @@ setInterval(() => {
 const _saveInterval = setInterval(() => saveWorldState(worldState), SAVE_INTERVAL);
 console.log(`[Server] Auto-saving every ${SAVE_INTERVAL / 1000}s to ${STATE_FILE}`);
 
+// ─── Graceful Shutdown (survives Railway redeploys) ───
+
+let _isShuttingDown = false;
 function shutdown(signal) {
-  console.log(`\n[Server] ${signal} received. Shutting down...`);
+  if (_isShuttingDown) return;
+  _isShuttingDown = true;
+  console.log(`\n[Server] ${signal} received. Saving state and shutting down...`);
   clearInterval(_saveInterval);
-  saveWorldState(worldState); // Save before exit
+  saveWorldState(worldState);
   gameLoop.stop();
+  wss.clients.forEach(ws => ws.close());
   wss.close();
   httpServer.close(() => {
-    console.log('[Server] HTTP server closed.');
+    console.log('[Server] Shut down cleanly.');
     process.exit(0);
   });
-  // Force exit after 5 seconds
-  setTimeout(() => process.exit(1), 5000);
+  setTimeout(() => { console.error('[Server] Forced shutdown after timeout'); process.exit(1); }, 5000);
 }
 
 process.on('SIGINT', () => shutdown('SIGINT'));
