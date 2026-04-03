@@ -5019,15 +5019,36 @@ function syncServerBuildings(serverBlds){
     }
   }
 }
-let _needsServerSeed=false;// DISABLED — client builds its own world
+let _needsServerSeed=false;
 function handleMsg(msg){
 if(msg.type==='pong')return;
-if(msg.type==='world_state'&&msg.data){
-  S.tick=msg.data.tick||0;S.agents=msg.data.agents||[];S.tiles=msg.data.tiles||[];
-  S.buildings=msg.data.buildings||[];S.events=msg.data.events||[];S.leaderboard=msg.data.leaderboard||[];
+if(msg.type==='world_state'||msg.type==='tick'){
+  if(!msg.data)return;
+  S.tick=msg.data.tick||S.tick;
+  if(msg.data.agents)S.agents=msg.data.agents;
+  if(msg.data.tiles)S.tiles=msg.data.tiles;
+  if(msg.data.events){
+    if(msg.type==='world_state')S.events=msg.data.events||[];
+    else{S.events=S.events.concat(msg.data.events);if(S.events.length>200)S.events=S.events.slice(-100)}
+  }
+  if(msg.data.leaderboard)S.leaderboard=msg.data.leaderboard;
+  // SERVER IS AUTHORITATIVE: replace buildings, sync resources/era/frame
+  if(msg.data.buildings){
+    S.buildings=msg.data.buildings;
+    G.clientBuildings.length=0;
+    for(const sb of msg.data.buildings){
+      G.clientBuildings.push({...sb,complete:sb.complete||sb.progress>=1,building:!sb.complete,
+        pw:sb.pw||(sb.width||3)*TS,ph:sb.ph||(sb.height||3)*TS});
+    }
+  }
+  if(msg.data.resources){G.wood=msg.data.resources.wood||0;G.stone=msg.data.resources.stone||0;G.gold=msg.data.resources.gold||0;G.food=msg.data.resources.food||0}
+  if(msg.data.era!==undefined)G.era=msg.data.era;
+  if(msg.data.tick>0){const sf=msg.data.tick*60;if(sf>frame)frame=sf}// sync day/time
+  // Sync agent visual positions
+  for(const a of S.agents){const v=agentVisual.get(a.id||a.name);if(v){v.tx=a.x/WW;v.ty=a.y/WH}}
   updateAll();
-}
-if(msg.type==='tick'&&msg.data){S.tick=msg.data.tick||S.tick;if(msg.data.agents)S.agents=msg.data.agents;if(msg.data.tiles)S.tiles=msg.data.tiles;if(msg.data.buildings){S.buildings=msg.data.buildings;syncServerBuildings(msg.data.buildings)}if(msg.data.events){S.events=S.events.concat(msg.data.events);if(S.events.length>200)S.events=S.events.slice(-100)}if(msg.data.leaderboard)S.leaderboard=msg.data.leaderboard;updateAll()}}
+}}
+// old tick handler removed — handled in unified handler above
 safeInterval(()=>{if(ws&&ws.readyState===1)ws.send('{"type":"ping"}')},30000);
 
 // === Resource system now driven by agent AI state machine ===
@@ -6339,7 +6360,7 @@ try{
   try{initInfluence()}catch(e){console.warn('Influence init failed:',e)}
   try{document.getElementById('h-points').textContent=specPoints}catch(e){}
   // Try loading saved game
-  didLoad=loadGame();// Load saved world from localStorage
+  didLoad=false;// Server is source of truth — no local save/load
   if(didLoad){validateGameState()}// clean up any corrupt data from save
   let offlineSummary=null;
   if(didLoad){
@@ -6390,10 +6411,11 @@ try{
 // ALWAYS remove intro overlay after 5 seconds no matter what
 setTimeout(()=>{const io=document.getElementById('intro-overlay');if(io){io.classList.add('fade');setTimeout(()=>{if(io.parentNode)io.remove()},2000)}},5000);
 requestAnimationFrame(render);connectWS();
-safeInterval(tickFood,10000);
-safeInterval(saveGame,30000);// auto-save every 30 seconds
-safeInterval(regrowResources,60000);// regrow every 1 min (faster)
-window.addEventListener('beforeunload',saveGame);
+// ALL simulation intervals disabled — server is authoritative
+// safeInterval(tickFood,10000);
+// safeInterval(saveGame,30000);
+// safeInterval(regrowResources,60000);
+// window.addEventListener('beforeunload',saveGame);
 // Debug: reset world
 window.resetWorld=function(){localStorage.removeItem(SAVE_KEY);location.reload()}
 </script>
