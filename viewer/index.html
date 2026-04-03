@@ -4614,22 +4614,6 @@ for(let i=bubbles.length-1;i>=0;i--){
 }
 
 // === CHOP/MINE VISUAL EFFECTS (drawn in world-space) ===
-// DEBUG: draw giant red circle for EVERY chopping agent to prove this code runs
-{let _chopDbg=0;
-for(const a of S.agents){
-  const ast4=agentState.get(a.id);
-  if(!ast4)continue;
-  if(ast4.state==='chopping'||ast4.state==='mining'||ast4.state==='mining_gold'){
-    _chopDbg++;
-    const dv=agentVisual.get(a.id);
-    if(dv){
-      // GIANT RED CIRCLE at agent position — impossible to miss
-      ctx.fillStyle='rgba(255,0,0,0.4)';
-      ctx.beginPath();ctx.arc(dv.x*WW*TS+TS/2,dv.y*WH*TS+TS/2,30,0,Math.PI*2);ctx.fill();
-    }
-  }
-}}
-
 for(const a of S.agents){
   const ast4=agentState.get(a.id);
   if(!ast4)continue;
@@ -4642,54 +4626,45 @@ for(const a of S.agents){
   else{tx=Math.floor(v4.x*WW)*TS;ty=Math.floor(v4.y*WH)*TS}
 
   if(ast4.state==='chopping'){
-    // Tree chop animation — matches drawDeciduous style (canopy r=17, trunk 18px tall)
-    const ox=tx+TS/2,oy=ty+TS-2;// same origin as drawDeciduous
-    const wobble=Math.sin(frame*0.8)*5;// side-to-side shake
-    const lean=Math.sin(frame*0.3)*4;// degrees lean
-    const isHit=frame%12<3;
+    // Tree chop effect — heavy shake, sawdust, impact flashes
+    const ox=tx+TS/2,oy=ty+TS-2;
+    const shake=Math.sin(frame*1.2)*8;// HEAVY 8px shake
+    const leanDeg=Math.sin(frame*0.4)*6;// 6 degree lean
+    const isHit=frame%10<3;// flash every 10 frames
 
-    ctx.save();
-    // Rotate tree around its base (bottom of trunk)
-    ctx.translate(ox,oy);
-    ctx.rotate(lean*Math.PI/180);
-    ctx.translate(-ox,-oy);
+    // Glowing chop indicator ring around target tree
+    ctx.strokeStyle=isHit?'rgba(255,200,50,0.8)':'rgba(255,150,30,0.3)';
+    ctx.lineWidth=isHit?3:1.5;
+    ctx.beginPath();ctx.arc(ox,oy-15,22,0,Math.PI*2);ctx.stroke();
 
-    // Trunk (same size as drawDeciduous: 5px wide, 18px tall)
-    ctx.fillStyle=isHit?'#fff':'#5a3a18';
-    ctx.fillRect(ox-3,oy-18+wobble*0.2,6,18);
-    ctx.fillStyle='#3a2208';ctx.fillRect(ox+1,oy-18+wobble*0.2,2,18);
-
-    // 4-layer canopy (same as drawDeciduous)
-    ctx.fillStyle=isHit?'#ffe':'#0a3a06';
-    ctx.beginPath();ctx.arc(ox+1+wobble*0.3,oy-20,17,0,Math.PI*2);ctx.fill();
-    ctx.fillStyle=isHit?'#ffd':'#1a5a10';
-    ctx.beginPath();ctx.arc(ox+wobble*0.4,oy-23,15,0,Math.PI*2);ctx.fill();
-    ctx.fillStyle=isHit?'#ffc':'#2a7a1a';
-    ctx.beginPath();ctx.arc(ox-1+wobble*0.5,oy-26,13,0,Math.PI*2);ctx.fill();
-    ctx.fillStyle=isHit?'#ffb':'#3a9a2a';
-    ctx.beginPath();ctx.arc(ox-2+wobble*0.6,oy-29,10,0,Math.PI*2);ctx.fill();
-    // Highlight
-    ctx.fillStyle=isHit?'#fff':'#5ebc40';
-    ctx.beginPath();ctx.arc(ox-5+wobble*0.4,oy-33,4,0,Math.PI*2);ctx.fill();
-
-    ctx.restore();
-
-    // Impact flash burst at trunk
-    if(isHit){
-      ctx.fillStyle='rgba(255,255,150,0.6)';
-      ctx.beginPath();ctx.arc(ox,oy-8,10,0,Math.PI*2);ctx.fill();
-    }
-    // Wood chip particles
-    if(frame%12===0){
-      for(let i=0;i<4;i++){
-        const px2=ox+(Math.random()-0.5)*20,py2=oy-10-Math.random()*15;
-        ctx.fillStyle=Math.random()<0.5?'#8B6914':'#A0782C';
-        ctx.fillRect(px2,py2,3,2);
+    // Sawdust/wood chip particles (drawn every frame for density)
+    if(frame%6===0){
+      for(let i=0;i<5;i++){
+        ctx.fillStyle=['#8B6914','#A0782C','#6B4E12','#C4A050'][Math.floor(Math.random()*4)];
+        const px2=ox+(Math.random()-0.5)*24;
+        const py2=oy-5-Math.random()*20;
+        ctx.fillRect(px2,py2,2+Math.random()*3,2);
       }
     }
-    // Shadow wobble
-    ctx.fillStyle='rgba(0,0,0,0.2)';
-    ctx.beginPath();ctx.ellipse(ox+4+wobble*0.3,oy+3,14,5,0,0,Math.PI*2);ctx.fill();
+
+    // Impact flash at trunk
+    if(isHit){
+      ctx.fillStyle='rgba(255,255,150,0.7)';
+      ctx.beginPath();ctx.arc(ox+shake*0.3,oy-6,8,0,Math.PI*2);ctx.fill();
+      // White slash mark
+      ctx.strokeStyle='rgba(255,255,255,0.8)';ctx.lineWidth=2;
+      ctx.beginPath();ctx.moveTo(ox-4,oy-12);ctx.lineTo(ox+6,oy-4);ctx.stroke();
+    }
+
+    // Falling leaf particles
+    if(frame%8===0){
+      for(let i=0;i<2;i++){
+        ctx.fillStyle=['#228B22','#32CD32','#2E8B57'][Math.floor(Math.random()*3)];
+        const lx=ox+(Math.random()-0.5)*30;
+        const ly=oy-25-Math.random()*15;
+        ctx.beginPath();ctx.arc(lx,ly,2+Math.random()*2,0,Math.PI*2);ctx.fill();
+      }
+    }
   }
 
   if(ast4.state==='mining'||ast4.state==='mining_gold'){
