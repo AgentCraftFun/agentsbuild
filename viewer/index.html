@@ -4831,20 +4831,14 @@ function syncServerBuildings(serverBlds){
     console.log('[SYNC] Loaded',G.clientBuildings.length,'buildings from server');
     return;
   }
-  // Subsequent syncs: update existing + add new server buildings
+  // Subsequent syncs: REPLACE client buildings with server state entirely
+  // This prevents duplication from coordinate mismatches
+  G.clientBuildings.length=0;
   for(const sb of serverBlds){
-    const match=G.clientBuildings.find(cb=>Math.abs(cb.x-sb.x)<3&&Math.abs(cb.y-sb.y)<3);
-    if(match){
-      if(sb.complete){match.complete=true;match.progress=1}
-      if(sb.progress>match.progress)match.progress=sb.progress;
-    }else{
-      // New building from server — add it
-      G.clientBuildings.push({...sb,
-        complete:sb.complete||sb.progress>=1,building:!sb.complete,
-        pw:sb.pw||(sb.width||3)*TS,ph:sb.ph||(sb.height||3)*TS
-      });
-      try{clearDetailsAtBuilding(sb.x,sb.y,(sb.width||3)*TS,(sb.height||3)*TS)}catch(e){}
-    }
+    G.clientBuildings.push({...sb,
+      complete:sb.complete||sb.progress>=1,building:!sb.complete,
+      pw:sb.pw||(sb.width||3)*TS,ph:sb.ph||(sb.height||3)*TS
+    });
   }
 }
 function handleMsg(msg){
