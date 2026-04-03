@@ -4959,7 +4959,9 @@ let ws=null,reconTimer=null,reconDelay=1000;
 function connectWS(){
 const ov=document.getElementById('conn-overlay');ov.style.display='block';
 try{const p=location.protocol==='https:'?'wss:':'ws:';ws=new WebSocket(`${p}//${location.host}`)}catch(e){schedRecon();return}
-ws.onopen=()=>{S.connected=true;reconDelay=1000;ov.style.display='none';updateHeader()};
+ws.onopen=()=>{S.connected=true;reconDelay=1000;ov.style.display='none';updateHeader();
+  // Clear stale client save on fresh connect — server is the source of truth
+  try{localStorage.removeItem(SAVE_KEY)}catch(e){}};
 ws.onmessage=e=>{try{handleMsg(JSON.parse(e.data))}catch(ex){console.warn('[WS] Message error:',ex.message,e.data?.slice?.(0,200))}};
 ws.onclose=()=>{S.connected=false;updateHeader();ov.style.display='block';ov.querySelector('h2').textContent='Disconnected';schedRecon()};
 ws.onerror=()=>{}}
