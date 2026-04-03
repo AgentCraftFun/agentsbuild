@@ -4970,7 +4970,13 @@ function handleMsg(msg){
 if(msg.type==='pong')return;
 // === SPECTATOR MODE: Server is authoritative for ALL state ===
 if(msg.type==='world_state'||msg.type==='tick'){
-  if(msg.data&&msg.data.agents)console.log(`[WS] ${msg.type}: ${msg.data.agents.length} agents, ${(msg.data.buildings||[]).length} bldgs, tick:${msg.data.tick}`);
+  if(msg.data&&msg.data.agents){
+    console.log(`[WS] ${msg.type}: ${msg.data.agents.length} agents, ${(msg.data.buildings||[]).length} bldgs, tick:${msg.data.tick}`);
+    if(msg.data.agents.length>0){
+      const a0=msg.data.agents[0];
+      console.log(`[WS] First agent: ${a0.name} pos(${a0.x},${a0.y}) mood:${a0.mood} action:${JSON.stringify(a0.current_action||'none')}`);
+    }
+  }
 }
 if(msg.type==='world_state'&&msg.data){
   S.tick=msg.data.tick||0;S.agents=msg.data.agents||[];S.tiles=msg.data.tiles||[];
