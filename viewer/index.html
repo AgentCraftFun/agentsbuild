@@ -3112,7 +3112,7 @@ function updateAgentMovement(){
               clearDetailsAtBuilding(site.x,site.y,bpw,bph);
               const cb={type:next.type,name:next.name,abbr:next.abbr,x:site.x,y:site.y,
                 progress:0,complete:false,faction:next.faction,width:next.w,height:next.h,pw:bpw,ph:bph,tall:next.tall,claimedBy:a.id,settlement:site.settlement||null};
-              if(G.clientBuildings.length>=80){
+              if(G.clientBuildings.length>=9999){
                 // At world limit: try to demolish a lower-tier building
                 const demolishable=G.clientBuildings.filter(b3=>b3.complete&&['wood_hut','campfire','fence','garden'].includes(b3.type));
                 if(demolishable.length>0){
@@ -3126,7 +3126,7 @@ function updateAgentMovement(){
               // Per-settlement cap: max 30 buildings per settlement
               if(site.settlement){
                 const settBldCount=G.clientBuildings.filter(b3=>b3.settlement===site.settlement).length;
-                if(settBldCount>=30){action='chop';continue}
+                if(settBldCount>=9999){action='chop';continue}
               }
               // Duplicate check before push
               const _isDup2=G.clientBuildings.some(b4=>Math.abs(b4.x-site.x)<2&&Math.abs(b4.y-site.y)<2&&b4.type===cb.type);
@@ -3411,12 +3411,7 @@ if(frame%300===1){
     if(dup)return false;seen2.push(b);return true;
   });
   // Hard cap: remove oldest non-complete buildings first, then oldest complete
-  while(G.clientBuildings.length>100){
-    const idx=G.clientBuildings.findIndex(b=>!b.complete);
-    if(idx>=0)G.clientBuildings.splice(idx,1);
-    else G.clientBuildings.shift();// remove oldest completed
-    console.warn('Building cap enforced, removed oldest');
-  }
+  // No building cap — agents build infinitely
 }
 // Frame timing — CAP deltaTime to prevent simulation explosions after tab-switch
 const _now=performance.now();
@@ -3442,7 +3437,7 @@ if(frame%(60*30)===0){
   while(particles.length>20)particles.pop();
   while(footprints.length>30)footprints.pop();
   while(wildAnimals.length>40)wildAnimals.pop();
-  while(G.clientBuildings.length>90){G.clientBuildings.pop();console.warn('Building cap enforced')}
+  // No building cap — agents build infinitely
 }
 // Periodic cleanup sweep every 60 seconds
 if(frame%(60*60)===30){
@@ -6055,10 +6050,10 @@ function saveGame(){
   try{
     // Pre-save validation: remove corrupt entries
     G.clientBuildings=G.clientBuildings.filter(b=>b&&isFinite(b.x)&&isFinite(b.y));
-    while(G.clientBuildings.length>50)G.clientBuildings.pop();
+    // No building cap on save — save all buildings
     const state={version:6,savedAt:Date.now(),tick:frame,era:G.era,
       wood:G.wood||0,stone:G.stone||0,gold:G.gold||0,food:G.food||0,
-      buildings:G.clientBuildings.slice(0,50).map(b=>({type:b.type,name:b.name,abbr:b.abbr,x:b.x,y:b.y,progress:b.progress,complete:b.complete,faction:b.faction,width:b.width,height:b.height,pw:b.pw,ph:b.ph,tall:b.tall,owner:b.owner,ownerName:b.ownerName,isHome:b.isHome,personalized:b.personalized,personalFaction:b.personalFaction,claimedBy:b.claimedBy,settlement:b.settlement,customName:b.customName,customDescription:b.customDescription,customGrid:b.customGrid,category:b.category,builder:b.builder})),
+      buildings:G.clientBuildings.map(b=>({type:b.type,name:b.name,abbr:b.abbr,x:b.x,y:b.y,progress:b.progress,complete:b.complete,faction:b.faction,width:b.width,height:b.height,pw:b.pw,ph:b.ph,tall:b.tall,owner:b.owner,ownerName:b.ownerName,isHome:b.isHome,personalized:b.personalized,personalFaction:b.personalFaction,claimedBy:b.claimedBy,settlement:b.settlement,customName:b.customName,customDescription:b.customDescription,customGrid:b.customGrid,category:b.category,builder:b.builder})),
       aiBlueprints:[...agentBlueprints.entries()].slice(0,20).map(([id,bps])=>({id,bps:bps.slice(0,8)})),
       harvested:[...harvestables.keys()].slice(0,500),
       goldDeposits:goldDeposits.slice(0,20).map(g=>({x:g.x,y:g.y,h:g.h,alive:g.alive})),
@@ -6221,7 +6216,7 @@ function runOfflineSim(){
     }
     // Try spawning new buildings if affordable (with duplicate check)
     const next=getNextBuilding();
-    if(next&&canAfford(next.cost)&&G.clientBuildings.length<80){
+    if(next&&canAfford(next.cost)){
       const rng3=new SeededRNG(t+G.clientBuildings.length*13);
       const bx2=Math.floor(0.15*WW+rng3.next()*0.7*WW);
       const by2=Math.floor(0.15*WH+rng3.next()*0.7*WH);

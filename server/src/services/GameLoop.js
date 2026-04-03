@@ -284,11 +284,7 @@ class GameLoop {
   _executeBuild(agent, decision, tick, events) {
     const { building: buildingType, x, y, resume } = decision.payload || {};
 
-    // 1. BUILDING LIMIT: max 200 buildings total
-    if (this.world.buildingsList.length >= 200 && !resume) {
-      events.push({ tick, type: 'action_failed', agent: agent.name, message: `${agent.name} can't build — world limit (200 buildings) reached.` });
-      return;
-    }
+    // No building limit — agents build infinitely
 
     // Validate building type
     const info = Building.CATALOG[buildingType];
