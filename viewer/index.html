@@ -3508,12 +3508,26 @@ if(tvMode){
   if(tvModeTimer%480>400&&followAgent){followAgent=null}
 }
 if(panHighlight&&panHighlight.timer>0)panHighlight.timer--;
-updateAgentMovement();
-// Agent watchdog: force idle agents to act (every 30 frames)
-if(frame%30===0){
+// === CLIENT IS SPECTATOR ONLY — server runs all simulation ===
+// updateAgentMovement() — DISABLED: server controls agent positions
+// Instead, interpolate agent visuals toward server-provided positions
+for(const a of S.agents){
+  let v=agentVisual.get(a.id);
+  if(!v){v={x:a.x/WW,y:a.y/WH,tx:a.x/WW,ty:a.y/WH};agentVisual.set(a.id,v)}
+  // Server sends new positions — set as target for smooth lerp
+  v.tx=a.x/WW;v.ty=a.y/WH;
+  // Smooth interpolation toward server position
+  v.x+=(v.tx-v.x)*0.12;v.y+=(v.ty-v.y)*0.12;
+}
+// Clean up visuals for agents no longer in server state
+{const liveIds=new Set(S.agents.map(a=>a.id));
+for(const id of agentVisual.keys()){if(!liveIds.has(id)){agentVisual.delete(id);agentState.delete(id)}}
+for(const id of agentBlueprints.keys()){if(!liveIds.has(id))agentBlueprints.delete(id)}}
+// Agent watchdog disabled — server controls agent behavior
+if(false){
   for(const a of S.agents){
     const st=agentState.get(a.id);
-    if(st&&st.state==='idle'&&st.taskCooldown<=0){st.taskCooldown=1}// force immediate re-evaluation
+    if(st&&st.state==='idle'&&st.taskCooldown<=0){st.taskCooldown=1}
   }
 }
 // Stuck building scanner (every 300 frames = ~5 sec)
@@ -3533,15 +3547,10 @@ if(frame%300===0){
     }
   }
 }
-// Social/needs systems (throttled)
-if(frame%60===0)tickNeeds();
-if(frame%90===0)checkSocialInteractions();
-socialCheckTimer--;if(socialCheckTimer<=0){socialCheckTimer=600;checkClanFormation();checkVillages()}
-if(frame%30===0)updateConflicts();
-if(frame%300===0){ensureResourceAbundance();batchResourceSummary()}
-if(frame%3===0)try{updateWildlife()}catch(e){}// wildlife every 3 frames
-// Drama events
-dramaTimer--;if(dramaTimer<=0){dramaTimer=60*(90+Math.random()*30);triggerDramaEvent()}
+// === SIMULATION DISABLED — server handles all of this ===
+// tickNeeds(), checkSocialInteractions(), checkClanFormation(), checkVillages()
+// updateConflicts(), ensureResourceAbundance(), batchResourceSummary()
+// updateWildlife(), triggerDramaEvent() — all run server-side now
 // Spotlight
 // Banner cooldown tick
 if(_bannerCooldown>0)_bannerCooldown--;
@@ -4966,8 +4975,23 @@ function syncServerBuildings(serverBlds){
 }
 function handleMsg(msg){
 if(msg.type==='pong')return;
-if(msg.type==='world_state'&&msg.data){S.tick=msg.data.tick||0;S.agents=msg.data.agents||[];S.tiles=msg.data.tiles||[];S.buildings=msg.data.buildings||[];S.events=msg.data.events||[];S.leaderboard=msg.data.leaderboard||[];syncServerBuildings(msg.data.buildings||[]);updateAll()}
-if(msg.type==='tick'&&msg.data){S.tick=msg.data.tick||S.tick;if(msg.data.agents)S.agents=msg.data.agents;if(msg.data.tiles)S.tiles=msg.data.tiles;if(msg.data.buildings){S.buildings=msg.data.buildings;syncServerBuildings(msg.data.buildings)}if(msg.data.events){S.events=S.events.concat(msg.data.events);if(S.events.length>200)S.events=S.events.slice(-100)}if(msg.data.leaderboard)S.leaderboard=msg.data.leaderboard;updateAll()}}
+// === SPECTATOR MODE: Server is authoritative for ALL state ===
+if(msg.type==='world_state'&&msg.data){
+  S.tick=msg.data.tick||0;S.agents=msg.data.agents||[];S.tiles=msg.data.tiles||[];
+  S.buildings=msg.data.buildings||[];S.events=msg.data.events||[];S.leaderboard=msg.data.leaderboard||[];
+  // Server buildings are the truth — sync to client rendering array
+  G.clientBuildings=S.buildings.map(b=>({...b,complete:b.complete||b.progress>=1,building:!b.complete}));
+  updateAll();
+}
+if(msg.type==='tick'&&msg.data){
+  S.tick=msg.data.tick||S.tick;
+  if(msg.data.agents)S.agents=msg.data.agents;
+  if(msg.data.tiles)S.tiles=msg.data.tiles;
+  if(msg.data.buildings){S.buildings=msg.data.buildings;G.clientBuildings=S.buildings.map(b=>({...b,complete:b.complete||b.progress>=1,building:!b.complete}))}
+  if(msg.data.events){S.events=S.events.concat(msg.data.events);if(S.events.length>200)S.events=S.events.slice(-100)}
+  if(msg.data.leaderboard)S.leaderboard=msg.data.leaderboard;
+  updateAll();
+}}
 safeInterval(()=>{if(ws&&ws.readyState===1)ws.send('{"type":"ping"}')},30000);
 
 // === Resource system now driven by agent AI state machine ===
@@ -5441,10 +5465,9 @@ let specPoints=parseInt(localStorage.getItem('specPoints')||'0');
 function addPoints(n){specPoints+=n;localStorage.setItem('specPoints',String(specPoints));document.getElementById('h-points').textContent=specPoints}
 // Passive +1 per 10 sec
 safeInterval(()=>addPoints(1),10000);
-// Process AI building queue every 5 seconds
-safeInterval(()=>processAiQueue(),5000);
-// Every 10 minutes, request a new AI blueprint for a random agent
-safeInterval(()=>{if(S.agents.length>0){const ra=S.agents[Math.floor(Math.random()*S.agents.length)];requestAiBuilding(ra.id)}},600000);
+// AI building queue disabled — server handles building decisions
+// safeInterval(()=>processAiQueue(),5000);
+// safeInterval(()=>{...requestAiBuilding...},600000);
 
 // === Prediction Mini-Game ===
 let predState={active:false,type:null,question:'',answer:null,timer:0,choices:[],pick:null,correct:0,total:0};
@@ -5512,7 +5535,9 @@ window.useInfluence=function(idx){
   const inf=INFLUENCES[idx];
   specPoints-=inf.cost;localStorage.setItem('specPoints',String(specPoints));
   document.getElementById('h-points').textContent=specPoints;
-  inf.fn();
+  inf.fn();// local visual feedback
+  // Send influence command to server
+  if(ws&&ws.readyState===1){ws.send(JSON.stringify({type:'influence',action:inf.name,idx:idx}))}
   influenceCooldown=180*60;// 3 min cooldown
 };
 
@@ -6279,10 +6304,11 @@ try{
   try{initInfluence()}catch(e){console.warn('Influence init failed:',e)}
   try{document.getElementById('h-points').textContent=specPoints}catch(e){}
   // Try loading saved game
-  didLoad=loadGame();
-  if(didLoad)validateGameState();// clean up any corrupt data from save
+  // === CLIENT IS SPECTATOR — no local save/load, server is authoritative ===
+  const didLoad=false;// skip local save/load entirely
+  // didLoad=loadGame(); — DISABLED: server sends state via WebSocket
   let offlineSummary=null;
-  if(didLoad){
+  if(false){// offline sim disabled — server ran continuously
     console.log('Restored saved game');
     // Clear trees from all existing building footprints
     for(const b of G.clientBuildings){if(b.complete)clearDetailsAtBuilding(b.x,b.y,b.pw||TS*2,b.ph||TS*2)}
@@ -6330,10 +6356,10 @@ try{
 // ALWAYS remove intro overlay after 5 seconds no matter what
 setTimeout(()=>{const io=document.getElementById('intro-overlay');if(io){io.classList.add('fade');setTimeout(()=>{if(io.parentNode)io.remove()},2000)}},5000);
 requestAnimationFrame(render);connectWS();
-safeInterval(tickFood,10000);
-safeInterval(saveGame,30000);// save every 30 seconds
-safeInterval(regrowResources,60000);// regrow every 1 min (faster)
-window.addEventListener('beforeunload',saveGame);
+// safeInterval(tickFood,10000) — DISABLED: server handles resources
+// safeInterval(saveGame,30000) — DISABLED: server handles persistence
+// safeInterval(regrowResources,60000) — DISABLED: server handles regeneration
+// window.addEventListener('beforeunload',saveGame) — DISABLED: server handles persistence
 // Debug: reset world
 window.resetWorld=function(){localStorage.removeItem(SAVE_KEY);location.reload()}
 </script>

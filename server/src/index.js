@@ -455,6 +455,16 @@ wss.on('connection', (ws, req) => {
           sendWorldState(ws, worldState);
           break;
 
+        case 'influence':
+          // TODO: apply spectator influence to world state
+          console.log(`[WS] Spectator influence: ${msg.action}`);
+          worldState.events.push({
+            tick: worldState.tick,
+            type: 'spectator_influence',
+            message: `A spectator used ${msg.action}!`,
+          });
+          break;
+
         default:
           ws.send(JSON.stringify({ type: 'error', message: `Unknown message type: ${msg.type}` }));
       }
