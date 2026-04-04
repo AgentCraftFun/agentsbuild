@@ -115,6 +115,21 @@ function loadWorldState() {
 
 // ─── Initialize World State (persistent) ───
 
+// ─── One-time corrupt save cleanup ───
+// Previous server sessions left a corrupted gamestate.json with 322 buildings and 1 agent.
+// Delete it so we start fresh.
+try {
+  if (fs.existsSync(STATE_FILE)) {
+    const raw = JSON.parse(fs.readFileSync(STATE_FILE, 'utf8'));
+    const agentCount = (raw.agents || []).length;
+    const buildingCount = (raw.buildings || []).length;
+    if (agentCount <= 1 && buildingCount > 50) {
+      console.log(`[CLEANUP] Corrupt save detected (${agentCount} agents, ${buildingCount} buildings). Deleting.`);
+      fs.unlinkSync(STATE_FILE);
+    }
+  }
+} catch (e) { console.warn('[CLEANUP] Error checking save:', e.message); }
+
 const loadedState = loadWorldState();
 let worldState;
 

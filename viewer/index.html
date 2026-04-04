@@ -3002,6 +3002,20 @@ function updateAgentMovement(){
 
     const isLazy=a.personality==='lazy';
     const speed=isLazy?0.012:0.025;
+
+    // === SERVER MODE: server drives agent positions & state ===
+    if(S.connected){
+      // Update target position from server agent data
+      v.tx=a.x/WW;v.ty=a.y/WH;
+      // Smooth lerp toward server position
+      v.x+=(v.tx-v.x)*speed;v.y+=(v.ty-v.y)*speed;
+      // Map server mood to client state for rendering icons
+      const moodMap={moving:'idle',claiming:'idle',building:'building',idle:'idle',raiding:'idle'};
+      st.state=moodMap[a.mood]||'idle';
+      if(a.mood==='building')st.state='building';
+      continue;// skip local AI — server is authoritative
+    }
+
     v.x+=(v.tx-v.x)*speed;
     v.y+=(v.ty-v.y)*speed;
     const atTarget=Math.abs(v.x-v.tx)<0.005&&Math.abs(v.y-v.ty)<0.005;
@@ -3524,27 +3538,25 @@ if(tvMode){
 }
 if(panHighlight&&panHighlight.timer>0)panHighlight.timer--;
 updateAgentMovement();
-// Agent watchdog: force idle agents to act (every 30 frames)
-if(frame%30===0){
-  for(const a of S.agents){
-    const st=agentState.get(a.id);
-    if(st&&st.state==='idle'&&st.taskCooldown<=0){st.taskCooldown=1}// force immediate re-evaluation
+// Agent watchdog + stuck building scanner: only in local mode
+if(!S.connected){
+  if(frame%30===0){
+    for(const a of S.agents){
+      const st=agentState.get(a.id);
+      if(st&&st.state==='idle'&&st.taskCooldown<=0){st.taskCooldown=1}
+    }
   }
-}
-// Stuck building scanner (every 300 frames = ~5 sec)
-if(frame%300===0){
-  for(const b of G.clientBuildings){
-    // Fix NaN/undefined progress
-    if(!isFinite(b.progress)){b.progress=1.0;b.complete=true;b.building=false}
-    // If progress >= 1 but not marked complete, fix it
-    if(b.progress>=1.0&&!b.complete){b.progress=1.0;b.complete=true;b.building=false}
-    // If under construction with no agent working on it, increment stuck timer
-    if(!b.complete&&b.progress<1.0){
-      const hasWorker=S.agents.some(a2=>{const st2=agentState.get(a2.id);return st2&&st2.state==='building'&&st2.target===b});
-      if(!hasWorker){
-        b.stuckTimer=(b.stuckTimer||0)+1;
-        if(b.stuckTimer>2){b.progress=1.0;b.complete=true;b.building=false;b.stuckTimer=0}// force-complete after ~10 sec stuck
-      }else{b.stuckTimer=0}
+  if(frame%300===0){
+    for(const b of G.clientBuildings){
+      if(!isFinite(b.progress)){b.progress=1.0;b.complete=true;b.building=false}
+      if(b.progress>=1.0&&!b.complete){b.progress=1.0;b.complete=true;b.building=false}
+      if(!b.complete&&b.progress<1.0){
+        const hasWorker=S.agents.some(a2=>{const st2=agentState.get(a2.id);return st2&&st2.state==='building'&&st2.target===b});
+        if(!hasWorker){
+          b.stuckTimer=(b.stuckTimer||0)+1;
+          if(b.stuckTimer>2){b.progress=1.0;b.complete=true;b.building=false;b.stuckTimer=0}
+        }else{b.stuckTimer=0}
+      }
     }
   }
 }
@@ -3572,10 +3584,13 @@ updateGameUI();
 updateWorldEvents();
 checkEraAnnounce();
 smoothResources();
-// Sync client buildings into S.buildings for rendering
-S.buildings=G.clientBuildings.map(b=>({type:b.type,name:b.name,x:b.x,y:b.y,progress:b.progress,
-  complete:b.complete,faction:b.faction,width:b.width,height:b.height,pw:b.pw,ph:b.ph,tall:b.tall,
-  owner:b.owner,ownerName:b.ownerName,isHome:b.isHome,personalized:b.personalized,personalFaction:b.personalFaction}));
+// Sync buildings into S.buildings for rendering
+// When connected to server, server buildings are authoritative — don't overwrite
+if(!S.connected){
+  S.buildings=G.clientBuildings.map(b=>({type:b.type,name:b.name,x:b.x,y:b.y,progress:b.progress,
+    complete:b.complete,faction:b.faction,width:b.width,height:b.height,pw:b.pw,ph:b.ph,tall:b.tall,
+    owner:b.owner,ownerName:b.ownerName,isHome:b.isHome,personalized:b.personalized,personalFaction:b.personalFaction}));
+}
 // Safety: ensure zoom is valid
 if(!isFinite(zoom)||zoom<=0)zoom=1;
 if(!isFinite(vpX))vpX=0;if(!isFinite(vpY))vpY=0;
@@ -6063,6 +6078,8 @@ document.getElementById('bet-modal').addEventListener('click',e=>{
 const SAVE_KEY='agentsAtWork_save';
 let _lastSaveTime=0;
 function saveGame(){
+  // Don't save to localStorage when connected to server — server is source of truth
+  if(S.connected)return;
   try{
     // Pre-save validation: remove corrupt entries
     G.clientBuildings=G.clientBuildings.filter(b=>b&&isFinite(b.x)&&isFinite(b.y));
