@@ -3015,20 +3015,17 @@ function updateAgentMovement(){
     if(st.state==='idle'){
       if(S.connected){
         // SERVER MODE: pick visual activity based on server mood + nearby terrain
-        // Priority 1: if server says this agent is building, go build
-        if(a.mood==='building'){
-          const nearBld=S.buildings.find(b=>!b.complete&&b.owner===a.id);
-          const anyBld=nearBld||S.buildings.find(b=>!b.complete&&Math.abs(b.x-a.x)<8&&Math.abs(b.y-a.y)<8);
-          if(anyBld){
-            // Create a client-compatible target for the building handler
-            st.state='building';
-            st.target={x:anyBld.x,y:anyBld.y,type:anyBld.type,name:anyBld.name,
-              progress:anyBld.progress||0,complete:anyBld.complete,
-              faction:anyBld.faction,width:anyBld.width||2,height:anyBld.height||2,
-              pw:(anyBld.width||2)*TS,ph:(anyBld.height||2)*TS,tall:anyBld.tall};
-            v.tx=anyBld.x/WW;v.ty=anyBld.y/WH;
-            continue;
-          }
+        // Priority 1: check for incomplete buildings owned by this agent
+        const myBld=S.buildings.find(b=>!b.complete&&b.owner===a.id);
+        const nearBld=myBld||S.buildings.find(b=>!b.complete&&Math.abs(b.x-a.x)<8&&Math.abs(b.y-a.y)<8);
+        if(nearBld){
+          st.state='building';
+          st.target={x:nearBld.x,y:nearBld.y,type:nearBld.type,name:nearBld.name,
+            progress:nearBld.progress||0,complete:nearBld.complete,
+            faction:nearBld.faction,width:nearBld.width||2,height:nearBld.height||2,
+            pw:(nearBld.width||2)*TS,ph:(nearBld.height||2)*TS,tall:nearBld.tall};
+          v.tx=nearBld.x/WW;v.ty=nearBld.y/WH;
+          continue;
         }
 
         // Priority 2: chop trees or mine rocks
@@ -3326,6 +3323,24 @@ function updateAgentMovement(){
       }
     }
     else if(st.state==='building'){
+      // When connected: track the REAL server building, not local copy
+      if(S.connected&&st.target){
+        const srvBld=S.buildings.find(b=>Math.abs(b.x-st.target.x)<2&&Math.abs(b.y-st.target.y)<2);
+        if(!srvBld||srvBld.complete){
+          // Server says building is done (or removed) — go idle
+          if(srvBld&&srvBld.complete){
+            clearDetailsAtBuilding(st.target.x,st.target.y,st.target.pw||TS*2,st.target.ph||TS*2);
+            gameEvent(`${a.name} completed ${srvBld.name||st.target.name}!`,'build_complete');
+          }
+          st.state='idle';st.taskCooldown=5;continue;
+        }
+        // Still building — sync visual progress from server
+        st.target.progress=srvBld.progress||0;
+        if(!atTarget){v.tx=st.target.x/WW;v.ty=st.target.y/WH;continue}
+        // Particles while hammering
+        if(frame%20===0)spawnParticle(st.target.x*TS+TS+(Math.random()-0.5)*10,st.target.y*TS+TS-5,'debris');
+        continue;
+      }
       if(!st.target||st.target.complete){st.state='idle';st.taskCooldown=5;continue}
       if(!atTarget){v.tx=st.target.x/WW;v.ty=st.target.y/WH;continue}
       // Build speed: per-type construction time
