@@ -3012,30 +3012,27 @@ function updateAgentMovement(){
     const atTarget=Math.abs(v.x-v.tx)<0.005&&Math.abs(v.y-v.ty)<0.005;
 
     // === IDLE STATE: pick next task ===
-    if(S.connected&&st.state==='idle'){
-      // SERVER MODE: pick visual activity based on nearby terrain
-      st.taskCooldown--;
-      if(st.taskCooldown>0)continue;
-      if(!atTarget)continue;// still walking to server position
+    if(st.state==='idle'){
+      if(S.connected){
+        // SERVER MODE: pick visual activity based on nearby terrain
+        st.taskCooldown--;
+        if(st.taskCooldown>0)continue;
+        if(!atTarget)continue;// still walking to server position
 
-      st.taskCooldown=60+Math.floor(((a.id.charCodeAt(0)*7+S.tick)%60));
-      const nearTree=findNearestDetail(v.x,v.y,['deciduous','oak','pine','birch']);
-      const nearRock=findNearestDetail(v.x,v.y,['rock','lgboulder','mdboulder']);
-      const pHash=(a.id.charCodeAt(0)+a.id.charCodeAt(1)+S.tick)%10;
-      if(nearTree&&pHash<6){
-        st.state='walking_to_tree';st.target=nearTree;
-        v.tx=nearTree.x/WW/TS+0.01;v.ty=nearTree.y/WH/TS+0.01;
-      }else if(nearRock&&pHash>=6){
-        st.state='walking_to_rock';st.target=nearRock;
-        v.tx=nearRock.x/WW/TS+0.01;v.ty=nearRock.y/WH/TS+0.01;
+        st.taskCooldown=60+Math.floor(((a.id.charCodeAt(0)*7+S.tick)%60));
+        const nearTree=findNearestDetail(v.x,v.y,['deciduous','oak','pine','birch']);
+        const nearRock=findNearestDetail(v.x,v.y,['rock','lgboulder','mdboulder']);
+        const pHash=(a.id.charCodeAt(0)+a.id.charCodeAt(1)+S.tick)%10;
+        if(nearTree&&pHash<6){
+          st.state='walking_to_tree';st.target=nearTree;
+          v.tx=nearTree.x/WW/TS+0.01;v.ty=nearTree.y/WH/TS+0.01;
+        }else if(nearRock&&pHash>=6){
+          st.state='walking_to_rock';st.target=nearRock;
+          v.tx=nearRock.x/WW/TS+0.01;v.ty=nearRock.y/WH/TS+0.01;
+        }
+        continue;
       }
-      continue;
-    }
-    // ACTIVE STATES (chopping/mining/building/walking): handled by original
-    // code below — these have full visual effects (harvestAnim, particles, etc.)
-    // Skip the local idle→task decision when connected:
-    if(S.connected&&st.state!=='idle') { /* fall through to original handlers below */ }
-    else if(st.state==='idle'){
+      // LOCAL MODE: original idle handler
       st.taskCooldown--;
       if(st.taskCooldown>0)continue;
       // Lazy agents take short breaks, everyone else acts fast
