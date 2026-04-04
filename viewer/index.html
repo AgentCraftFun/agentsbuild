@@ -3014,7 +3014,24 @@ function updateAgentMovement(){
     // === IDLE STATE: pick next task ===
     if(st.state==='idle'){
       if(S.connected){
-        // SERVER MODE: pick visual activity based on nearby terrain
+        // SERVER MODE: pick visual activity based on server mood + nearby terrain
+        // Priority 1: if server says this agent is building, go build
+        if(a.mood==='building'){
+          const nearBld=S.buildings.find(b=>!b.complete&&b.owner===a.id);
+          const anyBld=nearBld||S.buildings.find(b=>!b.complete&&Math.abs(b.x-a.x)<8&&Math.abs(b.y-a.y)<8);
+          if(anyBld){
+            // Create a client-compatible target for the building handler
+            st.state='building';
+            st.target={x:anyBld.x,y:anyBld.y,type:anyBld.type,name:anyBld.name,
+              progress:anyBld.progress||0,complete:anyBld.complete,
+              faction:anyBld.faction,width:anyBld.width||2,height:anyBld.height||2,
+              pw:(anyBld.width||2)*TS,ph:(anyBld.height||2)*TS,tall:anyBld.tall};
+            v.tx=anyBld.x/WW;v.ty=anyBld.y/WH;
+            continue;
+          }
+        }
+
+        // Priority 2: chop trees or mine rocks
         st.taskCooldown--;
         if(st.taskCooldown>0)continue;
         if(!atTarget)continue;// still walking to server position
