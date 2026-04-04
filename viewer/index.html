@@ -3005,20 +3005,59 @@ function updateAgentMovement(){
     let st=agentState.get(a.id);
     if(!st){st={state:'idle',target:null,timer:0,taskCooldown:0};agentState.set(a.id,st)}
 
-    // Seed deterministic RNG for this agent so all clients make identical decisions
-    if(S.connected)seedDetRandom(a.id,S.tick);
-    // Use R() for random — deterministic when connected, Math.random() when local
-    const R=S.connected?detRandom:Math.random;
-
     const isLazy=a.personality==='lazy';
     const speed=isLazy?0.012:0.025;
 
-    // === SERVER MODE: deterministic simulation for shared viewing ===
-    // When connected, ALL clients must make identical decisions so viewers
-    // see the same world. Use server tick + agent id as deterministic seed.
+    // === SERVER MODE: server-authoritative, client only animates ===
     if(S.connected){
-      // Always sync position toward server — server is authoritative
+      // Server drives position — smooth lerp toward server coordinates
       v.tx=a.x/WW;v.ty=a.y/WH;
+      v.x+=(v.tx-v.x)*speed;v.y+=(v.ty-v.y)*speed;
+      const atSrv=Math.abs(v.x-v.tx)<0.008&&Math.abs(v.y-v.ty)<0.008;
+
+      // Map server mood to visual animation state
+      if(a.mood==='building'&&st.state!=='building'){
+        // Find nearest incomplete server building for build animation
+        const nb=S.buildings.find(b=>!b.complete&&Math.abs(b.x-a.x)<6&&Math.abs(b.y-a.y)<6);
+        if(nb){st.state='building';st.target=nb;st.timer=0}
+      }else if(a.mood==='building'&&st.state==='building'){
+        // Continue build animation — advance progress bar visually
+        if(st.target){
+          st.timer++;
+          // Particles while building
+          if(frame%20===0)spawnParticle(v.x*WW*TS+TS,v.y*WH*TS+TS-5,'debris');
+        }
+      }else if(st.state==='building'&&a.mood!=='building'){
+        // Server says not building anymore — go idle
+        st.state='idle';st.taskCooldown=10;
+      }else if(st.state==='chopping'){
+        // Finish chop animation
+        st.timer-=(isLazy?0.5:1);
+        if(st.timer<=0){st.state='idle';st.taskCooldown=5}
+      }else if(st.state==='mining'||st.state==='mining_gold'){
+        st.timer-=(isLazy?0.5:1);
+        if(st.timer<=0){st.state='idle';st.taskCooldown=5}
+      }else if(atSrv&&st.state==='idle'){
+        // Agent arrived at server position and is idle — pick visual activity
+        // based on what's nearby (purely cosmetic, same for all clients since
+        // position is server-driven and terrain is deterministic)
+        st.taskCooldown--;
+        if(st.taskCooldown<=0){
+          st.taskCooldown=90+Math.floor(a.id.charCodeAt(0)*7%60);// deterministic cooldown
+          const nearTree=findNearestDetail(v.x,v.y,['deciduous','oak','pine','birch']);
+          const nearRock=findNearestDetail(v.x,v.y,['rock','lgboulder','mdboulder']);
+          // Decide based on personality hash (deterministic, not random)
+          const pHash=(a.id.charCodeAt(0)+a.id.charCodeAt(1)+S.tick)%10;
+          if(nearTree&&pHash<5){
+            st.state='chopping';st.target=nearTree;st.timer=hasLumberMill?80:130;
+            v.tx=nearTree.x/WW/TS+0.01;v.ty=nearTree.y/WH/TS+0.01;
+          }else if(nearRock&&pHash>=5){
+            st.state='mining';st.target=nearRock;st.timer=hasQuarry?100:170;
+            v.tx=nearRock.x/WW/TS+0.01;v.ty=nearRock.y/WH/TS+0.01;
+          }
+        }
+      }
+      continue;// skip local AI entirely — server is source of truth
     }
 
     v.x+=(v.tx-v.x)*speed;
@@ -3341,6 +3380,8 @@ function updateAgentMovement(){
 const ERA_ICONS=['🪵','🪨','⚔️','🏙️'];
 function updateGameUI(){
   if(frame%30!==0)return;// throttle DOM updates (every 0.5s)
+  // When connected, resources come from server via updateBottom() — don't overwrite
+  if(S.connected)return;
   const next=getNextBuilding();
   const nc=next?next.cost:{wood:0,stone:0,gold:0};
   // Resource bar with current/needed
@@ -4612,7 +4653,9 @@ ctx.fillStyle=vigGrad;ctx.fillRect(0,0,cw2,ch2);
 
 // 2. SMOOTH DAY/NIGHT CYCLE (18000 frames = 5 min at 60fps)
 const cycleLen=18000;
-const cyclePhase=(frame%cycleLen)/cycleLen;
+// When connected, derive day/night from server tick so all clients are in sync
+const _cycleFrame=S.connected?(S.tick*180+frame%180):frame;// server tick drives cycle, frame adds smooth sub-tick
+const cyclePhase=(_cycleFrame%cycleLen)/cycleLen;
 // Color stops: {pos, r, g, b, a}
 const dnStops=[
   {p:0.00,r:255,g:160,b:120,a:0.06},
@@ -4693,18 +4736,24 @@ if(tvMode){
 // World clock overlay (top-left of canvas)
 // World clock + header updates (once per second, resilient)
 if(frame%60===0){try{
-  const totalSec=Math.floor(frame/60);
-  const days=Math.floor(totalSec/300);
-  const dayProgress=(totalSec%300)/300;
+  // When connected, derive clock from server tick so all clients show same time
+  const _clockBase=S.connected?S.tick*3:Math.floor(frame/60);// server tick ~3s each
+  const days=Math.floor(_clockBase/300);
+  const dayProgress=(_clockBase%300)/300;
   const hours=Math.floor(dayProgress*24);
   const mins=Math.floor((dayProgress*24-hours)*60);
   document.getElementById('h-playtime').textContent=`Day ${days+1}, ${String(hours).padStart(2,'0')}:${String(mins).padStart(2,'0')}`;
   document.getElementById('h-agents').textContent=S.agents.length;
-  document.getElementById('h-bldcount').textContent=G.clientBuildings.length;
+  document.getElementById('h-bldcount').textContent=S.connected?S.buildings.length:G.clientBuildings.length;
   try{document.getElementById('h-animalcount').textContent=wildAnimals.length}catch(e){}
   // FPS counter
   const _fps=_frameTimes.length>0?Math.round(1000/(_frameTimes.reduce((a2,b2)=>a2+b2,0)/_frameTimes.length)):0;
   try{document.getElementById('h-fps').textContent=_fps}catch(e){}
+  // When connected, derive era from server building count
+  if(S.connected){
+    const sb=S.buildings.length;
+    G.era=sb>=30?3:sb>=15?2:sb>=5?1:0;
+  }
   document.getElementById('h-era').textContent=G.eraNames[G.era];
   document.getElementById('h-era-icon').textContent=ERA_ICONS[G.era];
   document.getElementById('h-points').textContent=specPoints;
@@ -5009,6 +5058,7 @@ safeInterval(()=>{if(ws&&ws.readyState===1)ws.send('{"type":"ping"}')},30000);
 // (old random counters and demo events removed)
 // Food gathering happens passively every 600 frames
 function tickFood(){
+  if(S.connected)return;// server manages resources
   const hasCampfire=G.clientBuildings.some(b=>b.type==='campfire'&&b.complete);
   const farmCount=G.clientBuildings.filter(b=>b.type==='farm'&&b.complete).length;
   G.food+=(hasCampfire?2:1)+farmCount*2;// farms produce +2 food each
@@ -5450,6 +5500,7 @@ function checkEraAnnounce(){
 // === Smooth Resource Counter ===
 const resDisplay={wood:0,stone:0,gold:0,food:0};
 function smoothResources(){
+  if(S.connected)return;// server resources via updateBottom()
   let changed=false;
   for(const k of ['wood','stone','gold','food']){
     if(resDisplay[k]!==G[k]){
