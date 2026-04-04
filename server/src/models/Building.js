@@ -67,7 +67,7 @@ class Building {
    */
   advanceProgress(tickDelta = 1) {
     if (this.isComplete()) return;
-    const ticksToComplete = this.tier === 1 ? 3 : this.tier === 2 ? 8 : 20;
+    const ticksToComplete = this.tier === 1 ? 10 : this.tier === 2 ? 25 : 50;
     const rate = 1.0 / ticksToComplete;
     this.progress = Math.min(1.0, this.progress + rate * tickDelta);
   }

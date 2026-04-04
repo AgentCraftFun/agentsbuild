@@ -51,9 +51,18 @@ class GameLoop {
       }
       await Promise.all(agentPromises);
 
-      // 3. Advance building progress for all in-progress builds
+      // 3. Advance building progress ONLY when an agent is actively building nearby
       for (const building of this.world.buildingsList) {
         if (!building.isComplete()) {
+          // Check if any agent is building this (mood='building' and within 3 tiles)
+          let hasBuilder = false;
+          for (const agent of this.world.agents.values()) {
+            if (agent.mood === 'building' && Math.abs(agent.x - building.x) <= 3 && Math.abs(agent.y - building.y) <= 3) {
+              hasBuilder = true;
+              break;
+            }
+          }
+          if (!hasBuilder) continue; // No agent present — building doesn't progress
           building.advanceProgress(1);
           if (building.isComplete()) {
             // Building just completed
@@ -132,6 +141,18 @@ class GameLoop {
   }
 
   async _processAgent(agent, tick, events) {
+    // STAY AT BUILDING: if agent is building, keep them there until it's done
+    if (agent.mood === 'building' && agent._buildingTarget) {
+      const bld = this.world.buildingsList.find(b => b.x === agent._buildingTarget.x && b.y === agent._buildingTarget.y);
+      if (bld && !bld.isComplete()) {
+        // Stay building — don't pick a new action
+        return;
+      }
+      // Building done or gone — clear target
+      agent._buildingTarget = null;
+      agent.mood = 'idle';
+    }
+
     // Check if agent has a queued action from the API
     let decision;
     if (agent.action_queue && agent.action_queue.length > 0) {
@@ -384,6 +405,8 @@ class GameLoop {
     agent.current_action = { type: 'build', building: buildingType, tileId };
     agent.idle_ticks = 0;
     agent._lastBuildTick = tick; // cooldown tracking for AgentBrain
+    agent._buildingTarget = { x, y }; // stay at building until complete
+    agent.x = x; agent.y = y; // move agent to building site
     agent.message = decision.message || '';
 
     events.push({

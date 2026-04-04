@@ -18,19 +18,20 @@ class AgentBrain {
    * @returns {{ type: string, payload: object, message: string }}
    */
   decide() {
-    // GLOBAL BUILDING CAP: stop building if world has too many buildings
+    // GLOBAL BUILDING CAP: ~10 buildings per agent max
     const totalBuildings = (this.world.buildingsList || []).length;
     const agentCount = this.world.agents ? this.world.agents.size : 8;
-    const maxBuildings = Math.max(40, agentCount * 8); // ~8 buildings per agent max
+    const maxBuildings = Math.max(40, agentCount * 10);
     this._canBuild = totalBuildings < maxBuildings;
 
-    // PER-AGENT BUILD COOLDOWN: agents need time between builds (15 ticks = ~45 sec)
+    // PER-AGENT BUILD COOLDOWN: 30 ticks (~90 sec) between builds
+    // This gives agents time to gather, move, and socialize between builds
     const ticksSinceLastBuild = (this.world.tick || 0) - (this.agent._lastBuildTick || 0);
-    if (ticksSinceLastBuild < 15) this._canBuild = false;
+    if (ticksSinceLastBuild < 30) this._canBuild = false;
 
-    // MOVEMENT BIAS: agents should explore more, not just build
-    // 40% chance to just move/idle even if building is possible
-    if (Math.random() < 0.4) this._canBuild = false;
+    // MOVEMENT BIAS: 60% of ticks, agents explore/move instead of building
+    // Makes them feel alive — wandering, gathering, then building
+    if (Math.random() < 0.6) this._canBuild = false;
 
     const fn = this[`_decide_${this.agent.personality}`];
     if (fn) return fn.call(this);
@@ -509,28 +510,42 @@ class AgentBrain {
     if (!this._canBuild) return null;
     const { tiles, buildingsList, width, height } = this.world;
 
-    // 4. FACTION ZONES
+    // FACTION ZONES — each faction has a home area
     const zones = {
-      human:  { xMin: 0.05, xMax: 0.40, yMin: 0.05, yMax: 0.35 },
-      orc:    { xMin: 0.55, xMax: 0.90, yMin: 0.55, yMax: 0.85 },
-      dwarf:  { xMin: 0.40, xMax: 0.60, yMin: 0.08, yMax: 0.30 },
-      elf:    { xMin: 0.70, xMax: 0.95, yMin: 0.10, yMax: 0.40 },
+      human:  { cx: 0.22, cy: 0.20 },
+      orc:    { cx: 0.72, cy: 0.70 },
+      dwarf:  { cx: 0.50, cy: 0.19 },
+      elf:    { cx: 0.82, cy: 0.25 },
     };
-    const zone = zones[this.agent.faction];
-    const MIN_DIST = 5; // minimum tiles from any other building
+    const zone = zones[this.agent.faction] || { cx: 0.5, cy: 0.5 };
+    const MIN_DIST = 5; // minimum tiles between buildings
 
-    // 3. SETTLEMENT LAYOUT: Try to find a spread-out position in faction zone
-    if (zone) {
-      for (let attempt = 0; attempt < 15; attempt++) {
-        const rx = Math.floor((zone.xMin + Math.random() * (zone.xMax - zone.xMin)) * width);
-        const ry = Math.floor((zone.yMin + Math.random() * (zone.yMax - zone.yMin)) * height);
+    // SETTLEMENT CLUSTERING: build near existing faction buildings
+    const factionBuildings = (buildingsList || []).filter(b => b.faction === this.agent.faction);
+
+    // Find settlement center: average of existing faction buildings, or zone center
+    let cx, cy;
+    if (factionBuildings.length > 0) {
+      cx = Math.round(factionBuildings.reduce((s, b) => s + b.x, 0) / factionBuildings.length);
+      cy = Math.round(factionBuildings.reduce((s, b) => s + b.y, 0) / factionBuildings.length);
+    } else {
+      cx = Math.round(zone.cx * width);
+      cy = Math.round(zone.cy * height);
+    }
+
+    // Search in expanding rings around settlement center (5-tile ring increments)
+    for (let ring = 0; ring < 6; ring++) {
+      const radius = MIN_DIST + ring * 3; // 5, 8, 11, 14, 17, 20
+      for (let attempt = 0; attempt < 12; attempt++) {
+        const angle = (attempt / 12) * Math.PI * 2 + ring * 0.5; // spread evenly
+        const rx = cx + Math.round(Math.cos(angle) * radius);
+        const ry = cy + Math.round(Math.sin(angle) * radius);
+        if (rx < 2 || rx >= width - 2 || ry < 2 || ry >= height - 2) continue;
         const tid = `${rx},${ry}`;
         const t = tiles.get(tid);
-        if (!t) continue;
-        if (t.building) continue;
-        // 5. NO WATER
+        if (!t || t.building) continue;
         if (['deep_water', 'shallow_water', 'river'].includes(t.biome)) continue;
-        // 2. MINIMUM SPACING
+        // Check minimum spacing from ALL buildings
         let tooClose = false;
         for (const b of (buildingsList || [])) {
           if (Math.abs(b.x - rx) + Math.abs(b.y - ry) < MIN_DIST) { tooClose = true; break; }
@@ -539,19 +554,6 @@ class AgentBrain {
         // Claim tile if unowned
         if (!t.owner) { t.owner = this.agent.id; this.agent.addTile(tid); }
         return t;
-      }
-    }
-
-    // Fallback: find any owned tile without building that passes spacing check
-    for (const tileId of this.agent.owned_tiles) {
-      const tile = tiles.get(tileId);
-      if (tile && !tile.building) {
-        if (['deep_water', 'shallow_water', 'river'].includes(tile.biome)) continue;
-        let tooClose = false;
-        for (const b of (buildingsList || [])) {
-          if (Math.abs(b.x - tile.x) + Math.abs(b.y - tile.y) < MIN_DIST) { tooClose = true; break; }
-        }
-        if (!tooClose) return tile;
       }
     }
     return null;
