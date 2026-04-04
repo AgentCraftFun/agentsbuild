@@ -3003,17 +3003,9 @@ function updateAgentMovement(){
     const isLazy=a.personality==='lazy';
     const speed=isLazy?0.012:0.025;
 
-    // === SERVER MODE: server drives agent positions & state ===
-    if(S.connected){
-      // Update target position from server agent data
+    // === SERVER MODE: nudge agents toward server positions when idle ===
+    if(S.connected&&st.state==='idle'){
       v.tx=a.x/WW;v.ty=a.y/WH;
-      // Smooth lerp toward server position
-      v.x+=(v.tx-v.x)*speed;v.y+=(v.ty-v.y)*speed;
-      // Map server mood to client state for rendering icons
-      const moodMap={moving:'idle',claiming:'idle',building:'building',idle:'idle',raiding:'idle'};
-      st.state=moodMap[a.mood]||'idle';
-      if(a.mood==='building')st.state='building';
-      continue;// skip local AI — server is authoritative
     }
 
     v.x+=(v.tx-v.x)*speed;
