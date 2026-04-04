@@ -268,6 +268,7 @@ class GameLoop {
     agent.mood = 'claiming';
     agent.current_action = { type: 'claim', tileId };
     agent.idle_ticks = 0;
+    agent._lastClaimTick = tick; // cooldown tracking for AgentBrain
     agent.message = decision.message || '';
 
     // Move agent to the claimed tile
@@ -382,6 +383,7 @@ class GameLoop {
     agent.mood = 'building';
     agent.current_action = { type: 'build', building: buildingType, tileId };
     agent.idle_ticks = 0;
+    agent._lastBuildTick = tick; // cooldown tracking for AgentBrain
     agent.message = decision.message || '';
 
     events.push({

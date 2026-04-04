@@ -18,6 +18,20 @@ class AgentBrain {
    * @returns {{ type: string, payload: object, message: string }}
    */
   decide() {
+    // GLOBAL BUILDING CAP: stop building if world has too many buildings
+    const totalBuildings = (this.world.buildingsList || []).length;
+    const agentCount = this.world.agents ? this.world.agents.size : 8;
+    const maxBuildings = Math.max(40, agentCount * 8); // ~8 buildings per agent max
+    this._canBuild = totalBuildings < maxBuildings;
+
+    // PER-AGENT BUILD COOLDOWN: agents need time between builds (15 ticks = ~45 sec)
+    const ticksSinceLastBuild = (this.world.tick || 0) - (this.agent._lastBuildTick || 0);
+    if (ticksSinceLastBuild < 15) this._canBuild = false;
+
+    // MOVEMENT BIAS: agents should explore more, not just build
+    // 40% chance to just move/idle even if building is possible
+    if (Math.random() < 0.4) this._canBuild = false;
+
     const fn = this[`_decide_${this.agent.personality}`];
     if (fn) return fn.call(this);
     return this._decideDefault();
@@ -451,6 +465,9 @@ class AgentBrain {
   // ─── HELPER METHODS ───
 
   _findNearbyUnclaimed(radius) {
+    // Claim cooldown: 5 ticks (~15 sec) between claims
+    const ticksSinceLastClaim = (this.world.tick || 0) - (this.agent._lastClaimTick || 0);
+    if (ticksSinceLastClaim < 5) return null;
     const { tiles } = this.world;
     const { x, y } = this.agent;
     let best = null;
@@ -488,6 +505,8 @@ class AgentBrain {
   }
 
   _findOwnedTileWithoutBuilding() {
+    // Respect build cooldown and global cap
+    if (!this._canBuild) return null;
     const { tiles, buildingsList, width, height } = this.world;
 
     // 4. FACTION ZONES
