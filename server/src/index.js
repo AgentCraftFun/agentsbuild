@@ -116,8 +116,8 @@ function loadWorldState() {
 // ─── Initialize World State (persistent) ───
 
 // ─── Force fresh start: delete any existing save ───
-// Building spam from previous sessions means any existing save is polluted.
-// Delete it unconditionally so the world starts clean.
+// This ensures a clean Day 1 restart on every deploy.
+// Remove this block once the game is stable and you want persistence.
 try {
   if (fs.existsSync(STATE_FILE)) {
     console.log(`[CLEANUP] Deleting existing save to start fresh.`);
