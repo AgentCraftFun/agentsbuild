@@ -987,6 +987,11 @@ function drawDetail(c,d,fr){
 
 // === State ===
 const S={tick:0,agents:[],tiles:[],buildings:[],events:[],leaderboard:[],connected:false};
+// Deterministic PRNG for shared viewing — all clients produce identical results
+// Uses mulberry32 seeded from (serverTick * agentIndex + agentHashCode)
+let _detSeed=1;
+function detRandom(){_detSeed=(_detSeed+0x6D2B79F5)|0;let t=Math.imul(_detSeed^(_detSeed>>>15),1|_detSeed);t=t+Math.imul(t^(t>>>7),61|t)^t;return((t^(t>>>14))>>>0)/4294967296}
+function seedDetRandom(agentId,tick){let h=0;for(let i=0;i<agentId.length;i++){h=((h<<5)-h+agentId.charCodeAt(i))|0}_detSeed=(h^(tick*2654435761))>>>0;if(!_detSeed)_detSeed=1}
 const FC={human:'#4488ff',orc:'#cc4444',dwarf:'#cc8844',elf:'#aa44cc'};
 const FI={human:'\u2694',orc:'\u2620',dwarf:'\u26CF',elf:'\u2727'};
 const MI={idle:'\u23F8',moving:'\u27A1',claiming:'\u2691',building:'\uD83D\uDD28',raiding:'\u2694',chatting:'\uD83D\uDCAC',defeated:'\uD83D\uDC80'};
@@ -3000,11 +3005,19 @@ function updateAgentMovement(){
     let st=agentState.get(a.id);
     if(!st){st={state:'idle',target:null,timer:0,taskCooldown:0};agentState.set(a.id,st)}
 
+    // Seed deterministic RNG for this agent so all clients make identical decisions
+    if(S.connected)seedDetRandom(a.id,S.tick);
+    // Use R() for random — deterministic when connected, Math.random() when local
+    const R=S.connected?detRandom:Math.random;
+
     const isLazy=a.personality==='lazy';
     const speed=isLazy?0.012:0.025;
 
-    // === SERVER MODE: nudge agents toward server positions when idle ===
-    if(S.connected&&st.state==='idle'){
+    // === SERVER MODE: deterministic simulation for shared viewing ===
+    // When connected, ALL clients must make identical decisions so viewers
+    // see the same world. Use server tick + agent id as deterministic seed.
+    if(S.connected){
+      // Always sync position toward server — server is authoritative
       v.tx=a.x/WW;v.ty=a.y/WH;
     }
 
@@ -3016,7 +3029,7 @@ function updateAgentMovement(){
       st.taskCooldown--;
       if(st.taskCooldown>0)continue;
       // Lazy agents take short breaks, everyone else acts fast
-      if(isLazy){st.taskCooldown=45;if(Math.random()<0.3)continue}
+      if(isLazy){st.taskCooldown=45;if(R()<0.3)continue}
       else{st.taskCooldown=8}// instant decision
 
       const soc=getAgentSocial(a.id);
@@ -3035,7 +3048,7 @@ function updateAgentMovement(){
       const moraleSpeedMult=Math.max(0.5,soc.morale/100);
 
       // Personality-driven decision
-      const roll=Math.random();
+      const roll=R();
       const pers=a.personality||'optimist';
       let action='gather';// default
       if(pers==='aggressive'){action=roll<0.6?'chop':roll<0.9?'mine':'build'}
@@ -3064,7 +3077,7 @@ function updateAgentMovement(){
         const nearLimit=G.clientBuildings.length>=60;
         // First try upgrading an owned building
         const ownedBuildings=G.clientBuildings.filter(b2=>b2.owner===a.id&&b2.complete&&UPGRADES[b2.type]);
-        if(ownedBuildings.length>0&&(nearLimit||Math.random()<0.3)){
+        if(ownedBuildings.length>0&&(nearLimit||R()<0.3)){
           const upTarget=ownedBuildings[0];
           if(tryUpgrade(a,upTarget)){
             st.state='building';st.target=upTarget;st.timer=0;
@@ -3074,7 +3087,7 @@ function updateAgentMovement(){
         }
         // === AI BUILDING: 60% chance to use AI blueprint if available ===
         const aiBps=agentBlueprints.get(a.id);
-        if(Math.random()<0.6&&aiBps&&aiBps.length>0){
+        if(R()<0.6&&aiBps&&aiBps.length>0){
           const bp=pickAiBlueprint(a.id,null);
           if(bp&&bp.cost&&canAfford(bp.cost)){
             const site=pickBuildSite({w:bp.width,h:bp.height,pw:bp.width*16,ph:bp.height*16},a.id);
@@ -3124,8 +3137,8 @@ function updateAgentMovement(){
                 // Try 15 nearby offsets
                 let placed=false;
                 for(let att=0;att<15&&!placed;att++){
-                  const ox2=site.x+Math.round((Math.random()-0.5)*8);
-                  const oy2=site.y+Math.round((Math.random()-0.5)*6);
+                  const ox2=site.x+Math.round((R()-0.5)*8);
+                  const oy2=site.y+Math.round((R()-0.5)*6);
                   if(canPlaceAt(ox2,oy2,bpw,bph)){site.x=ox2;site.y=oy2;placed=true}
                 }
                 if(!placed){action='chop';continue}// SKIP — no valid spot
@@ -3169,25 +3182,25 @@ function updateAgentMovement(){
       if(action==='chop'){
         const tree=findNearestDetail(v.x,v.y,['deciduous','oak','pine','birch']);
         if(tree){st.state='walking_to_tree';st.target=tree;v.tx=tree.x/WW/TS+0.01;v.ty=tree.y/WH/TS+0.01}
-        else{v.tx=0.1+Math.random()*0.8;v.ty=0.1+Math.random()*0.8;st.taskCooldown=60}
+        else{v.tx=0.1+R()*0.8;v.ty=0.1+R()*0.8;st.taskCooldown=60}
       }else if(action==='mine'){
         const rock=findNearestDetail(v.x,v.y,['rock','lgboulder','mdboulder']);
         if(rock){st.state='walking_to_rock';st.target=rock;v.tx=rock.x/WW/TS+0.01;v.ty=rock.y/WH/TS+0.01}
-        else{v.tx=0.4+Math.random()*0.2;v.ty=0.1+Math.random()*0.2;st.taskCooldown=60}
+        else{v.tx=0.4+R()*0.2;v.ty=0.1+R()*0.2;st.taskCooldown=60}
       }else if(action==='gold'){
         const dep=goldDeposits.find(g=>g.alive);
         if(dep){st.state='walking_to_gold';st.target=dep;v.tx=dep.x/WW/TS+0.01;v.ty=dep.y/WH/TS+0.01}
         else{action='mine';st.taskCooldown=10}
       }
       // Occasional visit to another settlement (2% chance when idle)
-      if(settlements.length>=2&&Math.random()<0.02){
+      if(settlements.length>=2&&R()<0.02){
         const mySett=getSettlementForAgent(a.id);
         const other=settlements.find(s2=>s2!==mySett);
         if(other){v.tx=other.cx/WW;v.ty=other.cy/WH;st.taskCooldown=300;
           addBubble(a,`Visiting ${other.name}...`);continue}
       }
       // Fishing: if food is low, walk toward water to fish
-      if(G.food<20&&st.state==='idle'&&Math.random()<0.2){
+      if(G.food<20&&st.state==='idle'&&R()<0.2){
         // Find nearest water cell
         for(let r2=1;r2<15;r2++){
           const fy2=Math.floor(v.y*WH)+r2,fx2=Math.floor(v.x*WW);
@@ -3203,7 +3216,7 @@ function updateAgentMovement(){
     else if(st.state==='fishing'){
       st.timer-=(isLazy?0.5:1);
       // Fishing line visual: handled by fishing state check in render
-      if(st.timer%300<5&&Math.random()<0.5){// catch attempt every ~5 sec
+      if(st.timer%300<5&&R()<0.5){// catch attempt every ~5 sec
         G.food+=5;
         gameEvent(`${a.name} caught a fish! (+5 food)`,'build_complete');
         spawnParticle(v.x*WW*TS,v.y*WH*TS+TS,'debris');
@@ -3560,17 +3573,17 @@ if(frame%30===0)updateConflicts();
 if(frame%300===0){ensureResourceAbundance();batchResourceSummary()}
 if(frame%3===0)try{updateWildlife()}catch(e){}// wildlife every 3 frames
 // Drama events
-dramaTimer--;if(dramaTimer<=0){dramaTimer=60*(90+Math.random()*30);triggerDramaEvent()}
-// Spotlight
+// Drama events and agent quirks: skip when connected (they use Math.random and cause viewer divergence)
+if(!S.connected){
+  dramaTimer--;if(dramaTimer<=0){dramaTimer=60*(90+Math.random()*30);triggerDramaEvent()}
+  if(frame%60===0){for(const a of S.agents){const st2=agentState.get(a.id),v2=agentVisual.get(a.id);if(st2&&v2)applyQuirks(a,st2,v2)}}
+}
 // Banner cooldown tick
 if(_bannerCooldown>0)_bannerCooldown--;
 // Prediction timer
-// Old prediction system disabled — using prediction market now
 if(typeof predState!=='undefined'&&predState.active){predState.active=false}
 // Influence cooldown
 if(influenceCooldown>0){influenceCooldown--}
-// Agent quirks (every 60 frames)
-if(frame%60===0){for(const a of S.agents){const st2=agentState.get(a.id),v2=agentVisual.get(a.id);if(st2&&v2)applyQuirks(a,st2,v2)}}
 if(frame%300===0)tickPersonalization();
 updateGameUI();
 updateWorldEvents();
