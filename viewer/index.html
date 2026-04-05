@@ -2208,28 +2208,49 @@ function getNextBuilding(){
     const allBuilt=eraBuildings.every(b=>builtTypes.has(b.type));
     if(allBuilt){G.era++;document.getElementById('h-era').textContent=G.eraNames[G.era]}
   }
+  // Count existing builds per type for variety selection
+  const typeCount={};
+  for(const b of G.clientBuildings)typeCount[b.type]=(typeCount[b.type]||0)+1;
+
   // Priority 1: unbuilt non-decorative types in current era (cheapest first)
   const unbuilt=TECH_TREE.filter(b=>b.era<=G.era&&!b.decorative&&!builtTypes.has(b.type))
     .sort((a2,b2)=>(a2.cost.wood+a2.cost.stone+a2.cost.gold)-(b2.cost.wood+b2.cost.stone+b2.cost.gold));
   if(unbuilt.length>0)return unbuilt[0];
-  // Priority 2: duplicates of homes/resource buildings (max 5 each)
-  const dupTargets=['wood_hut','log_cabin','stone_house','lumber_mill','quarry','campfire','farm'];
-  for(const dt of dupTargets){
-    const def=TECH_TREE.find(t2=>t2.type===dt);
-    if(def&&def.era<=G.era&&G.clientBuildings.filter(b=>b.type===dt).length<5)return def;
+
+  // Priority 2: prefer the LEAST-BUILT available type to maximize variety
+  // Weighted pool: all eligible types, with stricter per-type caps to prevent clustering
+  const CAPS={
+    // Residential: modest caps so they don't dominate
+    wood_hut:4,log_cabin:4,stone_house:4,brick_house:4,apartment:3,campfire:2,
+    // Farms / utility
+    farm:4,well:3,
+    // Industrial
+    lumber_mill:2,quarry:2,blacksmith:2,factory:2,office:2,
+    // Civic
+    town_hall:1,church:1,market:1,library:1,barracks:1,monument:1,
+    // Defense / decoration
+    watchtower:3,statue:3,fountain:2,garden:3,fence:4,dock:2,bridge:2,
+  };
+
+  // Build pool of types below cap, weighted inversely by current count
+  const pool=[];
+  for(const def of TECH_TREE){
+    if(def.era>G.era)continue;
+    const cap=CAPS[def.type]!==undefined?CAPS[def.type]:3;
+    const cur=typeCount[def.type]||0;
+    if(cur>=cap)continue;
+    // Weight: (cap - cur) favors under-represented types
+    const weight=(cap-cur);
+    for(let i=0;i<weight;i++)pool.push(def);
   }
-  // Priority 3: decorative buildings (max 4 each)
-  const decoTypes=TECH_TREE.filter(b=>b.decorative&&b.era<=G.era);
-  for(const def of decoTypes){
-    if(G.clientBuildings.filter(b=>b.type===def.type).length<4)return def;
+  if(pool.length>0){
+    // Pick from the under-represented half to favor variety
+    pool.sort((a2,b2)=>(typeCount[a2.type]||0)-(typeCount[b2.type]||0));
+    const pickFrom=pool.slice(0,Math.max(1,Math.ceil(pool.length/2)));
+    return pickFrom[Math.floor(Math.random()*pickFrom.length)];
   }
-  // Priority 4: more duplicates (max 8 each for expansion)
-  const expansionTargets=['wood_hut','stone_house','brick_house','farm','well','log_cabin','blacksmith','market'];
-  for(const dt of expansionTargets){
-    const def=TECH_TREE.find(t2=>t2.type===dt);
-    if(def&&def.era<=G.era&&G.clientBuildings.filter(b=>b.type===dt).length<8)return def;
-  }
-  // Priority 5: ALWAYS return something — random building for infinite expansion
+
+  // Priority 3: all caps hit — pick random eligible type for infinite expansion
   const available=TECH_TREE.filter(b=>b.era<=G.era);
   return available[Math.floor(Math.random()*available.length)];
 }
@@ -2938,48 +2959,87 @@ function pickBuildSite(bdef,agentId){
     if(!sett)return null;
   }
 
-  // GRID PLOT SYSTEM: buildings placed along N/S/E/W roads from center (tight)
-  const plotDist=Math.ceil(55/TS);// 55px between plot centers in tiles (dense)
-  const sideOff=Math.ceil(35/TS);// offset from road center to building
+  // ORGANIC VILLAGE LAYOUT: 12-spoke radial pattern with per-type angular offset
+  // Similar building types are pushed to DIFFERENT angles to prevent identical clustering.
+  const plotStep=Math.ceil(48/TS);// base radial distance between plots
   const isPublic=RING1_TYPES.has(bdef.type);
   const isIndustrial=RING3_TYPES.has(bdef.type);
+  const isDefense=RING4_TYPES.has(bdef.type);
 
-  // 4 road directions: N, S, E, W
-  const dirs=[[0,-1],[0,1],[-1,0],[1,0]];
+  // ZONES: civic near center, residential mid-out, industrial outer, defense perimeter
+  // Base radius measured in tile units (roughly half a plotStep per "ring")
+  let minR,maxR;
+  if(isPublic){minR=2;maxR=4}
+  else if(isIndustrial){minR=7;maxR=11}
+  else if(isDefense){minR=11;maxR=15}
+  else{minR=4;maxR=8}// residential
 
-  // Public buildings: ring 0-1 (close to center)
-  // Residential: ring 2-4
-  // Industrial: ring 4-6
-  const minRing=isPublic?1:isIndustrial?4:2;
-  const maxRing=isPublic?2:isIndustrial?6:4;
+  // Same-type spread: find existing buildings of THIS type in the settlement
+  const sameType=G.clientBuildings.filter(b=>b.type===bdef.type&&b.settlement===sett.name);
+  // Hash building type to base angle so identical types naturally land on similar spokes
+  // but each individual copy gets offset by copy-index to spread them around the village.
+  let typeHash=0;
+  for(let i=0;i<bdef.type.length;i++)typeHash=(typeHash*31+bdef.type.charCodeAt(i))>>>0;
+  const SPOKES=12;
+  const baseSpoke=typeHash%SPOKES;
+  const copyOffset=sameType.length*5;// each new copy jumps 5 spokes (~150°)
+  const MIN_SAME_TYPE_DIST=6;// tiles — two of the same type never adjacent
 
-  for(let ring=minRing;ring<=maxRing;ring++){
-    for(const[dx2,dy2] of dirs){
-      for(const side of [-1,1]){
-        // Plot position: along road + offset to side
-        const px3=Math.round(sett.cx+dx2*ring*plotDist+dy2*side*sideOff);
-        const py3=Math.round(sett.cy+dy2*ring*plotDist+dx2*side*sideOff);
-        const tx=Math.max(2,Math.min(WW-3,px3));
-        const ty=Math.max(2,Math.min(WH-3,py3));
-        if(canPlaceAt(tx,ty,pw2,ph2)){
-          clearDetailsAtBuilding(tx,ty,pw2,ph2);
-          return{x:tx,y:ty,settlement:sett.name};
-        }
+  // Try spokes in an order that spreads copies: base + copyOffset first, then fan out
+  const spokeOrder=[];
+  for(let i=0;i<SPOKES;i++){
+    const s=((baseSpoke+copyOffset+((i%2===0)?i/2:-(i+1)/2))%SPOKES+SPOKES)%SPOKES;
+    if(!spokeOrder.includes(s))spokeOrder.push(s);
+  }
+
+  function tryPlace(tx,ty){
+    if(tx<2||tx>=WW-2||ty<2||ty>=WH-2)return null;
+    // Same-type spacing
+    for(const b of sameType){
+      if(Math.abs(b.x-tx)+Math.abs(b.y-ty)<MIN_SAME_TYPE_DIST)return null;
+    }
+    if(!canPlaceAt(tx,ty,pw2,ph2))return null;
+    clearDetailsAtBuilding(tx,ty,pw2,ph2);
+    return{x:tx,y:ty,settlement:sett.name};
+  }
+
+  // Primary pass: preferred spokes and radii with jitter
+  for(let r=minR;r<=maxR;r++){
+    for(const s of spokeOrder){
+      const angle=(s/SPOKES)*Math.PI*2+(rng3.next()-0.5)*0.15;// small angular jitter
+      const radius=r*plotStep+Math.round((rng3.next()-0.5)*2);// radial jitter
+      const tx=Math.round(sett.cx+Math.cos(angle)*radius);
+      const ty=Math.round(sett.cy+Math.sin(angle)*radius);
+      const site=tryPlace(tx,ty);
+      if(site)return site;
+    }
+  }
+
+  // Secondary pass: widen search with more jitter, any spoke
+  for(let r=Math.max(2,minR-1);r<=maxR+3;r++){
+    for(let s=0;s<SPOKES;s++){
+      for(let attempt=0;attempt<2;attempt++){
+        const angle=(s/SPOKES)*Math.PI*2+(rng3.next()-0.5)*0.35;
+        const radius=r*plotStep+Math.round((rng3.next()-0.5)*3);
+        const tx=Math.round(sett.cx+Math.cos(angle)*radius);
+        const ty=Math.round(sett.cy+Math.sin(angle)*radius);
+        const site=tryPlace(tx,ty);
+        if(site)return site;
       }
     }
   }
-  // Fallback: try nearby rings only (keep buildings clustered in settlements)
-  for(let ring=1;ring<=5;ring++){
-    for(const[dx2,dy2] of dirs){
-      for(const side of [-1,1]){
-        const px3=Math.round(sett.cx+dx2*ring*plotDist+dy2*side*sideOff+(rng3.next()-0.5)*2);
-        const py3=Math.round(sett.cy+dy2*ring*plotDist+dx2*side*sideOff+(rng3.next()-0.5)*2);
-        const tx=Math.max(2,Math.min(WW-3,px3));
-        const ty=Math.max(2,Math.min(WH-3,py3));
-        if(canPlaceAt(tx,ty,pw2,ph2)){
-          clearDetailsAtBuilding(tx,ty,pw2,ph2);
-          return{x:tx,y:ty,settlement:sett.name};
-        }
+
+  // Fallback: relax same-type constraint but keep within village bounds
+  for(let r=2;r<=maxR+5;r++){
+    for(let s=0;s<SPOKES*2;s++){
+      const angle=(s/(SPOKES*2))*Math.PI*2;
+      const radius=r*plotStep;
+      const tx=Math.round(sett.cx+Math.cos(angle)*radius+(rng3.next()-0.5)*4);
+      const ty=Math.round(sett.cy+Math.sin(angle)*radius+(rng3.next()-0.5)*4);
+      if(tx<2||tx>=WW-2||ty<2||ty>=WH-2)continue;
+      if(canPlaceAt(tx,ty,pw2,ph2)){
+        clearDetailsAtBuilding(tx,ty,pw2,ph2);
+        return{x:tx,y:ty,settlement:sett.name};
       }
     }
   }
