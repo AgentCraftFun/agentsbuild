@@ -118,6 +118,7 @@ function loadWorldState() {
 // ─── Force fresh start: delete any existing save ───
 // This ensures a clean Day 1 restart on every deploy.
 // Remove this block once the game is stable and you want persistence.
+// Reset: 2026-04-06 — Fresh Day 1 simulation
 try {
   if (fs.existsSync(STATE_FILE)) {
     console.log(`[CLEANUP] Deleting existing save to start fresh.`);
