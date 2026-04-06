@@ -66,6 +66,8 @@ class GameLoop {
           building.advanceProgress(1);
           if (building.isComplete()) {
             // Building just completed
+            if (!this.world._dirtyTiles) this.world._dirtyTiles = new Set();
+            this.world._dirtyTiles.add(`${building.x},${building.y}`);
             const owner = this.world.agents.get(building.owner);
             const existingCount = this.world.buildingsList
               .filter(b => b.type === building.type && b.isComplete()).length;
@@ -103,7 +105,11 @@ class GameLoop {
       if (tick % 10 === 0) {
         const agentCount = this.world.agents.size;
         const buildingCount = this.world.buildingsList.length;
-        const claimedCount = [...this.world.tiles.values()].filter(t => t.owner).length;
+        // Count claimed tiles from agent data instead of scanning all 30k tiles
+        let claimedCount = 0;
+        for (const agent of this.world.agents.values()) {
+          claimedCount += agent.owned_tiles.length;
+        }
         events.push({
           tick,
           type: 'tick_summary',
@@ -114,9 +120,9 @@ class GameLoop {
       // Store events
       if (!this.world.events) this.world.events = [];
       this.world.events.push(...events);
-      // Keep only last 500 events — use splice to avoid creating new array
-      if (this.world.events.length > 500) {
-        this.world.events.splice(0, this.world.events.length - 500);
+      // Keep only last 200 events to reduce memory
+      if (this.world.events.length > 200) {
+        this.world.events.splice(0, this.world.events.length - 200);
       }
 
       // 7. Build world state diff
@@ -286,6 +292,8 @@ class GameLoop {
     // Claim the tile
     tile.owner = agent.id;
     agent.addTile(tileId);
+    if (!this.world._dirtyTiles) this.world._dirtyTiles = new Set();
+    this.world._dirtyTiles.add(tileId);
     agent.mood = 'claiming';
     agent.current_action = { type: 'claim', tileId };
     agent.idle_ticks = 0;
@@ -373,6 +381,8 @@ class GameLoop {
       if (Economy.isClaimable(tile.biome)) {
         tile.owner = agent.id;
         agent.addTile(tileId);
+        if (!this.world._dirtyTiles) this.world._dirtyTiles = new Set();
+        this.world._dirtyTiles.add(tileId);
       } else {
         events.push({ tick, type: 'action_failed', agent: agent.name, message: `${agent.name} can't build on ${tile.biome}. Water is not a foundation.` });
         return;
@@ -400,6 +410,8 @@ class GameLoop {
     tile.building = building;
     agent.buildings.push(building);
     this.world.buildingsList.push(building);
+    if (!this.world._dirtyTiles) this.world._dirtyTiles = new Set();
+    this.world._dirtyTiles.add(tileId);
 
     agent.mood = 'building';
     agent.current_action = { type: 'build', building: buildingType, tileId };
@@ -443,6 +455,8 @@ class GameLoop {
       }
       tile.owner = agent.id;
       agent.addTile(tileId);
+      if (!this.world._dirtyTiles) this.world._dirtyTiles = new Set();
+      this.world._dirtyTiles.add(tileId);
 
       // Steal some resources
       if (defender) {
@@ -525,18 +539,20 @@ class GameLoop {
       agents.push(agent.toPublicJSON ? agent.toPublicJSON() : agent.toJSON());
     }
 
+    // Only send tiles that changed this tick (tracked via _dirtyTiles set)
     const changedTiles = [];
-    for (const tile of this.world.tiles.values()) {
-      if (tile.owner || tile.building) {
-        changedTiles.push({
-          x: tile.x,
-          y: tile.y,
-          tileId: tile.tileId,
-          biome: tile.biome,
-          owner: tile.owner,
-          building: tile.building ? tile.building.toJSON() : null,
-        });
+    if (this.world._dirtyTiles && this.world._dirtyTiles.size > 0) {
+      for (const tileId of this.world._dirtyTiles) {
+        const tile = this.world.tiles.get(tileId);
+        if (tile) {
+          changedTiles.push({
+            x: tile.x, y: tile.y, tileId: tile.tileId,
+            biome: tile.biome, owner: tile.owner,
+            building: tile.building ? tile.building.toJSON() : null,
+          });
+        }
       }
+      this.world._dirtyTiles.clear();
     }
 
     return {

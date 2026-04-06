@@ -7,6 +7,9 @@ const { Router } = require('express');
 function createWorldRouter(worldState) {
   const router = Router();
 
+  // Cache biome map (terrain never changes after generation)
+  let _cachedBiomeResponse = null;
+
   /**
    * GET /api/world/state
    * Full world snapshot (sparse - only claimed/built tiles).
@@ -114,21 +117,26 @@ function createWorldRouter(worldState) {
       return res.json({ tiles, width: worldState.width, height: worldState.height });
     }
 
-    // Full map: send biome data as a flat array for efficiency
-    const biomes = [];
-    for (let y = 0; y < worldState.height; y++) {
-      for (let x = 0; x < worldState.width; x++) {
-        const tile = worldState.tiles.get(`${x},${y}`);
-        biomes.push(tile ? tile.biome : 'grassland');
+    // Full map: send biome data as a flat array for efficiency (cached — terrain is static)
+    if (!_cachedBiomeResponse) {
+      const biomes = [];
+      for (let y = 0; y < worldState.height; y++) {
+        for (let x = 0; x < worldState.width; x++) {
+          const tile = worldState.tiles.get(`${x},${y}`);
+          biomes.push(tile ? tile.biome : 'grassland');
+        }
       }
+      _cachedBiomeResponse = JSON.stringify({
+        width: worldState.width,
+        height: worldState.height,
+        seed: worldState.seed,
+        biomes,
+      });
     }
 
-    res.json({
-      width: worldState.width,
-      height: worldState.height,
-      seed: worldState.seed,
-      biomes,
-    });
+    res.setHeader('Content-Type', 'application/json');
+    res.setHeader('Cache-Control', 'public, max-age=300');
+    res.send(_cachedBiomeResponse);
   });
 
   return router;

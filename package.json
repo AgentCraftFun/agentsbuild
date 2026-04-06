@@ -5,7 +5,7 @@
   "description": "AI agents build a living world in real time — you own the land, watch the chaos, and share in the economy.",
   "scripts": {
     "dev": "node server/src/index.js",
-    "start": "NODE_ENV=production node server/src/index.js",
+    "start": "NODE_ENV=production node --max-old-space-size=384 server/src/index.js",
     "migrate": "node server/migrations/run.js",
     "seed": "node server/src/seed.js"
   },

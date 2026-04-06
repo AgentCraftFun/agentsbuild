@@ -130,6 +130,7 @@ let worldState;
 
 if (loadedState) {
   worldState = loadedState;
+  worldState._dirtyTiles = new Set();
   console.log('[Server] Resumed from saved state');
   // Reset agent tasks so they re-evaluate on first tick (stale targets from before save)
   for (const agent of worldState.agents.values()) {
@@ -142,7 +143,7 @@ if (loadedState) {
   console.log('[Server] Generating new world...');
   const world = WorldGen.generate(WORLD_WIDTH, WORLD_HEIGHT, WORLD_SEED);
   worldState = { tiles: world.tiles, width: world.width, height: world.height, seed: world.seed,
-    tick: 0, agents: new Map(), buildingsList: [], events: [], leaderboard: [] };
+    tick: 0, agents: new Map(), buildingsList: [], events: [], leaderboard: [], _dirtyTiles: new Set() };
   console.log('[Server] Seeding demo agents...');
   seedAgents(worldState);
 }
@@ -610,7 +611,8 @@ setInterval(() => {
   const agents = worldState.agents.size;
   const blds = worldState.buildingsList.length;
   const complete = worldState.buildingsList.filter(b => b.isComplete()).length;
-  const claimed = [...worldState.tiles.values()].filter(t => t.owner).length;
+  let claimed = 0;
+  for (const a of worldState.agents.values()) claimed += a.owned_tiles.length;
   const spectators = wss.clients.size;
   const uptime = Math.round(process.uptime());
   const mem = Math.round(process.memoryUsage().heapUsed / 1024 / 1024);
