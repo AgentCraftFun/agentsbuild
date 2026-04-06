@@ -559,6 +559,7 @@ class GameLoop {
       buildings: this.world.buildingsList.map(b => b.toJSON()),
       events,
       leaderboard: this.world.leaderboard || [],
+      settlements: this.world.settlements || [],
     };
   }
 

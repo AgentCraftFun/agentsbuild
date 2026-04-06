@@ -65,6 +65,7 @@ function sendWorldState(ws, worldState) {
       buildings: (worldState.buildingsList || []).map(b => b.toJSON()),
       events: worldState.events ? worldState.events.slice(-50) : [],
       leaderboard: worldState.leaderboard || [],
+      settlements: worldState.settlements || [],
     },
     timestamp: Date.now(),
   });

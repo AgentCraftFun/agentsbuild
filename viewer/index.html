@@ -2733,6 +2733,8 @@ function getSettlementForAgent(agentId){
 }
 
 function createSettlement(agentId,tx,ty){
+  // Server mode: settlements managed by server
+  if(S.connected)return null;
   // MINIMUM DISTANCE: 25% of map from any existing settlement
   const minDist=0.25;
   for(const es of settlements){
@@ -3014,16 +3016,15 @@ function updateAgentMovement(){
     if(st.state==='idle'){
       if(S.connected){
         // SERVER MODE: pick visual activity based on server mood + nearby terrain
-        // Priority 1: check for incomplete buildings owned by this agent
+        // Only show building animation for buildings THIS agent owns
         const myBld=S.buildings.find(b=>!b.complete&&b.owner===a.id);
-        const nearBld=myBld||S.buildings.find(b=>!b.complete&&Math.abs(b.x-a.x)<8&&Math.abs(b.y-a.y)<8);
-        if(nearBld){
+        if(myBld){
           st.state='building';
-          st.target={x:nearBld.x,y:nearBld.y,type:nearBld.type,name:nearBld.name,
-            progress:nearBld.progress||0,complete:nearBld.complete,
-            faction:nearBld.faction,width:nearBld.width||2,height:nearBld.height||2,
-            pw:(nearBld.width||2)*TS,ph:(nearBld.height||2)*TS,tall:nearBld.tall};
-          v.tx=nearBld.x/WW;v.ty=nearBld.y/WH;
+          st.target={x:myBld.x,y:myBld.y,type:myBld.type,name:myBld.name,
+            progress:myBld.progress||0,complete:myBld.complete,
+            faction:myBld.faction,width:myBld.width||2,height:myBld.height||2,
+            pw:(myBld.width||2)*TS,ph:(myBld.height||2)*TS,tall:myBld.tall};
+          v.tx=myBld.x/WW;v.ty=(myBld.y+1)/WH;// position in front of building
           continue;
         }
 
@@ -3335,7 +3336,7 @@ function updateAgentMovement(){
         }
         // Still building — sync visual progress from server
         st.target.progress=srvBld.progress||0;
-        if(!atTarget){v.tx=st.target.x/WW;v.ty=st.target.y/WH;continue}
+        if(!atTarget){v.tx=st.target.x/WW;v.ty=(st.target.y+1)/WH;continue}// position in front
         // Particles while hammering
         if(frame%20===0)spawnParticle(st.target.x*TS+TS+(Math.random()-0.5)*10,st.target.y*TS+TS-5,'debris');
         continue;
@@ -3946,11 +3947,10 @@ for(const s of settlements){
       const adx=Math.abs(av.x*WW*ts-scx),ady=Math.abs(av.y*WH*ts-scy);
       return adx<wallR+30&&ady<wallR+30;// within settlement wall radius
     });
-    if(wallBuilders.length>0){
-      const buildRate=0.0006*wallBuilders.length;// more agents = faster walls
+    if(!S.connected&&wallBuilders.length>0){
+      const buildRate=0.0006*wallBuilders.length;
       const nextSeg=s.wallSegs.find(ws=>ws.progress<1&&!ws.isGate);
       if(nextSeg){nextSeg.progress=Math.min(1,nextSeg.progress+buildRate)}
-      // Gate built last
       if(!nextSeg){const gateSeg=s.wallSegs.find(ws=>ws.isGate&&ws.progress<1);if(gateSeg)gateSeg.progress=Math.min(1,gateSeg.progress+buildRate)}
     }
     // Draw completed + in-progress segments
@@ -5034,24 +5034,30 @@ ws.onclose=()=>{S.connected=false;updateHeader();ov.style.display='block';ov.que
 ws.onerror=()=>{}}
 function schedRecon(){if(reconTimer)clearTimeout(reconTimer);reconTimer=setTimeout(()=>{reconDelay=Math.min(reconDelay*1.5,15000);connectWS()},reconDelay)}
 function syncServerBuildings(serverBlds){
-  // Server buildings are authoritative for server-side state (S.buildings)
-  // but should NOT be blindly pushed into client buildings (G.clientBuildings)
-  // because client uses its own coordinate system and building lifecycle.
-  // Only update progress/completion on buildings that already exist client-side.
+  // When connected, server buildings are authoritative (S.buildings used for rendering).
+  // Just sync progress to client buildings if they exist.
   for(const sb of serverBlds){
-    // Try to find matching client building by proximity (within 2 tiles)
     const match=G.clientBuildings.find(cb=>cb.type===sb.type&&Math.abs(cb.x-sb.x)<3&&Math.abs(cb.y-sb.y)<3);
     if(match){
       if(sb.complete)match.complete=true;
       if(sb.progress>match.progress)match.progress=sb.progress;
     }
-    // Do NOT push new buildings — client manages its own building creation
+  }
+}
+function syncServerSettlements(serverSettlements){
+  // Replace client settlements with server data when connected
+  if(!S.connected||!serverSettlements||serverSettlements.length===0)return;
+  settlements.length=0;
+  villages.length=0;
+  for(const ss of serverSettlements){
+    settlements.push({name:ss.name,clan:null,faction:'human',cx:ss.cx,cy:ss.cy,buildings:[],radius:10,clearRadius:5,groupId:ss.id||0});
+    villages.push({name:ss.name,cx:ss.cx,cy:ss.cy,faction:'human',buildings:[]});
   }
 }
 function handleMsg(msg){
 if(msg.type==='pong')return;
-if(msg.type==='world_state'&&msg.data){S.tick=msg.data.tick||0;S.agents=msg.data.agents||[];S.tiles=msg.data.tiles||[];S.buildings=msg.data.buildings||[];S.events=msg.data.events||[];S.leaderboard=msg.data.leaderboard||[];syncServerBuildings(msg.data.buildings||[]);updateAll()}
-if(msg.type==='tick'&&msg.data){S.tick=msg.data.tick||S.tick;if(msg.data.agents)S.agents=msg.data.agents;if(msg.data.tiles)S.tiles=msg.data.tiles;if(msg.data.buildings){S.buildings=msg.data.buildings;syncServerBuildings(msg.data.buildings)}if(msg.data.events){S.events=S.events.concat(msg.data.events);if(S.events.length>200)S.events=S.events.slice(-100)}if(msg.data.leaderboard)S.leaderboard=msg.data.leaderboard;updateAll()}}
+if(msg.type==='world_state'&&msg.data){S.tick=msg.data.tick||0;S.agents=msg.data.agents||[];S.tiles=msg.data.tiles||[];S.buildings=msg.data.buildings||[];S.events=msg.data.events||[];S.leaderboard=msg.data.leaderboard||[];syncServerBuildings(msg.data.buildings||[]);if(msg.data.settlements)syncServerSettlements(msg.data.settlements);updateAll()}
+if(msg.type==='tick'&&msg.data){S.tick=msg.data.tick||S.tick;if(msg.data.agents)S.agents=msg.data.agents;if(msg.data.tiles)S.tiles=msg.data.tiles;if(msg.data.buildings){S.buildings=msg.data.buildings;syncServerBuildings(msg.data.buildings)}if(msg.data.events){S.events=S.events.concat(msg.data.events);if(S.events.length>200)S.events=S.events.slice(-100)}if(msg.data.leaderboard)S.leaderboard=msg.data.leaderboard;if(msg.data.settlements)syncServerSettlements(msg.data.settlements);updateAll()}}
 safeInterval(()=>{if(ws&&ws.readyState===1)ws.send('{"type":"ping"}')},30000);
 
 // === Resource system now driven by agent AI state machine ===
@@ -5250,9 +5256,11 @@ function updateWildlife(){
   }
   // Remove dead
   for(let i=wildAnimals.length-1;i>=0;i--)if(wildAnimals[i].life<=0)wildAnimals.splice(i,1);
-  // Spawn chickens for farms
-  for(const b of G.clientBuildings){
-    if(b.type==='farm'&&b.complete&&!wildAnimals.find(a2=>a2.farmId===b.x+','+b.y)){
+  // Spawn chickens for completed farm buildings
+  const farmSource=S.connected?S.buildings:G.clientBuildings;
+  for(const b of farmSource){
+    const isFarm=b.type==='farmstead'||b.type==='pig_farm'||b.type==='farm';
+    if(isFarm&&b.complete&&!wildAnimals.find(a2=>a2.farmId===b.x+','+b.y)){
       for(let ci=0;ci<3;ci++)wildAnimals.push({type:'chicken',wx:b.x+(ci-1)*2+Math.random(),wy:b.y+1+ci*1.5+Math.random(),vx:0,vy:0,phase:ci*3.3+Math.random()*2,life:99999,fleeing:0,farmId:b.x+','+b.y});
     }
   }
@@ -5455,10 +5463,9 @@ function updateWorldEvents(){
     }
     // Also handle natural regrowth and population
     if(harvestables.size>5){let cl=0;for(const[key] of harvestables){if(cl<5){harvestables.delete(key);cl++}}}
-    // Population growth: spawn new agents when settlements grow
+    // Population growth: spawn new agents when settlements grow (local mode only)
     const completeBlds=G.clientBuildings.filter(b=>b.complete).length;
-    const canSpawn=S.agents.length<16&&completeBlds>=4&&G.food>20;
-    // Spawn more aggressively as settlements grow (every ~90s drama event)
+    const canSpawn=!S.connected&&S.agents.length<16&&completeBlds>=4&&G.food>20;
     if(canSpawn){
       // Find a settlement at Town phase (9+ buildings) or just any with food
       let spawnSett=settlements.find(s2=>s2.buildings&&s2.buildings.length>=9);
@@ -6303,7 +6310,8 @@ function runOfflineSim(){
         if(b.progress>=1){b.progress=1;b.complete=true;summary.buildings++}
       }
     }
-    // Try spawning new buildings if affordable (with duplicate check)
+    // Try spawning new buildings if affordable (local mode only)
+    if(S.connected)continue;// server manages buildings
     const next=getNextBuilding();
     if(next&&canAfford(next.cost)){
       const rng3=new SeededRNG(t+G.clientBuildings.length*13);

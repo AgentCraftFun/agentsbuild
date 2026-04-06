@@ -286,6 +286,17 @@ class AgentBrain {
         if (!WorldGen.isBuildable(t.biome)) continue;
         if (busyTiles.has(tid)) continue;
 
+        // Check neighboring tiles are also buildable (buildings are 2x2+)
+        let neighborsBad = false;
+        for (let dy = 0; dy <= 1; dy++) {
+          for (let dx = 0; dx <= 1; dx++) {
+            const nt = tiles.get(`${rx + dx},${ry + dy}`);
+            if (!nt || !WorldGen.isBuildable(nt.biome)) { neighborsBad = true; break; }
+          }
+          if (neighborsBad) break;
+        }
+        if (neighborsBad) continue;
+
         // Check minimum spacing from ALL buildings
         let tooClose = false;
         for (const b of buildingsList) {
