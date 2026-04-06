@@ -7,6 +7,8 @@ const Building = require('../models/Building');
 const Economy = require('./Economy');
 const WorldGen = require('./WorldGen');
 
+const WATER_BIOMES = ['deep_water', 'shallow_water', 'river'];
+
 class AgentBrain {
   constructor(agent, worldState) {
     this.agent = agent;
@@ -534,7 +536,7 @@ class AgentBrain {
         const tid = `${rx},${ry}`;
         const t = tiles.get(tid);
         if (!t || t.building) continue;
-        if (['deep_water', 'shallow_water', 'river'].includes(t.biome)) continue;
+        if (!WorldGen.isBuildable(t.biome)) continue;
         // Check minimum spacing from ALL buildings
         let tooClose = false;
         for (const b of (buildingsList || [])) {

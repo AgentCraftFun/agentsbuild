@@ -8,7 +8,7 @@ class Building {
     town_hall:        { faction: 'human', name: 'Town Hall',        width: 2, height: 2, tall: true,  workCost: 0,   tier: 1, yields: { food: 0, wood: 0, stone: 0, gold: 0 }, description: 'Faction HQ' },
     farmstead:        { faction: 'human', name: 'Farmstead',        width: 2, height: 1, tall: false, workCost: 5,   tier: 1, yields: { food: 3, wood: 0, stone: 0, gold: 0 }, description: 'Produces food' },
     lumber_mill:      { faction: 'human', name: 'Lumber Mill',      width: 2, height: 1, tall: true,  workCost: 5,   tier: 1, yields: { food: 0, wood: 3, stone: 0, gold: 0 }, description: 'Produces wood' },
-    watchtower:       { faction: 'human', name: 'Watchtower',       width: 1, height: 1, tall: true,  workCost: 8,   tier: 1, yields: { food: 0, wood: 0, stone: 0, gold: 0 }, description: 'Defends territory' },
+    watchtower:       { faction: 'human', name: 'Watchtower',       width: 2, height: 2, tall: true,  workCost: 8,   tier: 1, yields: { food: 0, wood: 0, stone: 0, gold: 0 }, description: 'Defends territory' },
     chapel:           { faction: 'human', name: 'Chapel',           width: 2, height: 2, tall: true,  workCost: 20,  tier: 2, yields: { food: 0, wood: 0, stone: 0, gold: 2 }, description: 'Generates faith and gold' },
     castle:           { faction: 'human', name: 'Castle',           width: 3, height: 3, tall: true,  workCost: 80,  tier: 3, yields: { food: 0, wood: 0, stone: 0, gold: 5 }, description: 'Ultimate fortress' },
 

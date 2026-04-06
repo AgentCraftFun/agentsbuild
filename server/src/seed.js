@@ -29,10 +29,10 @@ function seedAgents(worldState) {
   if (!worldState.buildingsList) worldState.buildingsList = [];
   if (!worldState.events) worldState.events = [];
 
-  // ALL agents spawn in one central region to form a shared settlement
-  // Agents are placed in a cluster so they build together like a medieval village
-  const centerX = Math.floor(width * 0.5);
-  const centerY = Math.floor(height * 0.5);
+  // ALL agents spawn in one region to form a shared settlement
+  // Place away from rivers (vertical river at x~90, horizontal at y~82)
+  const centerX = Math.floor(width * 0.65);
+  const centerY = Math.floor(height * 0.27);
   const spawnRadius = 15; // agents spawn within 15 tiles of center
   const regions = Array.from({ length: 8 }, (_, i) => {
     // Place agents in a circle around center
