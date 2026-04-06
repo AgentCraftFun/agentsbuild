@@ -544,32 +544,49 @@ function renderTBuf(){
 }
 
 // === Path Trails between buildings ===
+// Path cache — rebuilt only when building count changes
+let _pathCanvas=null,_pathBldCount=-1;
 function drawPaths(c,buildings,fr){
   if(buildings.length<2)return;
-  c.fillStyle='#8a7a58';
-  // Connect nearby buildings with paths (shared village)
-  for(let i=0;i<buildings.length;i++){
-    for(let j=i+1;j<buildings.length;j++){
-      const a=buildings[i],b2=buildings[j];
-      const ax=a.x*TS+TS,ay=a.y*TS+TS,bx2=b2.x*TS+TS,by2=b2.y*TS+TS;
-      const dist=Math.sqrt((bx2-ax)**2+(by2-ay)**2);
-      if(dist>TS*20)continue;// don't draw super long paths
-      const steps=Math.floor(dist/6);
-      for(let s=0;s<steps;s++){
-        const t=s/steps;
-        const px=ax+(bx2-ax)*t+Math.sin(t*8+i)*3;
-        const py=ay+(by2-ay)*t+Math.cos(t*6+j)*2;
-        // Skip path segments on water tiles
-        const tx2=Math.floor(px/TS),ty2=Math.floor(py/TS);
-        if(tx2>=0&&tx2<WW&&ty2>=0&&ty2<WH){const bi2=tBiomes[ty2*WW+tx2];if(bi2===0||bi2===1||bi2===10)continue}
-        c.globalAlpha=0.3;
-        for(let d=-1;d<=1;d++){
-          c.fillRect(px+d*2,py+d,2,2);
+  // Rebuild path cache only when buildings change
+  if(!_pathCanvas||_pathBldCount!==buildings.length){
+    _pathBldCount=buildings.length;
+    if(!_pathCanvas){_pathCanvas=document.createElement('canvas');_pathCanvas.width=WW*TS;_pathCanvas.height=WH*TS}
+    const pc=_pathCanvas.getContext('2d');
+    pc.clearRect(0,0,_pathCanvas.width,_pathCanvas.height);
+    pc.fillStyle='#8a7a58';pc.globalAlpha=0.3;
+    // Only connect each building to its 3 nearest neighbors (not O(n²))
+    for(let i=0;i<buildings.length;i++){
+      const a=buildings[i];
+      const ax=a.x*TS+TS,ay=a.y*TS+TS;
+      // Find 3 nearest buildings
+      const dists=[];
+      for(let j=0;j<buildings.length;j++){
+        if(j===i)continue;
+        const b2=buildings[j];
+        const dx=b2.x-a.x,dy=b2.y-a.y;
+        dists.push({j,d:dx*dx+dy*dy});
+      }
+      dists.sort((a2,b3)=>a2.d-b3.d);
+      for(let k=0;k<Math.min(3,dists.length);k++){
+        if(dists[k].d>20*20*TS*TS)break;// skip if >20 tiles
+        const b2=buildings[dists[k].j];
+        const bx2=b2.x*TS+TS,by2=b2.y*TS+TS;
+        const dist=Math.sqrt(dists[k].d)*TS;
+        const steps=Math.floor(dist/8);
+        for(let s=0;s<steps;s++){
+          const t=s/steps;
+          const px=ax+(bx2-ax)*t+Math.sin(t*8+i)*3;
+          const py=ay+(by2-ay)*t+Math.cos(t*6+dists[k].j)*2;
+          const tx2=Math.floor(px/TS),ty2=Math.floor(py/TS);
+          if(tx2>=0&&tx2<WW&&ty2>=0&&ty2<WH){const bi2=tBiomes[ty2*WW+tx2];if(bi2===0||bi2===1||bi2===10)continue}
+          pc.fillRect(px,py,2,2);
         }
       }
     }
+    pc.globalAlpha=1;
   }
-  c.globalAlpha=1;
+  c.drawImage(_pathCanvas,0,0);
 }
 
 // === Vegetation System ===
@@ -1052,7 +1069,9 @@ wrap.addEventListener('touchend',e=>{
 // === Maps ===
 const ownerMap=new Map(),bldMap=new Map();
 function updateMaps(){ownerMap.clear();bldMap.clear();for(const t of S.tiles)if(t.owner)ownerMap.set(t.tileId||`${t.x},${t.y}`,t.owner);for(const b of S.buildings)for(let dy=0;dy<(b.height||1);dy++)for(let dx=0;dx<(b.width||1);dx++)bldMap.set(`${b.x+dx},${b.y+dy}`,b)}
-function agentById(id){return S.agents.find(a=>a.id===id)}
+const _agentMap=new Map();
+function agentById(id){return _agentMap.get(id)}
+function rebuildAgentMap(){_agentMap.clear();for(const a of S.agents)_agentMap.set(a.id,a)}
 
 // === Building faction palettes ===
 const BFC={
@@ -4158,7 +4177,7 @@ for(const b of G.clientBuildings){
 }
 
 // Path trails between buildings
-drawPaths(ctx,S.buildings,frame);
+if(!_lowPerf)drawPaths(ctx,S.buildings,frame);
 
 // Water animation — calm and gentle
 // Gentle wave lines every 3-4 rows
@@ -5056,8 +5075,8 @@ function syncServerSettlements(serverSettlements){
 }
 function handleMsg(msg){
 if(msg.type==='pong')return;
-if(msg.type==='world_state'&&msg.data){S.tick=msg.data.tick||0;S.agents=msg.data.agents||[];S.tiles=msg.data.tiles||[];S.buildings=msg.data.buildings||[];S.events=msg.data.events||[];S.leaderboard=msg.data.leaderboard||[];syncServerBuildings(msg.data.buildings||[]);if(msg.data.settlements)syncServerSettlements(msg.data.settlements);updateAll()}
-if(msg.type==='tick'&&msg.data){S.tick=msg.data.tick||S.tick;if(msg.data.agents)S.agents=msg.data.agents;if(msg.data.tiles)S.tiles=msg.data.tiles;if(msg.data.buildings){S.buildings=msg.data.buildings;syncServerBuildings(msg.data.buildings)}if(msg.data.events){S.events=S.events.concat(msg.data.events);if(S.events.length>200)S.events=S.events.slice(-100)}if(msg.data.leaderboard)S.leaderboard=msg.data.leaderboard;if(msg.data.settlements)syncServerSettlements(msg.data.settlements);updateAll()}}
+if(msg.type==='world_state'&&msg.data){S.tick=msg.data.tick||0;S.agents=msg.data.agents||[];rebuildAgentMap();S.tiles=msg.data.tiles||[];S.buildings=msg.data.buildings||[];S.events=msg.data.events||[];S.leaderboard=msg.data.leaderboard||[];syncServerBuildings(msg.data.buildings||[]);if(msg.data.settlements)syncServerSettlements(msg.data.settlements);updateAll()}
+if(msg.type==='tick'&&msg.data){S.tick=msg.data.tick||S.tick;if(msg.data.agents){S.agents=msg.data.agents;rebuildAgentMap()}if(msg.data.tiles)S.tiles=msg.data.tiles;if(msg.data.buildings){S.buildings=msg.data.buildings;syncServerBuildings(msg.data.buildings)}if(msg.data.events){S.events=S.events.concat(msg.data.events);if(S.events.length>200)S.events=S.events.slice(-100)}if(msg.data.leaderboard)S.leaderboard=msg.data.leaderboard;if(msg.data.settlements)syncServerSettlements(msg.data.settlements);updateAll()}}
 safeInterval(()=>{if(ws&&ws.readyState===1)ws.send('{"type":"ping"}')},30000);
 
 // === Resource system now driven by agent AI state machine ===
@@ -5264,8 +5283,9 @@ function updateWildlife(){
       for(let ci=0;ci<3;ci++)wildAnimals.push({type:'chicken',wx:b.x+(ci-1)*2+Math.random(),wy:b.y+1+ci*1.5+Math.random(),vx:0,vy:0,phase:ci*3.3+Math.random()*2,life:99999,fleeing:0,farmId:b.x+','+b.y});
     }
   }
-  // Cap
-  while(wildAnimals.length>40)wildAnimals.shift();
+  // Cap wild animals (exclude farm chickens which are permanent)
+  const wildCount=wildAnimals.filter(a2=>!a2.farmId).length;
+  if(wildCount>30){for(let i=wildAnimals.length-1;i>=0&&wildCount>30;i--){if(!wildAnimals[i].farmId){wildAnimals.splice(i,1)}}}
 }
 const ambientButterflies=[];
 const ambientLeaves=[];
