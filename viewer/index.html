@@ -547,11 +547,10 @@ function renderTBuf(){
 function drawPaths(c,buildings,fr){
   if(buildings.length<2)return;
   c.fillStyle='#8a7a58';
-  // Connect buildings of same faction
+  // Connect nearby buildings with paths (shared village)
   for(let i=0;i<buildings.length;i++){
     for(let j=i+1;j<buildings.length;j++){
       const a=buildings[i],b2=buildings[j];
-      if(a.faction!==b2.faction)continue;
       const ax=a.x*TS+TS,ay=a.y*TS+TS,bx2=b2.x*TS+TS,by2=b2.y*TS+TS;
       const dist=Math.sqrt((bx2-ax)**2+(by2-ay)**2);
       if(dist>TS*20)continue;// don't draw super long paths

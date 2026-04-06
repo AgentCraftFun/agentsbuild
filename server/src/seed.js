@@ -29,18 +29,19 @@ function seedAgents(worldState) {
   if (!worldState.buildingsList) worldState.buildingsList = [];
   if (!worldState.events) worldState.events = [];
 
-  // Find suitable grassland tiles spread across the map
-  // Divide map into quadrants to spread agents out
-  const regions = [
-    { xMin: 10,              xMax: width * 0.4,   yMin: 10,               yMax: height * 0.4 },
-    { xMin: width * 0.6,     xMax: width - 10,    yMin: 10,               yMax: height * 0.4 },
-    { xMin: 10,              xMax: width * 0.4,   yMin: height * 0.6,     yMax: height - 10 },
-    { xMin: width * 0.6,     xMax: width - 10,    yMin: height * 0.6,     yMax: height - 10 },
-    { xMin: width * 0.25,    xMax: width * 0.45,  yMin: height * 0.25,    yMax: height * 0.45 },
-    { xMin: width * 0.55,    xMax: width * 0.75,  yMin: height * 0.25,    yMax: height * 0.45 },
-    { xMin: width * 0.25,    xMax: width * 0.45,  yMin: height * 0.55,    yMax: height * 0.75 },
-    { xMin: width * 0.55,    xMax: width * 0.75,  yMin: height * 0.55,    yMax: height * 0.75 },
-  ];
+  // ALL agents spawn in one central region to form a shared settlement
+  // Agents are placed in a cluster so they build together like a medieval village
+  const centerX = Math.floor(width * 0.5);
+  const centerY = Math.floor(height * 0.5);
+  const spawnRadius = 15; // agents spawn within 15 tiles of center
+  const regions = Array.from({ length: 8 }, (_, i) => {
+    // Place agents in a circle around center
+    const angle = (i / 8) * Math.PI * 2;
+    const dist = 5 + (i % 3) * 4; // stagger distances: 5, 9, 13
+    const cx = centerX + Math.round(Math.cos(angle) * dist);
+    const cy = centerY + Math.round(Math.sin(angle) * dist);
+    return { xMin: cx - 3, xMax: cx + 3, yMin: cy - 3, yMax: cy + 3 };
+  });
 
   // Use a deterministic RNG for seeding so results are repeatable
   let seedRng = 12345;

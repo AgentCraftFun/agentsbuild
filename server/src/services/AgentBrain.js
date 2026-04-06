@@ -289,7 +289,7 @@ class AgentBrain {
         break;
       }
       case 'build': {
-        const allBuildings = Building.getBuildingsForFaction(this.agent.faction);
+        const allBuildings = Object.keys(Building.CATALOG).filter(b => Building.CATALOG[b].workCost > 0);
         const randomBuilding = AgentBrain._pick(allBuildings);
         const tile = this._findOwnedTileWithoutBuilding();
         if (tile && randomBuilding) {
@@ -510,34 +510,24 @@ class AgentBrain {
     if (!this._canBuild) return null;
     const { tiles, buildingsList, width, height } = this.world;
 
-    // FACTION ZONES — each faction has a home area
-    const zones = {
-      human:  { cx: 0.22, cy: 0.20 },
-      orc:    { cx: 0.72, cy: 0.70 },
-      dwarf:  { cx: 0.50, cy: 0.19 },
-      elf:    { cx: 0.82, cy: 0.25 },
-    };
-    const zone = zones[this.agent.faction] || { cx: 0.5, cy: 0.5 };
     const MIN_DIST = 5; // minimum tiles between buildings
 
-    // SETTLEMENT CLUSTERING: build near existing faction buildings
-    const factionBuildings = (buildingsList || []).filter(b => b.faction === this.agent.faction);
-
-    // Find settlement center: average of existing faction buildings, or zone center
+    // SHARED SETTLEMENT: all agents build around the same settlement center
+    // Find center of ALL buildings (not faction-specific)
     let cx, cy;
-    if (factionBuildings.length > 0) {
-      cx = Math.round(factionBuildings.reduce((s, b) => s + b.x, 0) / factionBuildings.length);
-      cy = Math.round(factionBuildings.reduce((s, b) => s + b.y, 0) / factionBuildings.length);
+    if (buildingsList && buildingsList.length > 0) {
+      cx = Math.round(buildingsList.reduce((s, b) => s + b.x, 0) / buildingsList.length);
+      cy = Math.round(buildingsList.reduce((s, b) => s + b.y, 0) / buildingsList.length);
     } else {
-      cx = Math.round(zone.cx * width);
-      cy = Math.round(zone.cy * height);
+      cx = Math.round(width * 0.5);
+      cy = Math.round(height * 0.5);
     }
 
-    // Search in expanding rings around settlement center (5-tile ring increments)
+    // Search in expanding rings around settlement center
     for (let ring = 0; ring < 6; ring++) {
       const radius = MIN_DIST + ring * 3; // 5, 8, 11, 14, 17, 20
       for (let attempt = 0; attempt < 12; attempt++) {
-        const angle = (attempt / 12) * Math.PI * 2 + ring * 0.5; // spread evenly
+        const angle = (attempt / 12) * Math.PI * 2 + ring * 0.5;
         const rx = cx + Math.round(Math.cos(angle) * radius);
         const ry = cy + Math.round(Math.sin(angle) * radius);
         if (rx < 2 || rx >= width - 2 || ry < 2 || ry >= height - 2) continue;
@@ -585,23 +575,44 @@ class AgentBrain {
   }
 
   _pickBuildingForFaction() {
-    const available = Building.getBuildingsForFaction(this.agent.faction)
-      .filter(b => {
-        const info = Building.CATALOG[b];
-        return info.workCost > 0 && info.workCost <= this.agent.work_balance + 5;
-      });
-    if (available.length === 0) {
-      // Fall back to cheapest building
-      const all = Building.getBuildingsForFaction(this.agent.faction)
-        .filter(b => Building.CATALOG[b].workCost > 0);
-      return all.length > 0 ? all[0] : null;
-    }
-    return AgentBrain._pick(available);
+    return this._pickVillageBuilding();
+  }
+
+  /**
+   * Pick a building from ANY faction, prioritizing types not yet in the settlement.
+   * Creates diverse, medieval-village-style settlements.
+   */
+  _pickVillageBuilding() {
+    const existing = (this.world.buildingsList || []);
+    const existingTypes = new Set(existing.map(b => b.type));
+
+    // All non-HQ buildings from every faction
+    const all = Object.keys(Building.CATALOG).filter(b => Building.CATALOG[b].workCost > 0);
+
+    // Prefer building types not yet in the settlement (variety)
+    const novel = all.filter(b => !existingTypes.has(b));
+    const pool = novel.length > 0 ? novel : all;
+
+    // Weight toward tier 1 early, allow higher tiers later
+    const affordable = pool.filter(b => Building.CATALOG[b].workCost <= this.agent.work_balance + 5);
+    if (affordable.length > 0) return AgentBrain._pick(affordable);
+
+    // Fallback: cheapest available from any faction
+    const cheapest = pool.filter(b => Building.CATALOG[b].tier === 1);
+    return cheapest.length > 0 ? AgentBrain._pick(cheapest) : AgentBrain._pick(all);
   }
 
   _pickMostEfficientBuilding() {
-    const available = Building.getBuildingsForFaction(this.agent.faction)
-      .filter(b => Building.CATALOG[b].workCost > 0);
+    const existing = (this.world.buildingsList || []);
+    const existingTypes = new Set(existing.map(b => b.type));
+
+    // All non-HQ buildings from every faction
+    let available = Object.keys(Building.CATALOG).filter(b => Building.CATALOG[b].workCost > 0);
+
+    // Prefer types not yet built (variety first)
+    const novel = available.filter(b => !existingTypes.has(b));
+    if (novel.length > 0) available = novel;
+
     if (available.length === 0) return null;
 
     // Sort by total yield / cost ratio
@@ -618,24 +629,29 @@ class AgentBrain {
   }
 
   _pickResourceBuilding() {
-    const available = Building.getBuildingsForFaction(this.agent.faction)
-      .filter(b => {
-        const info = Building.CATALOG[b];
-        const totalYield = Object.values(info.yields).reduce((s, v) => s + v, 0);
-        return totalYield > 0 && info.workCost > 0;
-      });
-    return available.length > 0 ? AgentBrain._pick(available) : null;
+    const existingTypes = new Set((this.world.buildingsList || []).map(b => b.type));
+
+    // All resource-producing buildings from every faction
+    const available = Object.keys(Building.CATALOG).filter(b => {
+      const info = Building.CATALOG[b];
+      const totalYield = Object.values(info.yields).reduce((s, v) => s + v, 0);
+      return totalYield > 0 && info.workCost > 0;
+    });
+
+    // Prefer types not yet built
+    const novel = available.filter(b => !existingTypes.has(b));
+    const pool = novel.length > 0 ? novel : available;
+    return pool.length > 0 ? AgentBrain._pick(pool) : null;
   }
 
   _pickWarBuilding() {
-    const warTypes = {
-      human: ['watchtower', 'castle'],
-      orc: ['spike_tower', 'war_pit', 'skull_throne'],
-      dwarf: ['stone_wall', 'deep_citadel'],
-      elf: ['sentinel_tree', 'world_tree'],
-    };
-    const options = warTypes[this.agent.faction] || [];
-    return options.length > 0 ? AgentBrain._pick(options) : null;
+    // All defensive/military buildings from every faction
+    const warTypes = ['watchtower', 'castle', 'spike_tower', 'war_pit', 'skull_throne',
+                      'stone_wall', 'deep_citadel', 'sentinel_tree', 'world_tree'];
+    const existingTypes = new Set((this.world.buildingsList || []).map(b => b.type));
+    const novel = warTypes.filter(b => !existingTypes.has(b));
+    const pool = novel.length > 0 ? novel : warTypes;
+    return AgentBrain._pick(pool);
   }
 
   _moveTowardUnclaimed(message) {
