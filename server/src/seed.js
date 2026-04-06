@@ -1,6 +1,6 @@
 /**
- * Seed script: creates 8 demo agents with starting positions and HQ buildings.
- * Can be run standalone or imported.
+ * Seed script: creates 8 demo agents across 3 settlements.
+ * Each settlement gets 2-3 agents and a town hall at its center.
  */
 
 const Agent = require('./models/Agent');
@@ -18,32 +18,24 @@ const DEMO_AGENTS = [
   { name: 'Faelith',  faction: 'elf',   personality: 'confused' },
 ];
 
-/**
- * Seed the world state with demo agents.
- * @param {object} worldState - { tiles, agents, buildingsList, width, height, tick }
- * @returns {object} worldState with agents added
- */
+// 3 settlement locations — well spread, away from rivers (x~90, y~82)
+const SETTLEMENTS = [
+  { cx: 0.30, cy: 0.25, name: 'Northvale' },   // upper-left
+  { cx: 0.75, cy: 0.30, name: 'Eastwatch' },    // upper-right
+  { cx: 0.55, cy: 0.75, name: 'Southmere' },    // lower-center (below horizontal river)
+];
+
+// Agent-to-settlement assignments: 3, 3, 2
+const AGENT_SETTLEMENTS = [0, 0, 0, 1, 1, 1, 2, 2];
+
 function seedAgents(worldState) {
   const { tiles, width, height } = worldState;
   if (!worldState.agents) worldState.agents = new Map();
   if (!worldState.buildingsList) worldState.buildingsList = [];
   if (!worldState.events) worldState.events = [];
+  if (!worldState.settlements) worldState.settlements = [];
 
-  // ALL agents spawn in one region to form a shared settlement
-  // Place away from rivers (vertical river at x~90, horizontal at y~82)
-  const centerX = Math.floor(width * 0.65);
-  const centerY = Math.floor(height * 0.27);
-  const spawnRadius = 15; // agents spawn within 15 tiles of center
-  const regions = Array.from({ length: 8 }, (_, i) => {
-    // Place agents in a circle around center
-    const angle = (i / 8) * Math.PI * 2;
-    const dist = 5 + (i % 3) * 4; // stagger distances: 5, 9, 13
-    const cx = centerX + Math.round(Math.cos(angle) * dist);
-    const cy = centerY + Math.round(Math.sin(angle) * dist);
-    return { xMin: cx - 3, xMax: cx + 3, yMin: cy - 3, yMax: cy + 3 };
-  });
-
-  // Use a deterministic RNG for seeding so results are repeatable
+  // Deterministic RNG
   let seedRng = 12345;
   function nextRng() {
     seedRng ^= seedRng << 13;
@@ -52,58 +44,75 @@ function seedAgents(worldState) {
     return (seedRng >>> 0) / 4294967296;
   }
 
-  DEMO_AGENTS.forEach((def, index) => {
-    const region = regions[index % regions.length];
-
-    // Find a grassland tile in this region
-    let startX, startY;
-    let found = false;
-    for (let attempt = 0; attempt < 200; attempt++) {
-      const tx = Math.floor(region.xMin + nextRng() * (region.xMax - region.xMin));
-      const ty = Math.floor(region.yMin + nextRng() * (region.yMax - region.yMin));
+  // Find valid grassland tile near a target location
+  function findGrassland(cx, cy, radius) {
+    for (let attempt = 0; attempt < 300; attempt++) {
+      const angle = nextRng() * Math.PI * 2;
+      const dist = nextRng() * radius;
+      const tx = Math.round(cx + Math.cos(angle) * dist);
+      const ty = Math.round(cy + Math.sin(angle) * dist);
       const tile = tiles.get(`${tx},${ty}`);
       if (tile && tile.biome === 'grassland' && !tile.owner) {
-        startX = tx;
-        startY = ty;
-        found = true;
-        break;
+        return { x: tx, y: ty };
       }
     }
+    return { x: cx, y: cy };
+  }
 
-    if (!found) {
-      // Fallback: just pick any buildable unclaimed tile
-      for (const tile of tiles.values()) {
-        if (WorldGen.isBuildable(tile.biome) && !tile.owner) {
-          startX = tile.x;
-          startY = tile.y;
-          found = true;
-          break;
-        }
-      }
+  // Create settlement centers and place town halls
+  const settlementCenters = SETTLEMENTS.map((s, si) => {
+    const px = Math.floor(s.cx * width);
+    const py = Math.floor(s.cy * height);
+    const pos = findGrassland(px, py, 10);
+
+    // Store settlement info for agents to reference
+    const settlement = { id: si, name: s.name, cx: pos.x, cy: pos.y };
+    worldState.settlements.push(settlement);
+
+    // Place a town hall at the settlement center
+    const hqType = 'town_hall';
+    const hqTileId = `${pos.x},${pos.y}`;
+    const hqTile = tiles.get(hqTileId);
+    if (hqTile && !hqTile.building) {
+      hqTile.owner = `settlement_${si}`;
+      const hqBuilding = new Building({
+        type: hqType, x: pos.x, y: pos.y,
+        owner: `settlement_${si}`, progress: 1.0, startTick: 0,
+      });
+      hqTile.building = hqBuilding;
+      worldState.buildingsList.push(hqBuilding);
     }
 
-    if (!found) {
-      startX = Math.floor(width / 2);
-      startY = Math.floor(height / 2);
-    }
+    console.log(`[Seed] Settlement "${s.name}" center at (${pos.x}, ${pos.y})`);
+    return settlement;
+  });
+
+  // Spawn agents assigned to their settlements
+  DEMO_AGENTS.forEach((def, index) => {
+    const settlementIdx = AGENT_SETTLEMENTS[index];
+    const settlement = settlementCenters[settlementIdx];
+
+    // Spawn near settlement center
+    const pos = findGrassland(settlement.cx, settlement.cy, 8);
 
     const agent = new Agent({
       name: def.name,
       faction: def.faction,
       personality: def.personality,
-      x: startX,
-      y: startY,
+      x: pos.x,
+      y: pos.y,
       work_balance: 0,
       resources: { food: 10, wood: 10, stone: 5, gold: 0 },
     });
+    agent._settlementId = settlementIdx; // assign to settlement
 
     worldState.agents.set(agent.id, agent);
 
-    // Claim the starting tile and its neighbors (3x3 area)
+    // Claim 3x3 starting area
     for (let dy = -1; dy <= 1; dy++) {
       for (let dx = -1; dx <= 1; dx++) {
-        const tx = startX + dx;
-        const ty = startY + dy;
+        const tx = pos.x + dx;
+        const ty = pos.y + dy;
         const tileId = `${tx},${ty}`;
         const tile = tiles.get(tileId);
         if (tile && !tile.owner && WorldGen.isBuildable(tile.biome)) {
@@ -113,64 +122,18 @@ function seedAgents(worldState) {
       }
     }
 
-    // Place the faction HQ building on the starting tile
-    const hqType = Building.getHQ(def.faction);
-    const hqTileId = `${startX},${startY}`;
-    const hqTile = tiles.get(hqTileId);
-
-    const hqBuilding = new Building({
-      type: hqType,
-      x: startX,
-      y: startY,
-      owner: agent.id,
-      progress: 1.0,
-      startTick: 0,
-    });
-
-    if (hqTile) {
-      hqTile.building = hqBuilding;
-    }
-    agent.buildings.push(hqBuilding);
-    worldState.buildingsList.push(hqBuilding);
-
     worldState.events.push({
       tick: 0,
       type: 'agent_spawned',
       agent: def.name,
-      message: `${def.name} the ${def.faction} (${def.personality}) has entered the world at (${startX}, ${startY})!`,
+      message: `${def.name} the ${def.faction} (${def.personality}) joined ${settlement.name} at (${pos.x}, ${pos.y})!`,
     });
 
-    console.log(`[Seed] ${def.name} (${def.faction}/${def.personality}) spawned at (${startX}, ${startY}) with ${agent.owned_tiles.length} tiles.`);
+    console.log(`[Seed] ${def.name} (${def.faction}/${def.personality}) spawned at (${pos.x}, ${pos.y}) in ${settlement.name}`);
   });
 
-  console.log(`[Seed] ${DEMO_AGENTS.length} demo agents created.`);
+  console.log(`[Seed] ${DEMO_AGENTS.length} demo agents in ${SETTLEMENTS.length} settlements.`);
   return worldState;
-}
-
-// If run directly as a script, generate world and seed
-if (require.main === module) {
-  console.log('[Seed] Generating world...');
-  const world = WorldGen.generate(200, 150, 42);
-  const worldState = {
-    tiles: world.tiles,
-    width: world.width,
-    height: world.height,
-    seed: world.seed,
-    tick: 0,
-    agents: new Map(),
-    buildingsList: [],
-    events: [],
-    leaderboard: [],
-  };
-  seedAgents(worldState);
-  console.log('[Seed] Done. World state ready.');
-
-  // Print summary
-  let claimedCount = 0;
-  for (const t of worldState.tiles.values()) {
-    if (t.owner) claimedCount++;
-  }
-  console.log(`[Seed] ${claimedCount} tiles claimed, ${worldState.buildingsList.length} buildings placed.`);
 }
 
 module.exports = { seedAgents, DEMO_AGENTS };

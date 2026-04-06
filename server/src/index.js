@@ -45,6 +45,7 @@ function saveWorldState(ws) {
         mood: agent.mood, owned_tiles: [...agent.owned_tiles],
         message: agent.message || '', idle_ticks: agent.idle_ticks || 0,
         last_action_tick: agent.last_action_tick || 0,
+        _settlementId: agent._settlementId || 0,
       });
     }
     const buildings = ws.buildingsList.map(b => b.toJSON());
@@ -53,6 +54,7 @@ function saveWorldState(ws) {
       seed: ws.seed, width: ws.width, height: ws.height,
       agents, buildings, events: (ws.events || []).slice(-200),
       leaderboard: ws.leaderboard || [],
+      settlements: ws.settlements || [],
     };
     fs.writeFileSync(STATE_FILE, JSON.stringify(state));
     console.log(`[Save] Tick:${ws.tick} Agents:${agents.length} Buildings:${buildings.length}`);
@@ -69,7 +71,8 @@ function loadWorldState() {
     // Regenerate deterministic terrain from seed
     const world = WorldGen.generate(state.width || WORLD_WIDTH, state.height || WORLD_HEIGHT, state.seed || WORLD_SEED);
     const ws = { tiles: world.tiles, width: world.width, height: world.height, seed: world.seed,
-      tick: state.tick || 0, agents: new Map(), buildingsList: [], events: state.events || [], leaderboard: state.leaderboard || [] };
+      tick: state.tick || 0, agents: new Map(), buildingsList: [], events: state.events || [], leaderboard: state.leaderboard || [],
+      settlements: state.settlements || [] };
 
     const Agent = require('./models/Agent');
     const Building = require('./models/Building');
@@ -82,6 +85,7 @@ function loadWorldState() {
           work_balance: ad.work_balance || 0, resources: ad.resources || { food: 10, wood: 10, stone: 5, gold: 0 },
           mood: ad.mood || 'idle', owned_tiles: ad.owned_tiles || [], buildings: [],
           message: ad.message || '', idle_ticks: ad.idle_ticks || 0, last_action_tick: ad.last_action_tick || 0 });
+        agent._settlementId = ad._settlementId || 0;
         ws.agents.set(agent.id, agent);
       } catch (e) { console.warn(`[Load] Agent ${ad.name} failed:`, e.message); }
     }
@@ -143,7 +147,7 @@ if (loadedState) {
   console.log('[Server] Generating new world...');
   const world = WorldGen.generate(WORLD_WIDTH, WORLD_HEIGHT, WORLD_SEED);
   worldState = { tiles: world.tiles, width: world.width, height: world.height, seed: world.seed,
-    tick: 0, agents: new Map(), buildingsList: [], events: [], leaderboard: [], _dirtyTiles: new Set() };
+    tick: 0, agents: new Map(), buildingsList: [], events: [], leaderboard: [], settlements: [], _dirtyTiles: new Set() };
   console.log('[Server] Seeding demo agents...');
   seedAgents(worldState);
 }

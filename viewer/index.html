@@ -4246,8 +4246,9 @@ for(const d of details){
 const sortedBuildings=[...S.buildings];
 for(const b of sortedBuildings){
   if(b.x+(b.width||1)<sx||b.x>=ex||b.y+(b.height||1)<sy||b.y>=ey)continue;
-  const bph=b.ph||(b.height||1)*ts;
-  renderItems.push({type:'building',b,sortY:b.y*ts+bph});// sort by visual bottom edge
+  // Sort by building footprint bottom edge (tile-based), not visual pixel height
+  const footprintBottom=(b.y+(b.height||1))*ts;
+  renderItems.push({type:'building',b,sortY:footprintBottom});
 }
 // Agents — compute animation state
 const agentRenderData=[];

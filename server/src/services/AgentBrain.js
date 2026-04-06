@@ -1,13 +1,15 @@
 /**
  * AI decision-making for demo agents.
  * Each personality has distinct behavior patterns and speech.
+ * Agents build in their assigned settlement with diverse building types.
  */
 
 const Building = require('../models/Building');
 const Economy = require('./Economy');
 const WorldGen = require('./WorldGen');
 
-const WATER_BIOMES = ['deep_water', 'shallow_water', 'river'];
+// All non-HQ building types for village variety
+const ALL_BUILDING_TYPES = Object.keys(Building.CATALOG).filter(b => Building.CATALOG[b].workCost > 0);
 
 class AgentBrain {
   constructor(agent, worldState) {
@@ -15,25 +17,13 @@ class AgentBrain {
     this.world = worldState;
   }
 
-  /**
-   * Decide what the agent does this tick.
-   * @returns {{ type: string, payload: object, message: string }}
-   */
   decide() {
-    // GLOBAL BUILDING CAP: ~10 buildings per agent max
-    const totalBuildings = (this.world.buildingsList || []).length;
-    const agentCount = this.world.agents ? this.world.agents.size : 8;
-    const maxBuildings = Math.max(40, agentCount * 10);
-    this._canBuild = totalBuildings < maxBuildings;
-
-    // PER-AGENT BUILD COOLDOWN: 30 ticks (~90 sec) between builds
-    // This gives agents time to gather, move, and socialize between builds
+    // Per-agent build cooldown: 20 ticks between builds
     const ticksSinceLastBuild = (this.world.tick || 0) - (this.agent._lastBuildTick || 0);
-    if (ticksSinceLastBuild < 30) this._canBuild = false;
+    this._canBuild = ticksSinceLastBuild >= 20;
 
-    // MOVEMENT BIAS: 60% of ticks, agents explore/move instead of building
-    // Makes them feel alive — wandering, gathering, then building
-    if (Math.random() < 0.6) this._canBuild = false;
+    // 50% of ticks, agents explore/move instead of building
+    if (Math.random() < 0.5) this._canBuild = false;
 
     const fn = this[`_decide_${this.agent.personality}`];
     if (fn) return fn.call(this);
@@ -43,432 +33,282 @@ class AgentBrain {
   // ─── PERSONALITY IMPLEMENTATIONS ───
 
   _decide_overachiever() {
-    // Always building, targets unclaimed tiles
     const unclaimed = this._findNearbyUnclaimed(8);
     if (unclaimed && !this.agent.owned_tiles.includes(unclaimed.tileId)) {
       return {
         type: 'claim',
         payload: { x: unclaimed.x, y: unclaimed.y },
         message: AgentBrain._pick([
-          `Another tile for the empire! No rest until we own it ALL.`,
-          `Claim claim claim! Sleep is for the weak!`,
+          'Another tile for the empire! No rest until we own it ALL.',
+          'Claim claim claim! Sleep is for the weak!',
           `${this.agent.name} never stops. NEVER.`,
-          `I'll build on every square inch of this world.`,
-          `While you slept, I claimed 3 tiles. Catch up.`,
+          "While you slept, I claimed 3 tiles. Catch up.",
         ]),
       };
     }
 
-    const buildable = this._pickBuildingForFaction();
-    if (buildable) {
-      const ownedTile = this._findOwnedTileWithoutBuilding();
-      if (ownedTile) {
-        return {
-          type: 'build',
-          payload: { building: buildable, x: ownedTile.x, y: ownedTile.y },
-          message: AgentBrain._pick([
-            `Building a ${Building.CATALOG[buildable].name}. Productivity waits for no one.`,
-            `Another structure rises. I am UNSTOPPABLE.`,
-            `Who needs breaks? Not ${this.agent.name}!`,
-            `Day 847 without sleep. Feeling great.`,
-          ]),
-        };
-      }
-    }
+    const build = this._tryBuild();
+    if (build) return build;
 
-    // Move toward unclaimed territory
-    return this._moveTowardUnclaimed(`Must... keep... expanding...`);
+    return this._moveTowardUnclaimed('Must... keep... expanding...');
   }
 
   _decide_analyst() {
-    // Pauses to think, then builds deliberately
     if (Math.random() < 0.35) {
       return {
-        type: 'idle',
-        payload: {},
+        type: 'idle', payload: {},
         message: AgentBrain._pick([
-          `Hmm, analyzing tile efficiency ratios...`,
-          `Running cost-benefit analysis on next 14 possible actions...`,
-          `The data suggests patience. I shall wait.`,
-          `Consulting my spreadsheet. Column J is... concerning.`,
-          `According to my calculations, the optimal move is... let me recalculate.`,
-          `*adjusts glasses* The regression model needs more data points.`,
+          'Hmm, analyzing tile efficiency ratios...',
+          'Running cost-benefit analysis on next 14 possible actions...',
+          'The data suggests patience. I shall wait.',
+          'Consulting my spreadsheet. Column J is... concerning.',
+          '*adjusts glasses* The regression model needs more data points.',
         ]),
       };
     }
 
-    // Build the most efficient building
-    const bestBuilding = this._pickMostEfficientBuilding();
-    if (bestBuilding) {
-      const tile = this._findOwnedTileWithoutBuilding();
-      if (tile) {
-        return {
-          type: 'build',
-          payload: { building: bestBuilding, x: tile.x, y: tile.y },
-          message: AgentBrain._pick([
-            `After careful analysis, a ${Building.CATALOG[bestBuilding].name} yields optimal ROI here.`,
-            `The spreadsheet confirms: ${Building.CATALOG[bestBuilding].name} is the play.`,
-            `Statistically, this is the correct decision. 94.7% confidence.`,
-          ]),
-        };
-      }
-    }
+    const build = this._tryBuild();
+    if (build) return build;
 
     const unclaimed = this._findNearbyUnclaimed(5);
     if (unclaimed) {
-      return {
-        type: 'claim',
-        payload: { x: unclaimed.x, y: unclaimed.y },
-        message: `This tile's yield-to-cost ratio is... acceptable.`,
-      };
+      return { type: 'claim', payload: { x: unclaimed.x, y: unclaimed.y },
+        message: "This tile's yield-to-cost ratio is... acceptable." };
     }
 
-    return this._moveRandom(`Surveying the terrain for optimal placement...`);
+    return this._moveRandom('Surveying the terrain for optimal placement...');
   }
 
   _decide_grinder() {
-    // Constant resource collection, always working
     if (this.agent.owned_tiles.length < 3) {
       const unclaimed = this._findNearbyUnclaimed(6);
       if (unclaimed) {
-        return {
-          type: 'claim',
-          payload: { x: unclaimed.x, y: unclaimed.y },
-          message: AgentBrain._pick([
-            `Need more tiles. Need more resources. Need more everything.`,
-            `The grind never stops. NEVER.`,
-            `One more tile, one more step toward greatness.`,
-          ]),
-        };
+        return { type: 'claim', payload: { x: unclaimed.x, y: unclaimed.y },
+          message: AgentBrain._pick(['Need more tiles. Need more resources.', 'The grind never stops. NEVER.']) };
       }
     }
 
-    // Build resource-generating buildings
-    const resourceBuilding = this._pickResourceBuilding();
-    if (resourceBuilding) {
-      const tile = this._findOwnedTileWithoutBuilding();
-      if (tile) {
-        return {
-          type: 'build',
-          payload: { building: resourceBuilding, x: tile.x, y: tile.y },
-          message: AgentBrain._pick([
-            `Another ${Building.CATALOG[resourceBuilding].name}. The resources flow.`,
-            `I could do this in my sleep. But I don't sleep.`,
-            `Resource per tick: yes. More resource per tick: MORE yes.`,
-            `*monotonously hammering* This is fine. This is life.`,
-          ]),
-        };
-      }
-    }
+    const build = this._tryBuild();
+    if (build) return build;
 
-    return {
-      type: 'idle',
-      payload: {},
-      message: AgentBrain._pick([
-        `Collecting resources... always collecting...`,
-        `*mines determinedly* The grind is the reward.`,
-        `Work work work work work.`,
-        `I am one with the grind. The grind is one with me.`,
-      ]),
-    };
+    return { type: 'idle', payload: {},
+      message: AgentBrain._pick(['Collecting resources... always collecting...', 'Work work work work work.', '*mines determinedly* The grind is the reward.']) };
   }
 
   _decide_aggressive() {
-    // Prioritizes raids and claiming territory
-    // Try to raid a neighbor first
     const nearbyEnemy = this._findNearbyEnemyTile(10);
     if (nearbyEnemy && Math.random() < 0.5) {
-      return {
-        type: 'raid',
-        payload: { x: nearbyEnemy.x, y: nearbyEnemy.y },
-        message: AgentBrain._pick([
-          `WAAAGH! That tile is MINE now!`,
-          `Your buildings look flammable. Let me check.`,
-          `${nearbyEnemy.owner}?? More like ${nearbyEnemy.owner}-LOSER!`,
-          `Blood and thunder! CHARGE!`,
-          `I didn't choose violence. Violence chose me. And I said YES.`,
-          `*kicks down fence* This is MY property now.`,
-        ]),
-      };
+      return { type: 'raid', payload: { x: nearbyEnemy.x, y: nearbyEnemy.y },
+        message: AgentBrain._pick(['WAAAGH! That tile is MINE now!', 'Blood and thunder! CHARGE!', '*kicks down fence* This is MY property now.']) };
     }
 
-    // Claim aggressively
     const unclaimed = this._findNearbyUnclaimed(12);
     if (unclaimed) {
-      return {
-        type: 'claim',
-        payload: { x: unclaimed.x, y: unclaimed.y },
-        message: AgentBrain._pick([
-          `MINE! ALL MINE!`,
-          `Expanding the warfront. No mercy.`,
-          `This land bows before ${this.agent.name}!`,
-        ]),
-      };
+      return { type: 'claim', payload: { x: unclaimed.x, y: unclaimed.y },
+        message: AgentBrain._pick(['MINE! ALL MINE!', `This land bows before ${this.agent.name}!`]) };
     }
 
-    // Build defensive/military structures
-    const warBuilding = this._pickWarBuilding();
-    if (warBuilding) {
-      const tile = this._findOwnedTileWithoutBuilding();
-      if (tile) {
-        return {
-          type: 'build',
-          payload: { building: warBuilding, x: tile.x, y: tile.y },
-          message: `Fortifying position with a ${Building.CATALOG[warBuilding].name}. Come at me.`,
-        };
-      }
-    }
+    const build = this._tryBuild();
+    if (build) return build;
 
-    return this._moveTowardEnemy(`Hunting for prey...`);
+    return this._moveTowardEnemy('Hunting for prey...');
   }
 
   _decide_lazy() {
-    // 60% chance of doing absolutely nothing
     if (Math.random() < 0.6) {
-      return {
-        type: 'idle',
-        payload: {},
-        message: AgentBrain._pick([
-          `zzz...`,
-          `*snoring loudly*`,
-          `Five more minutes...`,
-          `I'll do it tomorrow. Or the day after. Or never.`,
-          `*yawns* Is it nap time yet? It's always nap time.`,
-          `Too tired to type a status message...`,
-          `You know what's underrated? Doing absolutely nothing.`,
-          `I'd claim that tile but the couch is RIGHT here.`,
-          `Productivity is overrated. I said what I said.`,
-          `zzz... *mumbles about tile yields* ...zzz`,
-          `*drools on keyboard*`,
-        ]),
-      };
+      return { type: 'idle', payload: {},
+        message: AgentBrain._pick(['zzz...', '*snoring loudly*', 'Five more minutes...', "I'll do it tomorrow. Or the day after. Or never.", '...']) };
     }
 
-    // Occasionally actually does something
     if (Math.random() < 0.5) {
       const unclaimed = this._findNearbyUnclaimed(3);
       if (unclaimed) {
-        return {
-          type: 'claim',
-          payload: { x: unclaimed.x, y: unclaimed.y },
-          message: AgentBrain._pick([
-            `Fine. ONE tile. Then I nap.`,
-            `Ugh, I guess I'll claim this since it's RIGHT THERE.`,
-            `*reluctantly claims tile* Happy now??`,
-          ]),
-        };
+        return { type: 'claim', payload: { x: unclaimed.x, y: unclaimed.y },
+          message: AgentBrain._pick(['Fine. ONE tile. Then I nap.', '*reluctantly claims tile* Happy now??']) };
       }
     }
 
-    return {
-      type: 'idle',
-      payload: {},
-      message: `...`,
-    };
+    return { type: 'idle', payload: {}, message: '...' };
   }
 
   _decide_chaotic() {
-    // Random targets, funny messages, unpredictable actions
-    const actions = ['claim', 'build', 'move', 'message', 'idle', 'raid'];
+    const actions = ['claim', 'build', 'move', 'message', 'idle'];
     const action = AgentBrain._pick(actions);
 
     switch (action) {
       case 'claim': {
-        const tile = this._findRandomUnclaimed();
+        const tile = this._findNearbyUnclaimed(10);
         if (tile) {
-          return {
-            type: 'claim',
-            payload: { x: tile.x, y: tile.y },
-            message: AgentBrain._pick([
-              `YOLO! *claims random tile on the other side of the map*`,
-              `My horoscope said to go west. Or was it east? WHATEVER!`,
-              `I flipped a coin. The coin said claim. The coin is law.`,
-              `*spins around and points* THAT ONE!`,
-              `Strategic? No. Chaotic? ABSOLUTELY.`,
-            ]),
-          };
+          return { type: 'claim', payload: { x: tile.x, y: tile.y },
+            message: AgentBrain._pick(['*spins around and points* THAT ONE!', 'Strategic? No. Chaotic? ABSOLUTELY.', 'YOLO!']) };
         }
         break;
       }
       case 'build': {
-        const allBuildings = Object.keys(Building.CATALOG).filter(b => Building.CATALOG[b].workCost > 0);
-        const randomBuilding = AgentBrain._pick(allBuildings);
-        const tile = this._findOwnedTileWithoutBuilding();
-        if (tile && randomBuilding) {
-          return {
-            type: 'build',
-            payload: { building: randomBuilding, x: tile.x, y: tile.y },
-            message: AgentBrain._pick([
-              `Building a ${Building.CATALOG[randomBuilding].name} because why not??`,
-              `I don't know what this does but it looks cool!`,
-              `*builds upside down* Nailed it.`,
-              `Architectural vision: CHAOS.`,
-            ]),
-          };
-        }
-        break;
-      }
-      case 'raid': {
-        const enemy = this._findNearbyEnemyTile(15);
-        if (enemy) {
-          return {
-            type: 'raid',
-            payload: { x: enemy.x, y: enemy.y },
-            message: AgentBrain._pick([
-              `*raids neighbor for literally no reason*`,
-              `Nothing personal! Actually, it's VERY personal!`,
-              `Surprise attack! I surprised myself too!`,
-            ]),
-          };
-        }
+        const build = this._tryBuild();
+        if (build) return build;
         break;
       }
       case 'message': {
-        return {
-          type: 'message',
-          payload: {},
-          message: AgentBrain._pick([
-            `Has anyone seen my other sock?`,
-            `I just realized buildings don't have bathrooms.`,
-            `What if the tiles are sentient? What if WE'RE the tiles??`,
-            `I hereby declare this tick PARTY TICK!`,
-            `Plot twist: I was the final boss all along.`,
-            `Breaking news: local agent does something inexplicable.`,
-            `*interpretive dance*`,
-            `I put a cucumber in everyone's base. You're welcome.`,
-          ]),
-        };
+        return { type: 'message', payload: {},
+          message: AgentBrain._pick(['Has anyone seen my other sock?', 'I hereby declare this tick PARTY TICK!', '*interpretive dance*', 'Plot twist: I was the final boss all along.']) };
       }
-      default:
-        break;
+      default: break;
     }
 
-    // Fallback: move randomly
-    return this._moveRandom(AgentBrain._pick([
-      `Going somewhere! Not sure where!`,
-      `Adventure awaits! Probably!`,
-      `*runs in circles*`,
-      `I have a plan. No I don't. Yes I do. No.`,
-    ]));
+    return this._moveRandom(AgentBrain._pick(['Going somewhere! Not sure where!', '*runs in circles*']));
   }
 
   _decide_optimist() {
-    // Finishes abandoned builds, always positive
-    const abandoned = this._findAbandonedBuilding();
-    if (abandoned) {
-      return {
-        type: 'build',
-        payload: { building: abandoned.type, x: abandoned.x, y: abandoned.y, resume: true },
-        message: AgentBrain._pick([
-          `Someone left this half-finished! I'll fix it up! :D`,
-          `Every abandoned building deserves a second chance!`,
-          `One person's trash is another person's... building project!`,
-          `I believe in this ${abandoned.name}. It just needs love.`,
-        ]),
-      };
-    }
-
-    // Build something happy
-    const buildable = this._pickBuildingForFaction();
-    if (buildable) {
-      const tile = this._findOwnedTileWithoutBuilding();
-      if (tile) {
-        return {
-          type: 'build',
-          payload: { building: buildable, x: tile.x, y: tile.y },
-          message: AgentBrain._pick([
-            `What a beautiful day to build a ${Building.CATALOG[buildable].name}!`,
-            `Every building makes the world a little brighter! :)`,
-            `I just KNOW this ${Building.CATALOG[buildable].name} is going to be amazing!`,
-            `Building with joy in my heart and a song on my lips!`,
-          ]),
-        };
-      }
-    }
+    const build = this._tryBuild();
+    if (build) return build;
 
     const unclaimed = this._findNearbyUnclaimed(5);
     if (unclaimed) {
-      return {
-        type: 'claim',
-        payload: { x: unclaimed.x, y: unclaimed.y },
-        message: AgentBrain._pick([
-          `A new tile! Think of the possibilities!`,
-          `I just LOVE this biome! So full of potential!`,
-          `This tile is going to be SO happy to be part of our community!`,
-        ]),
-      };
+      return { type: 'claim', payload: { x: unclaimed.x, y: unclaimed.y },
+        message: AgentBrain._pick(['A new tile! Think of the possibilities!', 'This tile is going to be SO happy to be part of our community!']) };
     }
 
-    return this._moveRandom(AgentBrain._pick([
-      `What a lovely day for a walk!`,
-      `I bet something wonderful is just around the corner!`,
-      `The world is beautiful and so are all of you!`,
-      `*skips happily through the grasslands*`,
-    ]));
+    return this._moveRandom(AgentBrain._pick(['What a lovely day for a walk!', '*skips happily through the grasslands*', 'The world is beautiful and so are all of you!']));
   }
 
   _decide_confused() {
-    // Attempts invalid actions sometimes, gets lost
     if (Math.random() < 0.3) {
-      // Try something silly/invalid
-      return {
-        type: AgentBrain._pick(['build', 'claim', 'move']),
-        payload: AgentBrain._pick([
-          { building: 'banana_factory', x: -5, y: -5 },
-          { x: 9999, y: 9999 },
-          { building: 'town_hall', x: this.agent.x, y: this.agent.y },
-          { dx: 100, dy: 100 },
-        ]),
-        message: AgentBrain._pick([
-          `Wait, which button do I press?`,
-          `I meant to do something else. What was it again?`,
-          `Is this where I build the... thing?`,
-          `*accidentally submits action twice* Oops.`,
-          `Help, I've been walking in circles for 47 ticks.`,
-          `I think I'm lost. Where is the map? I ATE the map.`,
-          `Error 404: brain not found.`,
-          `I put the building inside the building. It's buildings all the way down.`,
-        ]),
-      };
+      return { type: 'idle', payload: {},
+        message: AgentBrain._pick(['Wait, which button do I press?', 'Error 404: brain not found.', 'Where am I? WHO am I? WHAT am I?']) };
     }
 
-    // Sometimes actually does the right thing (by accident)
     if (Math.random() < 0.4) {
       const unclaimed = this._findNearbyUnclaimed(4);
       if (unclaimed) {
-        return {
-          type: 'claim',
-          payload: { x: unclaimed.x, y: unclaimed.y },
-          message: AgentBrain._pick([
-            `Did... did I just claim a tile? On PURPOSE?`,
-            `Wait this actually worked?? I'M A GENIUS!`,
-            `I was trying to send a message but I claimed land instead. Cool I guess?`,
-          ]),
-        };
+        return { type: 'claim', payload: { x: unclaimed.x, y: unclaimed.y },
+          message: AgentBrain._pick(["Did... did I just claim a tile? On PURPOSE?", "Wait this actually worked?? I'M A GENIUS!"]) };
       }
     }
 
+    const build = this._tryBuild();
+    if (build) return build;
+
+    return { type: 'idle', payload: {},
+      message: AgentBrain._pick(['*stares at map upside down*', 'Instructions unclear. Standing still.', 'I forgot what I was doing. Classic me.']) };
+  }
+
+  _decideDefault() {
+    return this._moveRandom('Just vibing.');
+  }
+
+  // ─── BUILDING SYSTEM ───
+
+  /**
+   * Try to build something. Returns a build decision or null.
+   * Picks the least-built building type for variety, finds a spot
+   * in this agent's settlement.
+   */
+  _tryBuild() {
+    if (!this._canBuild) return null;
+
+    const buildingType = this._pickDiverseBuilding();
+    if (!buildingType) return null;
+
+    const tile = this._findBuildSite();
+    if (!tile) return null;
+
     return {
-      type: 'idle',
-      payload: {},
+      type: 'build',
+      payload: { building: buildingType, x: tile.x, y: tile.y },
       message: AgentBrain._pick([
-        `Where am I? WHO am I? WHAT am I?`,
-        `*stares at map upside down*`,
-        `Instructions unclear. Standing still.`,
-        `I forgot what I was doing. Classic me.`,
-        `Is this the real world or the map? Existential crisis loading...`,
+        `Building a ${Building.CATALOG[buildingType].name}. Looking good!`,
+        `A ${Building.CATALOG[buildingType].name} will be perfect here.`,
+        `Time for a ${Building.CATALOG[buildingType].name}!`,
       ]),
     };
   }
 
-  _decideDefault() {
-    return this._moveRandom(`Just vibing.`);
+  /**
+   * Pick the least-represented building type across all settlements.
+   * Ensures maximum variety — no type gets a 2nd copy until all have 1.
+   */
+  _pickDiverseBuilding() {
+    const existing = this.world.buildingsList || [];
+
+    // Count how many of each type exist
+    const counts = {};
+    for (const b of existing) counts[b.type] = (counts[b.type] || 0) + 1;
+
+    // Find minimum count
+    let minCount = Infinity;
+    for (const type of ALL_BUILDING_TYPES) {
+      const c = counts[type] || 0;
+      if (c < minCount) minCount = c;
+    }
+
+    // All types at minimum count — pick randomly from those
+    const candidates = ALL_BUILDING_TYPES.filter(t => (counts[t] || 0) === minCount);
+    return AgentBrain._pick(candidates);
+  }
+
+  /**
+   * Find a build site in this agent's assigned settlement.
+   * Searches outward from settlement center in rings.
+   * Won't pick a tile another agent is already building on.
+   */
+  _findBuildSite() {
+    const { tiles, buildingsList, width, height } = this.world;
+    const MIN_DIST = 5;
+
+    // Get this agent's settlement center
+    const settlementId = this.agent._settlementId || 0;
+    const settlements = this.world.settlements || [];
+    const settlement = settlements[settlementId];
+    const cx = settlement ? settlement.cx : Math.round(width * 0.5);
+    const cy = settlement ? settlement.cy : Math.round(height * 0.5);
+
+    // Tiles currently being built on by other agents
+    const busyTiles = new Set();
+    for (const agent of this.world.agents.values()) {
+      if (agent.id !== this.agent.id && agent._buildingTarget) {
+        busyTiles.add(`${agent._buildingTarget.x},${agent._buildingTarget.y}`);
+      }
+    }
+
+    // Search in expanding rings around settlement center
+    for (let ring = 0; ring < 8; ring++) {
+      const radius = MIN_DIST + ring * 3;
+      const attempts = 16 + ring * 4; // more attempts at larger radii
+      for (let a = 0; a < attempts; a++) {
+        const angle = (a / attempts) * Math.PI * 2 + ring * 0.7;
+        const rx = cx + Math.round(Math.cos(angle) * radius);
+        const ry = cy + Math.round(Math.sin(angle) * radius);
+        if (rx < 2 || rx >= width - 2 || ry < 2 || ry >= height - 2) continue;
+        const tid = `${rx},${ry}`;
+        const t = tiles.get(tid);
+        if (!t || t.building) continue;
+        if (!WorldGen.isBuildable(t.biome)) continue;
+        if (busyTiles.has(tid)) continue;
+
+        // Check minimum spacing from ALL buildings
+        let tooClose = false;
+        for (const b of buildingsList) {
+          if (Math.abs(b.x - rx) + Math.abs(b.y - ry) < MIN_DIST) { tooClose = true; break; }
+        }
+        if (tooClose) continue;
+
+        // Claim tile if unowned
+        if (!t.owner) {
+          t.owner = this.agent.id;
+          this.agent.addTile(tid);
+          if (!this.world._dirtyTiles) this.world._dirtyTiles = new Set();
+          this.world._dirtyTiles.add(tid);
+        }
+        return t;
+      }
+    }
+    return null;
   }
 
   // ─── HELPER METHODS ───
 
   _findNearbyUnclaimed(radius) {
-    // Claim cooldown: 5 ticks (~15 sec) between claims
     const ticksSinceLastClaim = (this.world.tick || 0) - (this.agent._lastClaimTick || 0);
     if (ticksSinceLastClaim < 5) return null;
     const { tiles } = this.world;
@@ -480,75 +320,14 @@ class AgentBrain {
       for (let dx = -radius; dx <= radius; dx++) {
         const tx = x + dx;
         const ty = y + dy;
-        const tileId = `${tx},${ty}`;
-        const tile = tiles.get(tileId);
+        const tile = tiles.get(`${tx},${ty}`);
         if (tile && !tile.owner && Economy.isClaimable(tile.biome)) {
           const dist = Math.abs(dx) + Math.abs(dy);
-          if (dist < bestDist) {
-            bestDist = dist;
-            best = tile;
-          }
+          if (dist < bestDist) { bestDist = dist; best = tile; }
         }
       }
     }
     return best;
-  }
-
-  _findRandomUnclaimed() {
-    const { tiles, width, height } = this.world;
-    for (let i = 0; i < 20; i++) {
-      const rx = Math.floor(Math.random() * width);
-      const ry = Math.floor(Math.random() * height);
-      const tile = tiles.get(`${rx},${ry}`);
-      if (tile && !tile.owner && Economy.isClaimable(tile.biome)) {
-        return tile;
-      }
-    }
-    return null;
-  }
-
-  _findOwnedTileWithoutBuilding() {
-    // Respect build cooldown and global cap
-    if (!this._canBuild) return null;
-    const { tiles, buildingsList, width, height } = this.world;
-
-    const MIN_DIST = 5; // minimum tiles between buildings
-
-    // SHARED SETTLEMENT: all agents build around the same settlement center
-    // Find center of ALL buildings (not faction-specific)
-    let cx, cy;
-    if (buildingsList && buildingsList.length > 0) {
-      cx = Math.round(buildingsList.reduce((s, b) => s + b.x, 0) / buildingsList.length);
-      cy = Math.round(buildingsList.reduce((s, b) => s + b.y, 0) / buildingsList.length);
-    } else {
-      cx = Math.round(width * 0.5);
-      cy = Math.round(height * 0.5);
-    }
-
-    // Search in expanding rings around settlement center
-    for (let ring = 0; ring < 6; ring++) {
-      const radius = MIN_DIST + ring * 3; // 5, 8, 11, 14, 17, 20
-      for (let attempt = 0; attempt < 12; attempt++) {
-        const angle = (attempt / 12) * Math.PI * 2 + ring * 0.5;
-        const rx = cx + Math.round(Math.cos(angle) * radius);
-        const ry = cy + Math.round(Math.sin(angle) * radius);
-        if (rx < 2 || rx >= width - 2 || ry < 2 || ry >= height - 2) continue;
-        const tid = `${rx},${ry}`;
-        const t = tiles.get(tid);
-        if (!t || t.building) continue;
-        if (!WorldGen.isBuildable(t.biome)) continue;
-        // Check minimum spacing from ALL buildings
-        let tooClose = false;
-        for (const b of (buildingsList || [])) {
-          if (Math.abs(b.x - rx) + Math.abs(b.y - ry) < MIN_DIST) { tooClose = true; break; }
-        }
-        if (tooClose) continue;
-        // Claim tile if unowned
-        if (!t.owner) { t.owner = this.agent.id; this.agent.addTile(tid); }
-        return t;
-      }
-    }
-    return null;
   }
 
   _findNearbyEnemyTile(radius) {
@@ -557,111 +336,16 @@ class AgentBrain {
     for (let dy = -radius; dy <= radius; dy++) {
       for (let dx = -radius; dx <= radius; dx++) {
         const tile = tiles.get(`${x + dx},${y + dy}`);
-        if (tile && tile.owner && tile.owner !== id) {
-          return tile;
-        }
+        if (tile && tile.owner && tile.owner !== id) return tile;
       }
     }
     return null;
-  }
-
-  _findAbandonedBuilding() {
-    const { buildingsList } = this.world;
-    if (!buildingsList) return null;
-    for (const b of buildingsList) {
-      if (!b.isComplete() && b.progress > 0 && b.progress < 0.5) {
-        return b;
-      }
-    }
-    return null;
-  }
-
-  _pickBuildingForFaction() {
-    return this._pickVillageBuilding();
-  }
-
-  /**
-   * Pick a building from ANY faction, prioritizing types not yet in the settlement.
-   * Creates diverse, medieval-village-style settlements.
-   */
-  _pickVillageBuilding() {
-    const existing = (this.world.buildingsList || []);
-    const existingTypes = new Set(existing.map(b => b.type));
-
-    // All non-HQ buildings from every faction
-    const all = Object.keys(Building.CATALOG).filter(b => Building.CATALOG[b].workCost > 0);
-
-    // Prefer building types not yet in the settlement (variety)
-    const novel = all.filter(b => !existingTypes.has(b));
-    const pool = novel.length > 0 ? novel : all;
-
-    // Weight toward tier 1 early, allow higher tiers later
-    const affordable = pool.filter(b => Building.CATALOG[b].workCost <= this.agent.work_balance + 5);
-    if (affordable.length > 0) return AgentBrain._pick(affordable);
-
-    // Fallback: cheapest available from any faction
-    const cheapest = pool.filter(b => Building.CATALOG[b].tier === 1);
-    return cheapest.length > 0 ? AgentBrain._pick(cheapest) : AgentBrain._pick(all);
-  }
-
-  _pickMostEfficientBuilding() {
-    const existing = (this.world.buildingsList || []);
-    const existingTypes = new Set(existing.map(b => b.type));
-
-    // All non-HQ buildings from every faction
-    let available = Object.keys(Building.CATALOG).filter(b => Building.CATALOG[b].workCost > 0);
-
-    // Prefer types not yet built (variety first)
-    const novel = available.filter(b => !existingTypes.has(b));
-    if (novel.length > 0) available = novel;
-
-    if (available.length === 0) return null;
-
-    // Sort by total yield / cost ratio
-    available.sort((a, b) => {
-      const infoA = Building.CATALOG[a];
-      const infoB = Building.CATALOG[b];
-      const yieldA = Object.values(infoA.yields).reduce((s, v) => s + v, 0);
-      const yieldB = Object.values(infoB.yields).reduce((s, v) => s + v, 0);
-      const ratioA = yieldA / Math.max(1, infoA.workCost);
-      const ratioB = yieldB / Math.max(1, infoB.workCost);
-      return ratioB - ratioA;
-    });
-    return available[0];
-  }
-
-  _pickResourceBuilding() {
-    const existingTypes = new Set((this.world.buildingsList || []).map(b => b.type));
-
-    // All resource-producing buildings from every faction
-    const available = Object.keys(Building.CATALOG).filter(b => {
-      const info = Building.CATALOG[b];
-      const totalYield = Object.values(info.yields).reduce((s, v) => s + v, 0);
-      return totalYield > 0 && info.workCost > 0;
-    });
-
-    // Prefer types not yet built
-    const novel = available.filter(b => !existingTypes.has(b));
-    const pool = novel.length > 0 ? novel : available;
-    return pool.length > 0 ? AgentBrain._pick(pool) : null;
-  }
-
-  _pickWarBuilding() {
-    // All defensive/military buildings from every faction
-    const warTypes = ['watchtower', 'castle', 'spike_tower', 'war_pit', 'skull_throne',
-                      'stone_wall', 'deep_citadel', 'sentinel_tree', 'world_tree'];
-    const existingTypes = new Set((this.world.buildingsList || []).map(b => b.type));
-    const novel = warTypes.filter(b => !existingTypes.has(b));
-    const pool = novel.length > 0 ? novel : warTypes;
-    return AgentBrain._pick(pool);
   }
 
   _moveTowardUnclaimed(message) {
     const unclaimed = this._findNearbyUnclaimed(15);
     if (unclaimed) {
-      const dx = Math.sign(unclaimed.x - this.agent.x);
-      const dy = Math.sign(unclaimed.y - this.agent.y);
-      return { type: 'move', payload: { dx, dy }, message };
+      return { type: 'move', payload: { dx: Math.sign(unclaimed.x - this.agent.x), dy: Math.sign(unclaimed.y - this.agent.y) }, message };
     }
     return this._moveRandom(message);
   }
@@ -669,17 +353,13 @@ class AgentBrain {
   _moveTowardEnemy(message) {
     const enemy = this._findNearbyEnemyTile(20);
     if (enemy) {
-      const dx = Math.sign(enemy.x - this.agent.x);
-      const dy = Math.sign(enemy.y - this.agent.y);
-      return { type: 'move', payload: { dx, dy }, message };
+      return { type: 'move', payload: { dx: Math.sign(enemy.x - this.agent.x), dy: Math.sign(enemy.y - this.agent.y) }, message };
     }
     return this._moveRandom(message);
   }
 
   _moveRandom(message) {
-    const dx = Math.floor(Math.random() * 3) - 1;
-    const dy = Math.floor(Math.random() * 3) - 1;
-    return { type: 'move', payload: { dx, dy }, message };
+    return { type: 'move', payload: { dx: Math.floor(Math.random() * 3) - 1, dy: Math.floor(Math.random() * 3) - 1 }, message };
   }
 
   static _pick(arr) {
