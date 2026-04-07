@@ -3031,6 +3031,22 @@ function updateAgentMovement(){
     const isLazy=a.personality==='lazy';
     const speed=isLazy?0.012:0.025;
 
+    // FORCE override client state when server says agent is raiding/celebrating/returning
+    // This must happen BEFORE any state-specific logic, so the agent doesn't get stuck
+    // in a client-side chopping/mining/building state while the server moves them
+    if(S.connected&&(a.mood==='raiding'||a.mood==='celebrating'||a.mood==='returning')){
+      st.state=a.mood;st.target=null;st.timer=0;st.taskCooldown=0;
+      v.tx=a.x/WW;v.ty=a.y/WH;
+      // Smooth move then skip all state-machine logic
+      v.x+=(v.tx-v.x)*0.06;v.y+=(v.ty-v.y)*0.06;// faster speed for raiders
+      continue;
+    }
+    // When agent was raiding but server says they're done, reset to idle
+    if(S.connected&&(st.state==='raiding'||st.state==='celebrating'||st.state==='returning')&&a.mood!=='raiding'&&a.mood!=='celebrating'&&a.mood!=='returning'){
+      st.state='idle';st.taskCooldown=5;
+      v.tx=a.x/WW;v.ty=a.y/WH;
+    }
+
     // When connected + idle: sync position from server
     if(S.connected&&st.state==='idle'){v.tx=a.x/WW;v.ty=a.y/WH}
 
@@ -3042,12 +3058,7 @@ function updateAgentMovement(){
     if(st.state==='idle'){
       if(S.connected){
         // SERVER MODE: pick visual activity based on server mood + nearby terrain
-        // Raiding/celebrating/returning agents sync to server position
-        if(a.mood==='raiding'||a.mood==='celebrating'||a.mood==='returning'){
-          st.state=a.mood;
-          v.tx=a.x/WW;v.ty=a.y/WH;
-          continue;
-        }
+        // (raiding/celebrating/returning already handled by force-override above)
         // Only show building animation for buildings THIS agent owns
         const myBld=S.buildings.find(b=>!b.complete&&b.owner===a.id);
         if(myBld){
