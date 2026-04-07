@@ -3042,9 +3042,9 @@ function updateAgentMovement(){
     if(st.state==='idle'){
       if(S.connected){
         // SERVER MODE: pick visual activity based on server mood + nearby terrain
-        // Raiding/returning agents march to their server position
-        if(a.mood==='raiding'||a.mood==='returning'){
-          st.state=a.mood==='raiding'?'walking_to_tree':'walking_to_rock';// reuse walk anim
+        // Raiding/celebrating/returning agents sync to server position
+        if(a.mood==='raiding'||a.mood==='celebrating'||a.mood==='returning'){
+          st.state=a.mood;
           v.tx=a.x/WW;v.ty=a.y/WH;
           continue;
         }
@@ -3451,8 +3451,8 @@ function updateGameUI(){
   // Minimap
   updateMinimap();
 }
-const STATE_ICONS={idle:'💤',walking_to_tree:'🪓',walking_to_rock:'⛏',walking_to_gold:'🪙',walking_to_fish:'🎣',chopping:'🪓',mining:'⛏',mining_gold:'🪙',building:'🔨',fishing:'🎣',raiding:'⚔️',returning:'🏃'};
-const STATE_LABELS={idle:'Idle',walking_to_tree:'Walking to tree',walking_to_rock:'Walking to rock',walking_to_gold:'Walking to gold',walking_to_fish:'Walking to water',chopping:'Chopping tree',mining:'Mining stone',mining_gold:'Mining gold',building:'Building',fishing:'Fishing',raiding:'Raiding!',returning:'Returning home'};
+const STATE_ICONS={idle:'💤',walking_to_tree:'🪓',walking_to_rock:'⛏',walking_to_gold:'🪙',walking_to_fish:'🎣',chopping:'🪓',mining:'⛏',mining_gold:'🪙',building:'🔨',fishing:'🎣',raiding:'⚔️',celebrating:'🔥',returning:'🏃'};
+const STATE_LABELS={idle:'Idle',walking_to_tree:'Walking to tree',walking_to_rock:'Walking to rock',walking_to_gold:'Walking to gold',walking_to_fish:'Walking to water',chopping:'Chopping tree',mining:'Mining stone',mining_gold:'Mining gold',building:'Building',fishing:'Fishing',raiding:'Raiding!',celebrating:'Celebrating destruction!',returning:'Returning home'};
 function updateMinimap(){
   const mc=document.getElementById('minimap');
   const mx2=mc.getContext('2d');mx2.imageSmoothingEnabled=false;
@@ -4471,7 +4471,41 @@ for(const item of renderItems){
     // Check if agent is on water tile
     const agTx=Math.floor(ad.vx),agTy=Math.floor(ad.vy);
     const agOnWater=(agTx>=0&&agTx<WW&&agTy>=0&&agTy<WH)?(tBiomes[agTy*WW+agTx]===0||tBiomes[agTy*WW+agTx]===1||tBiomes[agTy*WW+agTx]===10):false;
-    drawAgentPixelArt(ctx,ax,ay,ad.a,sel,frame,{walking:ad.isWalking,building:ad.isBuilding,faceLeft:ad.faceLeft,idleFrames:ad.a._idleFrames||0,resting:isResting,carrying,chopping:isChopping2,mining:isMining2,onWater:agOnWater});
+    const isCelebrating=ad.a.mood==='celebrating';
+    const isAgRaiding=ad.a.mood==='raiding';
+    drawAgentPixelArt(ctx,ax,ay,ad.a,sel,frame,{walking:ad.isWalking||isAgRaiding,building:ad.isBuilding,faceLeft:ad.faceLeft,idleFrames:ad.a._idleFrames||0,resting:isResting,carrying,chopping:isChopping2,mining:isMining2,onWater:agOnWater});
+    // Pitchfork + evil dance for celebrating raiders
+    if(isCelebrating){
+      // Body bounce (evil dance)
+      const danceOff=Math.sin(frame*0.4)*3;
+      // Pitchfork (held high, angled)
+      const pfx=ax+8,pfy=ay-20+danceOff;
+      const pfAngle=Math.sin(frame*0.3)*0.3;// wave the pitchfork
+      ctx.save();ctx.translate(pfx,pfy);ctx.rotate(pfAngle);
+      // Handle
+      ctx.fillStyle='#5a3a18';ctx.fillRect(-1,0,2,18);
+      // Prongs (3-pronged fork at top)
+      ctx.fillStyle='#888890';
+      ctx.fillRect(-4,-2,2,6);ctx.fillRect(-1,-4,2,8);ctx.fillRect(2,-2,2,6);
+      // Pointy tips
+      ctx.fillRect(-5,-3,1,2);ctx.fillRect(-1,-5,2,2);ctx.fillRect(3,-3,1,2);
+      ctx.restore();
+      // Angry eyes (red glow)
+      ctx.fillStyle='rgba(255,50,0,0.5)';
+      ctx.fillRect(ax-3,ay-14+danceOff,2,2);ctx.fillRect(ax+2,ay-14+danceOff,2,2);
+      // Evil laugh text bubble (flickering)
+      if(frame%90<50){
+        ctx.font='7px Courier New';ctx.fillStyle='#ff4400';ctx.globalAlpha=0.8;
+        ctx.fillText('BURN!',ax-10,ay-28+danceOff);ctx.globalAlpha=1;
+      }
+    }
+    // Sword drawn for raiding agents marching
+    if(isAgRaiding){
+      const swordX=ax+(ad.faceLeft?-10:10),swordY=ay-12;
+      ctx.fillStyle='#aab0b8';ctx.fillRect(swordX-1,swordY-8,2,10);// blade
+      ctx.fillStyle='#5a3a18';ctx.fillRect(swordX-3,swordY+2,6,2);// crossguard
+      ctx.fillStyle='#6a4a28';ctx.fillRect(swordX-1,swordY+4,2,4);// grip
+    }
     // Highlight circle for pan-to-agent
     if(panHighlight&&panHighlight.id===ad.a.id&&panHighlight.timer>0){
       const hAlpha=0.3+0.3*Math.sin(frame*0.15);
@@ -5021,7 +5055,7 @@ el.innerHTML=[...S.agents].sort((a,b)=>(a.name||'').localeCompare(b.name||'')).m
 const fc=a.faction||'human';
 const st=agentState.get(a.id)||{state:'idle',timer:0};
 const agMood=a.mood||'idle';
-const displayState=(agMood==='raiding'||agMood==='returning')?agMood:st.state;
+const displayState=(agMood==='raiding'||agMood==='celebrating'||agMood==='returning')?agMood:st.state;
 const icon=STATE_ICONS[displayState]||'💤';
 const label=STATE_LABELS[displayState]||'Idle';
 let extra='';

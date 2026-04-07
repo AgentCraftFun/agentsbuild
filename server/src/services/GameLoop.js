@@ -147,8 +147,8 @@ class GameLoop {
   }
 
   async _processAgent(agent, tick, events) {
-    // RAIDING/RETURNING: warfare system controls this agent, skip normal AI
-    if (agent.mood === 'raiding' || agent.mood === 'returning') return;
+    // RAIDING/CELEBRATING/RETURNING: warfare system controls this agent, skip normal AI
+    if (agent.mood === 'raiding' || agent.mood === 'celebrating' || agent.mood === 'returning') return;
 
     // STAY AT BUILDING: if agent is building, keep them there until it's done
     if (agent.mood === 'building' && agent._buildingTarget) {
@@ -557,8 +557,8 @@ class GameLoop {
       const bld = this.world.buildingsList[i];
       if (!bld.burning) continue;
 
-      // Burn damage: lose 2% hp per tick (building destroyed in ~50 ticks / ~50 seconds)
-      bld.hp = Math.max(0, (bld.hp || 1) - 0.02);
+      // Burn damage: lose 8% hp per tick (building destroyed in ~12 ticks / ~12 seconds)
+      bld.hp = Math.max(0, (bld.hp || 1) - 0.08);
 
       if (!this.world._dirtyTiles) this.world._dirtyTiles = new Set();
       this.world._dirtyTiles.add(`${bld.x},${bld.y}`);
@@ -641,25 +641,43 @@ class GameLoop {
           });
         }
 
-        // Return raider home after attack
+        // Position raider at the first burning building to celebrate
         const raider = this.world.agents.get(raid.raiderId);
-        if (raider) {
-          raider.mood = 'returning';
-          raider.message = 'Returning victorious!';
+        if (raider && shuffled.length > 0) {
+          const firstTarget = shuffled[0];
+          raider.x = firstTarget.x + 1;
+          raider.y = firstTarget.y + 1;
+          raider.mood = 'celebrating';
+          raider.message = 'BURN IT ALL! 🔥';
         }
       }
 
-      // Phase 3: Return (tick 30+) — raider walks home, cleanup after 60 ticks
-      if (elapsed > 60) {
+      // Phase 3: Celebration (ticks 30-50) — raider dances near the fire
+      if (elapsed >= 30 && elapsed < 50) {
+        const raider = this.world.agents.get(raid.raiderId);
+        if (raider) {
+          raider.mood = 'celebrating';
+          // Small dance movement — bob back and forth
+          raider.move(elapsed % 2 === 0 ? 1 : -1, 0, this.world.width, this.world.height);
+        }
+        continue;
+      }
+
+      // Phase 4: Return (ticks 50+) — raider walks home, cleanup after 80 ticks
+      if (elapsed > 80) {
         const raider = this.world.agents.get(raid.raiderId);
         if (raider) {
           raider.mood = 'idle';
           raider.message = '';
         }
         war.activeRaids.splice(ri, 1);
-      } else {
+      } else if (elapsed >= 50) {
         // Move raider back toward home settlement
         const raider = this.world.agents.get(raid.raiderId);
+        if (raider) {
+          raider.mood = 'returning';
+          raider.message = 'Returning victorious!';
+        }
         const atkSett = settlements[raid.attackerSettlement];
         if (raider && atkSett) {
           const dx = Math.sign(atkSett.cx - raider.x);
