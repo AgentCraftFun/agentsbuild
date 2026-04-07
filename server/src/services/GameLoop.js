@@ -545,9 +545,9 @@ class GameLoop {
     // Initialize war state
     if (!this.world._warState) {
       this.world._warState = {
-        lastRaidTick: 0,
+        lastRaidTick: Math.max(0, (this.world.tick || 0) - 200), // allow first raid after ~100 ticks (~Day 1)
         activeRaids: [],   // { attackerSettlement, defenderSettlement, startTick, phase }
-        raidCooldown: 500, // ~5 game days between raids
+        raidCooldown: 300, // ~3 game days between raids
       };
     }
     const war = this.world._warState;
@@ -675,8 +675,8 @@ class GameLoop {
     if (totalBuildings < 10) return;
     if (tick - war.lastRaidTick < war.raidCooldown) return;
 
-    // Random chance each tick after cooldown: ~1% per tick = happens within ~100 ticks
-    if (Math.random() > 0.01) return;
+    // Random chance each tick after cooldown: ~3% per tick = happens within ~33 ticks
+    if (Math.random() > 0.03) return;
 
     war.lastRaidTick = tick;
 
