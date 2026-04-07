@@ -98,6 +98,9 @@ class GameLoop {
         }
       }
 
+      // 5b. Process burning buildings and inter-settlement wars
+      this._processWarfare(tick, events);
+
       // 6. Generate event feed entries (already collected above, add tick summary)
       if (tick % 10 === 0) {
         const agentCount = this.world.agents.size;
@@ -144,6 +147,9 @@ class GameLoop {
   }
 
   async _processAgent(agent, tick, events) {
+    // RAIDING/RETURNING: warfare system controls this agent, skip normal AI
+    if (agent.mood === 'raiding' || agent.mood === 'returning') return;
+
     // STAY AT BUILDING: if agent is building, keep them there until it's done
     if (agent.mood === 'building' && agent._buildingTarget) {
       const bld = this.world.buildingsList.find(b => b.x === agent._buildingTarget.x && b.y === agent._buildingTarget.y);
@@ -528,6 +534,185 @@ class GameLoop {
         agent.resources.gold += tileYields.gold * 0.05;
       }
     }
+  }
+
+  // ─── INTER-SETTLEMENT WARFARE ───
+
+  _processWarfare(tick, events) {
+    const settlements = this.world.settlements || [];
+    if (settlements.length < 2) return;
+
+    // Initialize war state
+    if (!this.world._warState) {
+      this.world._warState = {
+        lastRaidTick: 0,
+        activeRaids: [],   // { attackerSettlement, defenderSettlement, startTick, phase }
+        raidCooldown: 500, // ~5 game days between raids
+      };
+    }
+    const war = this.world._warState;
+
+    // 1. Process burning buildings — fire spreads damage over time
+    for (let i = this.world.buildingsList.length - 1; i >= 0; i--) {
+      const bld = this.world.buildingsList[i];
+      if (!bld.burning) continue;
+
+      // Burn damage: lose 2% hp per tick (building destroyed in ~50 ticks / ~50 seconds)
+      bld.hp = Math.max(0, (bld.hp || 1) - 0.02);
+
+      if (!this.world._dirtyTiles) this.world._dirtyTiles = new Set();
+      this.world._dirtyTiles.add(`${bld.x},${bld.y}`);
+
+      // Building destroyed
+      if (bld.hp <= 0) {
+        bld.burning = false;
+        const tile = this.world.tiles.get(`${bld.x},${bld.y}`);
+        if (tile) {
+          tile.building = null;
+          this.world._dirtyTiles.add(`${bld.x},${bld.y}`);
+        }
+
+        // Remove from owner's buildings list
+        const owner = this.world.agents.get(bld.owner);
+        if (owner) {
+          owner.buildings = owner.buildings.filter(b => b !== bld);
+        }
+
+        // Remove from global buildings list
+        this.world.buildingsList.splice(i, 1);
+
+        events.push({
+          tick, type: 'building_destroyed',
+          message: `💀 ${bld.name} at (${bld.x}, ${bld.y}) burned to the ground!`,
+        });
+      }
+    }
+
+    // 2. Process active raids — agents march to enemy settlement and set fires
+    for (let ri = war.activeRaids.length - 1; ri >= 0; ri--) {
+      const raid = war.activeRaids[ri];
+      const elapsed = tick - raid.startTick;
+
+      // Phase 1: Marching (first 30 ticks) — move raider toward target
+      if (elapsed < 30) {
+        const raider = this.world.agents.get(raid.raiderId);
+        const defSett = settlements[raid.defenderSettlement];
+        if (raider && defSett) {
+          // Move raider toward defender settlement center
+          const dx = Math.sign(defSett.cx - raider.x);
+          const dy = Math.sign(defSett.cy - raider.y);
+          raider.move(dx, dy, this.world.width, this.world.height);
+          raider.mood = 'raiding';
+          raider.message = 'Marching to war!';
+        }
+        continue;
+      }
+
+      // Phase 2: Attack (tick 30) — set 1-3 buildings on fire
+      if (!raid.attacked) {
+        raid.attacked = true;
+        const defSett = settlements[raid.defenderSettlement];
+        const defBuildings = this.world.buildingsList.filter(b => {
+          if (!b.isComplete() || b.burning || b.workCost === 0) return false;
+          // Buildings near defender settlement center
+          return Math.abs(b.x - defSett.cx) + Math.abs(b.y - defSett.cy) < 40;
+        });
+
+        // Set 1-3 random buildings on fire
+        const toFire = Math.min(1 + Math.floor(Math.random() * 3), defBuildings.length);
+        const shuffled = defBuildings.sort(() => Math.random() - 0.5);
+        for (let fi = 0; fi < toFire; fi++) {
+          const target = shuffled[fi];
+          target.burning = true;
+          target.hp = target.hp || 1.0;
+          if (!this.world._dirtyTiles) this.world._dirtyTiles = new Set();
+          this.world._dirtyTiles.add(`${target.x},${target.y}`);
+          events.push({
+            tick, type: 'building_burning',
+            message: `🔥 ${target.name} at (${target.x}, ${target.y}) is on fire!`,
+          });
+        }
+
+        const atkSett = settlements[raid.attackerSettlement];
+        if (toFire > 0) {
+          events.push({
+            tick, type: 'raid_success',
+            message: `⚔️ ${atkSett.name} raided ${defSett.name}! ${toFire} building${toFire > 1 ? 's' : ''} set ablaze!`,
+          });
+        }
+
+        // Return raider home after attack
+        const raider = this.world.agents.get(raid.raiderId);
+        if (raider) {
+          raider.mood = 'returning';
+          raider.message = 'Returning victorious!';
+        }
+      }
+
+      // Phase 3: Return (tick 30+) — raider walks home, cleanup after 60 ticks
+      if (elapsed > 60) {
+        const raider = this.world.agents.get(raid.raiderId);
+        if (raider) {
+          raider.mood = 'idle';
+          raider.message = '';
+        }
+        war.activeRaids.splice(ri, 1);
+      } else {
+        // Move raider back toward home settlement
+        const raider = this.world.agents.get(raid.raiderId);
+        const atkSett = settlements[raid.attackerSettlement];
+        if (raider && atkSett) {
+          const dx = Math.sign(atkSett.cx - raider.x);
+          const dy = Math.sign(atkSett.cy - raider.y);
+          raider.move(dx, dy, this.world.width, this.world.height);
+        }
+      }
+    }
+
+    // 3. Trigger new raids periodically
+    // Need at least 10 total buildings and 500 ticks since last raid
+    const totalBuildings = this.world.buildingsList.filter(b => b.isComplete()).length;
+    if (totalBuildings < 10) return;
+    if (tick - war.lastRaidTick < war.raidCooldown) return;
+
+    // Random chance each tick after cooldown: ~1% per tick = happens within ~100 ticks
+    if (Math.random() > 0.01) return;
+
+    war.lastRaidTick = tick;
+
+    // Pick attacker and defender settlements
+    const settlementIdx = settlements.map((s, i) => i);
+    const attackerIdx = settlementIdx[Math.floor(Math.random() * settlementIdx.length)];
+    let defenderIdx;
+    do { defenderIdx = settlementIdx[Math.floor(Math.random() * settlementIdx.length)]; }
+    while (defenderIdx === attackerIdx);
+
+    // Pick an aggressive/capable agent from attacker settlement as the raider
+    const attackerAgents = [...this.world.agents.values()].filter(a => a._settlementId === attackerIdx);
+    if (attackerAgents.length === 0) return;
+    // Prefer aggressive agents, fall back to random
+    const raider = attackerAgents.find(a => a.personality === 'aggressive') ||
+                   attackerAgents[Math.floor(Math.random() * attackerAgents.length)];
+
+    const atkSett = settlements[attackerIdx];
+    const defSett = settlements[defenderIdx];
+
+    war.activeRaids.push({
+      attackerSettlement: attackerIdx,
+      defenderSettlement: defenderIdx,
+      raiderId: raider.id,
+      startTick: tick,
+      attacked: false,
+    });
+
+    raider.mood = 'raiding';
+    raider.message = `Marching on ${defSett.name}!`;
+
+    events.push({
+      tick, type: 'raid_started',
+      agent: raider.name,
+      message: `⚔️ ${raider.name} from ${atkSett.name} is marching on ${defSett.name}!`,
+    });
   }
 
   _buildDiff(events) {

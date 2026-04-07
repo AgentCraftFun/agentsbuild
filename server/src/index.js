@@ -93,7 +93,7 @@ function loadWorldState() {
     // Restore buildings and re-link to tiles/agents
     for (const bd of (state.buildings || [])) {
       try {
-        const building = new Building({ type: bd.type, x: bd.x, y: bd.y, owner: bd.owner, progress: bd.progress || 0, startTick: bd.startTick || 0 });
+        const building = new Building({ type: bd.type, x: bd.x, y: bd.y, owner: bd.owner, progress: bd.progress || 0, startTick: bd.startTick || 0, burning: bd.burning || false, hp: bd.hp != null ? bd.hp : 1.0 });
         if (bd.complete || bd.progress >= 1) building.progress = 1;
         ws.buildingsList.push(building);
         const tileId = `${bd.x},${bd.y}`;

@@ -45,7 +45,7 @@ class Building {
     library:          { faction: 'elf',   name: 'Library',          width: 2, height: 2, tall: true,  workCost: 20,  tier: 2, yields: { food: 0, wood: 0, stone: 0, gold: 3 }, description: 'Knowledge is power' },
   };
 
-  constructor({ type, x, y, owner, progress = 0, startTick = 0 }) {
+  constructor({ type, x, y, owner, progress = 0, startTick = 0, burning = false, hp = 1.0 }) {
     const info = Building.CATALOG[type];
     if (!info) throw new Error(`Unknown building type: ${type}`);
 
@@ -63,6 +63,8 @@ class Building {
     this.tier = info.tier;
     this.workCost = info.workCost;
     this.yields = { ...info.yields };
+    this.burning = burning;
+    this.hp = hp; // 1.0 = full health, 0 = destroyed
   }
 
   isComplete() {
@@ -97,6 +99,8 @@ class Building {
       workCost: this.workCost,
       yields: this.yields,
       complete: this.isComplete(),
+      burning: this.burning || false,
+      hp: this.hp != null ? this.hp : 1.0,
     };
   }
 
