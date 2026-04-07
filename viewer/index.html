@@ -4976,7 +4976,7 @@ const progBar=progPct>0?`<div class="agent-progress"><div class="agent-progress-
 const soc=getAgentSocial(a.id);
 const clanBadge=soc.clan?`<span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:${FC[fc]};font-size:6px;text-align:center;line-height:8px;color:#fff;margin-right:2px">${soc.clan[0]}</span>`:'';
 const mood=getMoodEmoji(soc);
-const inv=`<span style="font-size:8px;color:var(--dim)">🪵${Math.round(G.wood/S.agents.length)} 🪨${Math.round(G.stone/S.agents.length)}</span>`;
+const ar=a.resources||{};const inv=`<span style="font-size:8px;color:var(--dim)">🪵${Math.round(ar.wood||0)} 🪨${Math.round(ar.stone||0)}</span>`;
 return`<div class="agent-row" onclick="selAg('${a.id}')">
 <div class="agent-icon" style="background:${FC[fc]};color:#fff">${FI[fc]||'?'}</div>
 <div class="agent-info">
