@@ -3036,19 +3036,19 @@ function updateAgentMovement(){
     // in a client-side chopping/mining/building state while the server moves them
     if(S.connected&&(a.mood==='raiding'||a.mood==='celebrating'||a.mood==='returning')){
       st.state=a.mood;st.target=null;st.timer=0;st.taskCooldown=0;
-      // Walk toward the RAID TARGET (sent by server) at constant speed
-      // This is the actual destination — not the server's current position
       const rt=a._raidTarget;
       if(rt){
+        // Walk toward destination at normal agent speed
         v.tx=rt.x/WW;v.ty=rt.y/WH;
         const rdx=v.tx-v.x,rdy=v.ty-v.y;
         const rdist=Math.sqrt(rdx*rdx+rdy*rdy);
-        const walkSpeed=0.0008;// smooth constant walk
-        if(rdist>0.002){
-          v.x+=rdx/rdist*walkSpeed;v.y+=rdy/rdist*walkSpeed;
+        if(rdist>0.001){
+          const walkSpeed=0.003;// same visual speed as normal agent walking
+          v.x+=rdx/rdist*Math.min(walkSpeed,rdist);
+          v.y+=rdy/rdist*Math.min(walkSpeed,rdist);
         }
       }else{
-        // No target (celebrating) — ease to server position
+        // No target — sync to server position
         v.tx=a.x/WW;v.ty=a.y/WH;
         v.x+=(v.tx-v.x)*0.15;v.y+=(v.ty-v.y)*0.15;
       }
@@ -3487,13 +3487,12 @@ function updateMinimap(){
     const bi=tBiomes[y*WW+x],b=BL[bi],co=BC[b];
     mx2.fillStyle=co[0];mx2.fillRect(x*sx2,y*sy2,sx2*3+1,sy2*3+1);
   }
-  // Buildings
-  for(const b of G.clientBuildings){
-    if(b.type==='custom'&&b.customGrid){
-      mx2.fillStyle=_mostCommonColor(b.customGrid);
-    }else{
-      mx2.fillStyle=BFC[b.faction]?BFC[b.faction].flag:'#888';
-    }
+  // Buildings — use server buildings when connected, client buildings otherwise
+  const minimapBlds=S.connected&&S.buildings.length>0?S.buildings:G.clientBuildings;
+  for(const b of minimapBlds){
+    if(b.burning){mx2.fillStyle='#ff4400'}
+    else if(b.type==='custom'&&b.customGrid){mx2.fillStyle=_mostCommonColor(b.customGrid)}
+    else{mx2.fillStyle=BFC[b.faction]?BFC[b.faction].flag:'#ff8800'}
     mx2.fillRect(b.x*sx2-1,b.y*sy2-1,3,3);
   }
   // Resource indicators: gold deposits + mountain stone areas
@@ -4703,8 +4702,9 @@ for(const bird of ambientBirds){
 // Deer herd (world-space, Y-sorted roughly)
 for(let di=deerHerd.length-1;di>=0;di--){
   const d2=deerHerd[di];d2.life--;
-  if(d2.life<=0||d2.wx<-10||d2.wx>WW+10){deerHerd.splice(di,1);continue}
-  d2.wx+=d2.vx;d2.wy+=Math.sin(frame*0.02+d2.phase)*0.03;// gentle wobble
+  if(d2.life<=0||d2.wx<-10||d2.wx>WW+10||d2.wy<0||d2.wy>WH){deerHerd.splice(di,1);continue}
+  d2.wx+=d2.vx;d2.wy+=Math.sin(frame*0.02+d2.phase)*0.02;// gentle wobble
+  d2.wy=Math.max(1,Math.min(WH-1,d2.wy));// clamp to map bounds
   const dpx=d2.wx*ts,dpy=d2.wy*ts;
   // Body
   ctx.fillStyle='#8a6a3a';ctx.fillRect(dpx-4,dpy-3,8,5);
