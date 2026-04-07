@@ -590,7 +590,7 @@ class GameLoop {
 
       // Safety timeout: 150 ticks max per raid
       if (elapsed > 150) {
-        raider.mood = 'idle'; raider.message = '';
+        raider.mood = 'idle'; raider.message = ''; raider._raidTarget = null;
         war.activeRaids.splice(ri, 1); continue;
       }
 
@@ -630,6 +630,7 @@ class GameLoop {
           events.push({ tick, type: 'raid_success', message: `⚔️ ${raider.name} set ${targets.length} buildings ablaze!` });
         }
         raider.mood = 'celebrating'; raider.message = 'BURN IT ALL! 🔥';
+        raider._raidTarget = null; // celebrating in place
         console.log(`[War] ATTACK: ${raider.name} burned ${targets.length} buildings at (${raider.x},${raider.y})`);
       }
 
@@ -645,15 +646,16 @@ class GameLoop {
       raider.mood = 'returning'; raider.message = 'Returning victorious!';
       const homeSett = settlements[raid.attackerSettlement];
       if (homeSett) {
+        raider._raidTarget = { x: homeSett.cx, y: homeSett.cy }; // walk home smoothly
         const dx = Math.sign(homeSett.cx - raider.x), dy = Math.sign(homeSett.cy - raider.y);
         raider.move(dx, dy, this.world.width, this.world.height);
         raider.move(dx, dy, this.world.width, this.world.height);
         if (Math.abs(raider.x - homeSett.cx) + Math.abs(raider.y - homeSett.cy) < 8) {
-          raider.mood = 'idle'; raider.message = '';
+          raider.mood = 'idle'; raider.message = ''; raider._raidTarget = null;
           war.activeRaids.splice(ri, 1);
         }
       } else {
-        raider.mood = 'idle'; raider.message = '';
+        raider.mood = 'idle'; raider.message = ''; raider._raidTarget = null;
         war.activeRaids.splice(ri, 1);
       }
     }
@@ -725,6 +727,7 @@ class GameLoop {
       });
       raider.mood = 'raiding';
       raider.message = defSett ? `Marching on ${defSett.name}!` : 'To war!';
+      raider._raidTarget = { x: targetBld.x, y: targetBld.y }; // sent to client for smooth walk
     }
 
     const names = raiders.map(r => r.name).join(', ');

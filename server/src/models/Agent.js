@@ -55,7 +55,7 @@ class Agent {
   }
 
   toJSON() {
-    return {
+    const data = {
       id: this.id,
       name: this.name,
       faction: this.faction,
@@ -71,6 +71,8 @@ class Agent {
       buildings_count: this.buildings.length,
       message: this.message,
     };
+    if (this._raidTarget) data._raidTarget = this._raidTarget;
+    return data;
   }
 
   toPublicJSON() {

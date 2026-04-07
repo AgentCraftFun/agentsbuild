@@ -3036,26 +3036,21 @@ function updateAgentMovement(){
     // in a client-side chopping/mining/building state while the server moves them
     if(S.connected&&(a.mood==='raiding'||a.mood==='celebrating'||a.mood==='returning')){
       st.state=a.mood;st.target=null;st.timer=0;st.taskCooldown=0;
-      const newTx=a.x/WW,newTy=a.y/WH;
-      // Detect when server position changed → compute velocity for smooth interpolation
-      if(Math.abs(newTx-v.tx)>0.001||Math.abs(newTy-v.ty)>0.001){
-        v._rvx=(newTx-v.tx);v._rvy=(newTy-v.ty);// velocity per server tick
-        v.tx=newTx;v.ty=newTy;
-      }
-      // Move at steady velocity (spread server tick movement across ~60 frames)
-      if(v._rvx||v._rvy){
+      // Walk toward the RAID TARGET (sent by server) at constant speed
+      // This is the actual destination — not the server's current position
+      const rt=a._raidTarget;
+      if(rt){
+        v.tx=rt.x/WW;v.ty=rt.y/WH;
         const rdx=v.tx-v.x,rdy=v.ty-v.y;
         const rdist=Math.sqrt(rdx*rdx+rdy*rdy);
-        if(rdist>0.0005){
-          // Speed: cover the per-tick distance over 60 frames
-          const spd=Math.sqrt((v._rvx||0)**2+(v._rvy||0)**2)/55;
-          const step=Math.min(spd,rdist);
-          v.x+=rdx/rdist*step;v.y+=rdy/rdist*step;
-        }else{
-          v.x=v.tx;v.y=v.ty;// close enough, snap
+        const walkSpeed=0.0008;// smooth constant walk
+        if(rdist>0.002){
+          v.x+=rdx/rdist*walkSpeed;v.y+=rdy/rdist*walkSpeed;
         }
       }else{
-        v.x+=(v.tx-v.x)*0.15;v.y+=(v.ty-v.y)*0.15;// fallback ease
+        // No target (celebrating) — ease to server position
+        v.tx=a.x/WW;v.ty=a.y/WH;
+        v.x+=(v.tx-v.x)*0.15;v.y+=(v.ty-v.y)*0.15;
       }
       continue;
     }
