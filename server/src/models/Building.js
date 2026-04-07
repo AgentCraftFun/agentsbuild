@@ -43,6 +43,25 @@ class Building {
     granary:          { faction: 'human', name: 'Granary',          width: 2, height: 2, tall: false, workCost: 10,  tier: 1, yields: { food: 4, wood: 0, stone: 0, gold: 0 }, description: 'Food storage' },
     blacksmith:       { faction: 'dwarf', name: 'Blacksmith',       width: 2, height: 2, tall: true,  workCost: 18,  tier: 2, yields: { food: 0, wood: 0, stone: 2, gold: 2 }, description: 'Forge of creation' },
     library:          { faction: 'elf',   name: 'Library',          width: 2, height: 2, tall: true,  workCost: 20,  tier: 2, yields: { food: 0, wood: 0, stone: 0, gold: 3 }, description: 'Knowledge is power' },
+
+    // === NEW VILLAGE VARIETY BUILDINGS ===
+    well:             { faction: 'human', name: 'Well',             width: 1, height: 1, tall: false, workCost: 4,   tier: 1, yields: { food: 1, wood: 0, stone: 0, gold: 0 }, description: 'Fresh water source' },
+    garden:           { faction: 'elf',   name: 'Garden',           width: 1, height: 1, tall: false, workCost: 3,   tier: 1, yields: { food: 2, wood: 0, stone: 0, gold: 0 }, description: 'Blooming beauty' },
+    stable:           { faction: 'human', name: 'Stable',           width: 2, height: 1, tall: false, workCost: 8,   tier: 1, yields: { food: 0, wood: 1, stone: 0, gold: 1 }, description: 'Horses and mounts' },
+    windmill:         { faction: 'human', name: 'Windmill',         width: 2, height: 2, tall: true,  workCost: 14,  tier: 2, yields: { food: 3, wood: 0, stone: 0, gold: 1 }, description: 'Grinds grain into flour' },
+    bakery:           { faction: 'human', name: 'Bakery',           width: 2, height: 1, tall: true,  workCost: 10,  tier: 1, yields: { food: 3, wood: 0, stone: 0, gold: 1 }, description: 'Fresh bread daily' },
+    inn:              { faction: 'human', name: 'Inn',              width: 2, height: 2, tall: true,  workCost: 14,  tier: 2, yields: { food: 1, wood: 0, stone: 0, gold: 2 }, description: 'Rest for weary travelers' },
+    warehouse:        { faction: 'dwarf', name: 'Warehouse',        width: 2, height: 2, tall: false, workCost: 12,  tier: 1, yields: { food: 0, wood: 1, stone: 1, gold: 1 }, description: 'Bulk storage' },
+    barn:             { faction: 'human', name: 'Barn',             width: 2, height: 2, tall: true,  workCost: 8,   tier: 1, yields: { food: 2, wood: 1, stone: 0, gold: 0 }, description: 'Hay and livestock' },
+    fountain:         { faction: 'elf',   name: 'Fountain',         width: 1, height: 1, tall: false, workCost: 10,  tier: 2, yields: { food: 0, wood: 0, stone: 0, gold: 1 }, description: 'Decorative water feature' },
+    monument:         { faction: 'human', name: 'Monument',         width: 1, height: 1, tall: true,  workCost: 12,  tier: 2, yields: { food: 0, wood: 0, stone: 0, gold: 2 }, description: 'Stone memorial' },
+    herbalist:        { faction: 'elf',   name: 'Herbalist',        width: 2, height: 1, tall: true,  workCost: 9,   tier: 1, yields: { food: 1, wood: 1, stone: 0, gold: 1 }, description: 'Natural remedies' },
+    stonecutter:      { faction: 'dwarf', name: 'Stonecutter',      width: 2, height: 1, tall: false, workCost: 8,   tier: 1, yields: { food: 0, wood: 0, stone: 3, gold: 0 }, description: 'Shapes raw stone' },
+    arena:            { faction: 'orc',   name: 'Arena',            width: 2, height: 2, tall: false, workCost: 16,  tier: 2, yields: { food: 0, wood: 0, stone: 1, gold: 3 }, description: 'Combat entertainment' },
+    shrine:           { faction: 'elf',   name: 'Shrine',           width: 1, height: 1, tall: true,  workCost: 7,   tier: 1, yields: { food: 0, wood: 0, stone: 0, gold: 1 }, description: 'Spiritual sanctuary' },
+    cottage:          { faction: 'human', name: 'Cottage',          width: 1, height: 1, tall: true,  workCost: 5,   tier: 1, yields: { food: 1, wood: 0, stone: 0, gold: 0 }, description: 'Cozy small home' },
+    storehouse:       { faction: 'dwarf', name: 'Storehouse',       width: 2, height: 1, tall: false, workCost: 7,   tier: 1, yields: { food: 1, wood: 1, stone: 1, gold: 0 }, description: 'Keeps goods safe' },
+    training_ground:  { faction: 'orc',   name: 'Training Ground',  width: 2, height: 2, tall: false, workCost: 10,  tier: 1, yields: { food: 0, wood: 0, stone: 0, gold: 1 }, description: 'Warriors practice here' },
   };
 
   constructor({ type, x, y, owner, progress = 0, startTick = 0, burning = false, hp = 1.0 }) {

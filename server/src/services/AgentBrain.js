@@ -11,6 +11,12 @@ const WorldGen = require('./WorldGen');
 // All non-HQ building types for village variety
 const ALL_BUILDING_TYPES = Object.keys(Building.CATALOG).filter(b => Building.CATALOG[b].workCost > 0);
 
+// Zone categories for logical settlement layout
+const CENTER_TYPES = new Set(['well', 'fountain', 'monument', 'market', 'tavern', 'inn', 'chapel', 'shrine']);
+const RESIDENTIAL_TYPES = new Set(['cottage', 'farmstead', 'pig_farm', 'brewery', 'bakery', 'apartment', 'granary']);
+const INDUSTRY_TYPES = new Set(['lumber_mill', 'mine_shaft', 'stonecutter', 'warehouse', 'storehouse', 'blacksmith', 'runeforge', 'starforge', 'blood_forge']);
+const OUTER_TYPES = new Set(['watchtower', 'spike_tower', 'sentinel_tree', 'stone_wall', 'stable', 'barn', 'windmill', 'garden', 'herbalist', 'grove', 'training_ground', 'arena', 'war_pit']);
+
 class AgentBrain {
   constructor(agent, worldState) {
     this.agent = agent;
@@ -214,7 +220,7 @@ class AgentBrain {
     const cost = Building.CATALOG[buildingType].workCost || 0;
     if (cost > 0 && this.agent.work_balance < cost) return null;
 
-    let tile = this._findBuildSite();
+    let tile = this._findBuildSite(buildingType);
 
     // If main settlement is full, try founding a mini-settlement
     if (!tile) {
@@ -269,12 +275,13 @@ class AgentBrain {
 
   /**
    * Find a build site in this agent's assigned settlement.
-   * Searches outward from settlement center in rings.
+   * Uses zone-based placement: center (public), middle (residential),
+   * outer (industry/defense) for realistic village layouts.
    * Won't pick a tile another agent is already building on.
    */
-  _findBuildSite() {
+  _findBuildSite(buildingType) {
     const { tiles, buildingsList, width, height } = this.world;
-    const MIN_DIST = 5;
+    const MIN_DIST = 3; // tighter spacing for denser, more natural villages
 
     // Get this agent's settlement center
     const settlementId = this.agent._settlementId || 0;
@@ -295,21 +302,38 @@ class AgentBrain {
     const settlementBuildings = buildingsList.filter(b => {
       const dx = Math.abs(b.x - cx);
       const dy = Math.abs(b.y - cy);
-      return dx + dy < 60; // buildings roughly in this settlement
+      return dx + dy < 60;
     }).length;
 
-    // Scale rings with settlement size: start with 8, grow as area fills up
-    // Each ring adds ~3 tiles of radius, so 16 rings = ~53 tile radius
-    const maxRings = Math.min(20, 8 + Math.floor(settlementBuildings / 4));
+    // Determine zone for this building type — center, middle, or outer ring
+    let minRing, maxRing;
+    if (CENTER_TYPES.has(buildingType)) {
+      minRing = 0; maxRing = Math.min(6, 3 + Math.floor(settlementBuildings / 6));
+    } else if (RESIDENTIAL_TYPES.has(buildingType)) {
+      minRing = 2; maxRing = Math.min(12, 5 + Math.floor(settlementBuildings / 4));
+    } else if (INDUSTRY_TYPES.has(buildingType)) {
+      minRing = 4; maxRing = Math.min(16, 7 + Math.floor(settlementBuildings / 3));
+    } else if (OUTER_TYPES.has(buildingType)) {
+      minRing = 5; maxRing = Math.min(20, 8 + Math.floor(settlementBuildings / 3));
+    } else {
+      // Default: residential zone
+      minRing = 1; maxRing = Math.min(16, 6 + Math.floor(settlementBuildings / 4));
+    }
 
-    // Search in expanding rings around settlement center
-    for (let ring = 0; ring < maxRings; ring++) {
-      const radius = MIN_DIST + ring * 3;
-      const attempts = 16 + ring * 4; // more attempts at larger radii
+    // Search in zone-appropriate rings around settlement center
+    // Use road-like grid pattern: buildings placed along 4 cardinal + 4 diagonal directions
+    const directions = 8;
+    for (let ring = minRing; ring <= maxRing; ring++) {
+      const radius = MIN_DIST + ring * 2; // tighter spacing between rings
+      const attempts = directions * (2 + ring); // more attempts at larger radii
       for (let a = 0; a < attempts; a++) {
-        const angle = (a / attempts) * Math.PI * 2 + ring * 0.7;
-        const rx = cx + Math.round(Math.cos(angle) * radius);
-        const ry = cy + Math.round(Math.sin(angle) * radius);
+        // Mix grid-aligned positions with slight randomness for organic feel
+        const baseAngle = (a / attempts) * Math.PI * 2;
+        const jitter = (Math.random() - 0.5) * 0.3; // slight angle jitter
+        const angle = baseAngle + jitter;
+        const distJitter = (Math.random() - 0.5) * 1.5; // slight distance jitter
+        const rx = cx + Math.round(Math.cos(angle) * (radius + distJitter));
+        const ry = cy + Math.round(Math.sin(angle) * (radius + distJitter));
         if (rx < 2 || rx >= width - 2 || ry < 2 || ry >= height - 2) continue;
         const tid = `${rx},${ry}`;
         const t = tiles.get(tid);
@@ -356,12 +380,11 @@ class AgentBrain {
     const { tiles, buildingsList, width, height } = this.world;
     const MIN_DIST = 5;
 
-    // Limit mini-settlements: max 2 beyond the 3 originals (5 total)
+    // Allow more settlements — no hard cap, just soft spacing constraints
     const existingSettlements = this.world.settlements || [];
-    if (existingSettlements.length >= 5) return null;
 
-    // Only 10% chance per failed build — keeps them rare
-    if (Math.random() > 0.10) return null;
+    // 35% chance per failed build — agents freely pioneer new areas
+    if (Math.random() > 0.35) return null;
 
     const settlementId = this.agent._settlementId || 0;
     const settlements = this.world.settlements || [];
@@ -369,10 +392,10 @@ class AgentBrain {
     const homeCx = settlement ? settlement.cx : Math.round(width * 0.5);
     const homeCy = settlement ? settlement.cy : Math.round(height * 0.5);
 
-    // Try random locations 30-60 tiles away from home settlement
-    for (let attempt = 0; attempt < 30; attempt++) {
+    // Try random locations 20-50 tiles away from home settlement
+    for (let attempt = 0; attempt < 50; attempt++) {
       const angle = Math.random() * Math.PI * 2;
-      const dist = 30 + Math.random() * 30;
+      const dist = 20 + Math.random() * 30;
       const rx = Math.round(homeCx + Math.cos(angle) * dist);
       const ry = Math.round(homeCy + Math.sin(angle) * dist);
 

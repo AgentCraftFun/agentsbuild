@@ -1012,9 +1012,11 @@ const FI={human:'\u2694',orc:'\u2620',dwarf:'\u26CF',elf:'\u2727'};
 const MI={idle:'\u23F8',moving:'\u27A1',claiming:'\u2691',building:'\uD83D\uDD28',raiding:'\u2694',chatting:'\uD83D\uDCAC',defeated:'\uD83D\uDC80'};
 // Build label lookups from TECH_TREE + legacy types
 const BLabels={town_hall:'TH',farmstead:'FM',lumber_mill:'LM',watchtower:'WT',chapel:'CH',castle:'CA',great_hall:'GH',pig_farm:'PF',war_pit:'WP',spike_tower:'ST',blood_forge:'BF',skull_throne:'SK',mountain_hold:'MH',mine_shaft:'MS',brewery:'BR',stone_wall:'SW',runeforge:'RF',deep_citadel:'DC',tree_palace:'TP',moonwell:'MW',grove:'GR',sentinel_tree:'SN',starforge:'SF',world_tree:'WT',
-  campfire:'CF',wood_hut:'WH',log_cabin:'LC',stone_house:'SH',quarry:'QR',blacksmith:'BS',barracks:'BK',church:'CH',market:'MK',brick_house:'BH',apartment:'AP',office:'OF',factory:'FY',farm:'FA',well:'WL',library:'LB',monument:'MN',garden:'GD',fence:'FN',fountain:'FT',statue:'SU',dock:'DK',bridge:'BR'};
+  campfire:'CF',wood_hut:'WH',log_cabin:'LC',stone_house:'SH',quarry:'QR',blacksmith:'BS',barracks:'BK',church:'CH',market:'MK',brick_house:'BH',apartment:'AP',office:'OF',factory:'FY',farm:'FA',well:'WL',library:'LB',monument:'MN',garden:'GD',fence:'FN',fountain:'FT',statue:'SU',dock:'DK',bridge:'BR',
+  stable:'SB',windmill:'WM',bakery:'BK',inn:'IN',warehouse:'WR',barn:'BN',herbalist:'HB',stonecutter:'SC',arena:'AR',shrine:'SR',cottage:'CT',storehouse:'SH',training_ground:'TG'};
 const BNames={town_hall:'Town Hall',farmstead:'Farmstead',lumber_mill:'Lumber Mill',watchtower:'Watchtower',chapel:'Chapel',castle:'Castle',great_hall:'Great Hall',pig_farm:'Pig Farm',war_pit:'War Pit',spike_tower:'Spike Tower',blood_forge:'Blood Forge',skull_throne:'Skull Throne',mountain_hold:'Mtn Hold',mine_shaft:'Mine Shaft',brewery:'Brewery',stone_wall:'Stone Wall',runeforge:'Runeforge',deep_citadel:'Deep Citadel',tree_palace:'Tree Palace',moonwell:'Moonwell',grove:'Grove',sentinel_tree:'Sentinel',starforge:'Starforge',world_tree:'World Tree',
-  campfire:'Campfire',wood_hut:'Wood Hut',log_cabin:'Log Cabin',stone_house:'Stone House',quarry:'Quarry',blacksmith:'Blacksmith',barracks:'Barracks',church:'Church',market:'Market',brick_house:'Brick House',apartment:'Apartment',office:'Office',factory:'Factory',farm:'Farm',well:'Well',library:'Library',monument:'Monument',garden:'Garden',fence:'Fence',fountain:'Fountain',statue:'Statue',dock:'Dock',bridge:'Bridge'};
+  campfire:'Campfire',wood_hut:'Wood Hut',log_cabin:'Log Cabin',stone_house:'Stone House',quarry:'Quarry',blacksmith:'Blacksmith',barracks:'Barracks',church:'Church',market:'Market',brick_house:'Brick House',apartment:'Apartment',office:'Office',factory:'Factory',farm:'Farm',well:'Well',library:'Library',monument:'Monument',garden:'Garden',fence:'Fence',fountain:'Fountain',statue:'Statue',dock:'Dock',bridge:'Bridge',
+  stable:'Stable',windmill:'Windmill',bakery:'Bakery',inn:'Inn',warehouse:'Warehouse',barn:'Barn',herbalist:'Herbalist',stonecutter:'Stonecutter',arena:'Arena',shrine:'Shrine',cottage:'Cottage',storehouse:'Storehouse',training_ground:'Training Ground'};
 
 // === Canvas ===
 const canvasEl=document.getElementById('world'),ctx=canvasEl.getContext('2d'),wrap=document.getElementById('canvas-wrap');
@@ -1276,6 +1278,24 @@ function _drawFinishedByType(c,b,bx,by,bw,bh,fr){
   if(type==='apartment')return drawApartment(c,bx,by,bw,bh,fr);
   if(type==='office')return drawOffice(c,bx,by,bw,bh,fr);
   if(type==='factory')return drawFactory(c,bx,by,bw,bh,fr);
+  // New building types
+  if(type==='well')return drawWell(c,bx,by,bw,bh,fr);
+  if(type==='fountain')return drawFountain(c,bx,by,bw,bh,fr);
+  if(type==='garden')return drawGarden(c,bx,by,bw,bh,fr);
+  if(type==='cottage')return drawCottage(c,bx,by,bw,bh,fr);
+  if(type==='stable')return drawStable(c,bx,by,bw,bh,fr);
+  if(type==='barn')return drawBarn(c,bx,by,bw,bh,fr);
+  if(type==='windmill')return drawWindmill(c,bx,by,bw,bh,fr);
+  if(type==='bakery')return drawBakery(c,bx,by,bw,bh,fr);
+  if(type==='inn')return drawInn(c,bx,by,bw,bh,fr);
+  if(type==='warehouse')return drawWarehouse(c,bx,by,bw,bh,fr);
+  if(type==='storehouse')return drawStorehouse(c,bx,by,bw,bh,fr);
+  if(type==='monument')return drawMonument(c,bx,by,bw,bh,fr);
+  if(type==='herbalist')return drawHerbalist(c,bx,by,bw,bh,fr);
+  if(type==='stonecutter')return drawStonecutter(c,bx,by,bw,bh,fr);
+  if(type==='shrine')return drawShrine(c,bx,by,bw,bh,fr);
+  if(type==='arena')return drawArena(c,bx,by,bw,bh,fr);
+  if(type==='training_ground')return drawTrainingGround(c,bx,by,bw,bh,fr);
   // Fallback: generic completed building
   drawCompletedBuilding(c,b,bx,by,bw,bh,fr);
 }
@@ -1734,6 +1754,400 @@ function drawFactory(c,bx,by,bw,bh,fr){
   c.fillStyle='rgba(255,255,255,0.06)';c.fillRect(bx,wallY,2,wallH);
 }
 
+// === NEW BUILDING RENDERERS ===
+
+function drawWell(c,bx,by,bw,bh,fr){
+  // Stone base circle
+  c.fillStyle='#8a8a82';c.fillRect(bx+bw*0.15,by+bh*0.4,bw*0.7,bh*0.55);
+  c.fillStyle='#6a6a62';c.fillRect(bx+bw*0.2,by+bh*0.45,bw*0.6,bh*0.45);
+  // Dark water inside
+  c.fillStyle='#1a2a3a';c.fillRect(bx+bw*0.28,by+bh*0.5,bw*0.44,bh*0.3);
+  // Wooden frame posts
+  c.fillStyle='#5a3a18';c.fillRect(bx+bw*0.2,by+bh*0.1,3,bh*0.5);
+  c.fillRect(bx+bw*0.75,by+bh*0.1,3,bh*0.5);
+  // Roof beam
+  c.fillStyle='#6a4a28';c.fillRect(bx+bw*0.15,by+bh*0.08,bw*0.7,4);
+  // Bucket rope
+  c.fillStyle='#8a7a50';c.fillRect(bx+bw*0.48,by+bh*0.12,1,bh*0.3);
+  // Bucket
+  c.fillStyle='#5a4020';c.fillRect(bx+bw*0.42,by+bh*0.38,bw*0.15,bh*0.1);
+  // Stone highlights
+  c.fillStyle='rgba(255,255,255,0.15)';c.fillRect(bx+bw*0.15,by+bh*0.4,bw*0.7,2);
+}
+
+function drawFountain(c,bx,by,bw,bh,fr){
+  // Base pool
+  c.fillStyle='#7a8a8a';c.fillRect(bx+bw*0.1,by+bh*0.55,bw*0.8,bh*0.4);
+  c.fillStyle='#3a5a7a';c.fillRect(bx+bw*0.15,by+bh*0.6,bw*0.7,bh*0.3);
+  // Center pillar
+  c.fillStyle='#9a9a92';c.fillRect(bx+bw*0.4,by+bh*0.2,bw*0.2,bh*0.45);
+  // Water spray particles
+  const spray=Math.sin(fr*0.1)*2;
+  c.fillStyle='rgba(100,180,255,0.6)';
+  c.fillRect(bx+bw*0.45+spray,by+bh*0.12,3,3);
+  c.fillRect(bx+bw*0.55-spray,by+bh*0.15,2,2);
+  c.fillRect(bx+bw*0.42,by+bh*0.18+Math.abs(spray),2,2);
+  c.fillRect(bx+bw*0.58,by+bh*0.2-Math.abs(spray),2,2);
+  // Water shimmer
+  c.fillStyle=`rgba(150,220,255,${0.3+0.15*Math.sin(fr*0.08)})`;
+  c.fillRect(bx+bw*0.2,by+bh*0.65,bw*0.2,2);
+  c.fillRect(bx+bw*0.5,by+bh*0.72,bw*0.2,2);
+}
+
+function drawGarden(c,bx,by,bw,bh,fr){
+  // Dirt plot
+  c.fillStyle='#5a4020';c.fillRect(bx+2,by+bh*0.4,bw-4,bh*0.55);
+  // Fence posts
+  c.fillStyle='#6a4a20';
+  c.fillRect(bx,by+bh*0.35,2,bh*0.6);c.fillRect(bx+bw-2,by+bh*0.35,2,bh*0.6);
+  c.fillRect(bx,by+bh*0.55,bw,2);// horizontal rail
+  // Green plants in rows
+  const colors=['#2a8a20','#3a9a30','#1a7a18','#4aaa40'];
+  for(let row=0;row<3;row++){
+    c.fillStyle=colors[row%4];
+    const py=by+bh*0.48+row*bh*0.15;
+    for(let col=0;col<3;col++){
+      const px=bx+4+col*(bw-8)/3;
+      c.fillRect(px,py,bw*0.15,bh*0.12);
+    }
+  }
+  // Flower accents
+  c.fillStyle='#ff6688';c.fillRect(bx+bw*0.2,by+bh*0.42,3,3);
+  c.fillStyle='#ffcc44';c.fillRect(bx+bw*0.65,by+bh*0.45,3,3);
+}
+
+function drawCottage(c,bx,by,bw,bh,fr){
+  const h=tileHash(bx,by);
+  // Shadow
+  c.fillStyle='rgba(0,0,0,0.2)';c.fillRect(bx+3,by+bh-2,bw+4,3);
+  // Foundation
+  c.fillStyle='#5a4a30';c.fillRect(bx-1,by+bh-3,bw+4,4);
+  // Walls — warm tones, varied by hash
+  const wallCol=h%3===0?'#c8a878':'#b89868';
+  const wallH=bh*0.6;const wallY=by+bh-wallH;
+  c.fillStyle=wallCol;c.fillRect(bx,wallY,bw,wallH);
+  // Timber frame accents
+  c.fillStyle='#5a3a18';
+  c.fillRect(bx,wallY,2,wallH);c.fillRect(bx+bw-2,wallY,2,wallH);
+  c.fillRect(bx,wallY+wallH*0.5,bw,2);
+  // Pointed roof — varied color
+  const roofCol=h%2===0?'#8a4a20':'#6a6a5a';
+  c.fillStyle=roofCol;
+  c.beginPath();c.moveTo(bx-3,wallY);c.lineTo(bx+bw/2,wallY-bh*0.35);c.lineTo(bx+bw+3,wallY);c.fill();
+  // Door
+  c.fillStyle='#3a2010';c.fillRect(bx+bw*0.35,by+bh-wallH*0.45,bw*0.3,wallH*0.45);
+  // Window
+  if(bw>=16){
+    c.fillStyle=window._isNight?'#ffdd88':'#aaccee';
+    c.fillRect(bx+3,wallY+6,6,5);
+    c.fillStyle='#ddd';c.fillRect(bx+5,wallY+6,1,5);
+  }
+}
+
+function drawStable(c,bx,by,bw,bh,fr){
+  // Foundation
+  c.fillStyle='#4a3a20';c.fillRect(bx-1,by+bh-3,bw+4,4);
+  // Wooden walls
+  const wallH=bh*0.65;const wallY=by+bh-wallH;
+  c.fillStyle='#7a5a30';c.fillRect(bx,wallY,bw,wallH);
+  // Horizontal plank lines
+  c.fillStyle='#6a4a28';
+  for(let i=0;i<4;i++)c.fillRect(bx,wallY+i*(wallH/4),bw,1);
+  // Wide door opening
+  c.fillStyle='#2a1a08';c.fillRect(bx+bw*0.3,wallY+wallH*0.3,bw*0.4,wallH*0.7);
+  // Hay inside
+  c.fillStyle='#c8a840';c.fillRect(bx+bw*0.35,wallY+wallH*0.65,bw*0.3,wallH*0.3);
+  // Low sloped roof
+  c.fillStyle='#5a3a18';
+  c.beginPath();c.moveTo(bx-3,wallY);c.lineTo(bx+bw/2,wallY-bh*0.2);c.lineTo(bx+bw+3,wallY);c.fill();
+  // Horseshoe accent
+  c.fillStyle='#888';c.fillRect(bx+4,wallY+6,5,5);
+  c.fillStyle='#7a5a30';c.fillRect(bx+5,wallY+7,3,2);
+}
+
+function drawBarn(c,bx,by,bw,bh,fr){
+  const SD=8;
+  // Shadow
+  c.fillStyle='rgba(0,0,0,0.2)';c.fillRect(bx+3,by+bh,bw+SD,3);
+  // Foundation
+  c.fillStyle='#4a3a28';c.fillRect(bx-2,by+bh-3,bw+SD+4,5);
+  // Red walls
+  const wallH=bh*0.65;const wallY=by+bh-wallH;
+  c.fillStyle='#8a2a18';c.fillRect(bx,wallY,bw,wallH);
+  // White trim cross on door
+  c.fillStyle='#1a0a04';c.fillRect(bx+bw*0.3,wallY+wallH*0.25,bw*0.4,wallH*0.75);
+  c.fillStyle='#ddd';c.fillRect(bx+bw*0.48,wallY+wallH*0.25,2,wallH*0.75);
+  c.fillRect(bx+bw*0.3,wallY+wallH*0.55,bw*0.4,2);
+  // Right side wall
+  c.fillStyle='#6a1a10';
+  c.beginPath();c.moveTo(bx+bw,wallY);c.lineTo(bx+bw+SD,wallY-4);c.lineTo(bx+bw+SD,by+bh-4);c.lineTo(bx+bw,by+bh);c.fill();
+  // Gambrel roof (barn style)
+  c.fillStyle='#5a3020';
+  c.beginPath();c.moveTo(bx-4,wallY);c.lineTo(bx+bw*0.3,wallY-bh*0.25);c.lineTo(bx+bw*0.5,wallY-bh*0.35);
+  c.lineTo(bx+bw*0.7,wallY-bh*0.25);c.lineTo(bx+bw+4,wallY);c.fill();
+  // Hay bale outside
+  c.fillStyle='#c8a840';c.fillRect(bx-3,by+bh-8,6,5);
+  // Window
+  c.fillStyle=window._isNight?'#ffdd88':'#aaccee';c.fillRect(bx+5,wallY+6,7,6);
+}
+
+function drawWindmill(c,bx,by,bw,bh,fr){
+  // Shadow
+  c.fillStyle='rgba(0,0,0,0.2)';c.fillRect(bx+3,by+bh,bw+4,3);
+  // Stone base tower - tapered
+  const baseW=bw*0.6,baseX=bx+(bw-baseW)/2;
+  c.fillStyle='#9a8a72';c.fillRect(baseX,by+bh*0.3,baseW,bh*0.7);
+  c.fillStyle='#8a7a62';// stone lines
+  for(let i=0;i<5;i++)c.fillRect(baseX,by+bh*0.35+i*bh*0.12,baseW,1);
+  // Slightly narrower top
+  c.fillStyle='#9a8a72';c.fillRect(baseX+2,by+bh*0.15,baseW-4,bh*0.2);
+  // Conical cap
+  c.fillStyle='#4a3020';
+  c.beginPath();c.moveTo(baseX,by+bh*0.15);c.lineTo(bx+bw/2,by);c.lineTo(baseX+baseW,by+bh*0.15);c.fill();
+  // Rotating blades
+  const cx2=bx+bw/2,cy2=by+bh*0.22;
+  c.save();c.translate(cx2,cy2);c.rotate(fr*0.02);
+  c.fillStyle='#5a3a18';c.lineWidth=2;
+  for(let i=0;i<4;i++){
+    c.save();c.rotate(i*Math.PI/2);
+    c.fillRect(-2,-2,4,bw*0.55);
+    // Blade sail
+    c.fillStyle='#e8e0d0';c.fillRect(0,-1,bw*0.12,bw*0.5);
+    c.fillStyle='#5a3a18';
+    c.restore();
+  }
+  c.restore();
+  // Door
+  c.fillStyle='#3a2010';c.fillRect(baseX+baseW*0.3,by+bh-bh*0.2,baseW*0.4,bh*0.2);
+}
+
+function drawBakery(c,bx,by,bw,bh,fr){
+  // Foundation
+  c.fillStyle='#5a4a30';c.fillRect(bx-1,by+bh-3,bw+4,4);
+  // Warm-toned walls
+  const wallH=bh*0.6;const wallY=by+bh-wallH;
+  c.fillStyle='#c8a070';c.fillRect(bx,wallY,bw,wallH);
+  // Timber frame
+  c.fillStyle='#5a3a18';
+  c.fillRect(bx,wallY,bw,2);c.fillRect(bx,wallY,2,wallH);c.fillRect(bx+bw-2,wallY,2,wallH);
+  c.fillRect(bx+bw*0.5-1,wallY,2,wallH);
+  // Pointed roof
+  c.fillStyle='#8a5a30';
+  c.beginPath();c.moveTo(bx-3,wallY);c.lineTo(bx+bw/2,wallY-bh*0.3);c.lineTo(bx+bw+3,wallY);c.fill();
+  // Oven chimney with smoke
+  c.fillStyle='#6a5a52';c.fillRect(bx+bw*0.7,wallY-bh*0.3-6,5,bh*0.15);
+  for(let i=0;i<2;i++){
+    const sy=wallY-bh*0.3-10-i*5-(fr%30)*0.12;
+    c.fillStyle=`rgba(140,130,120,${0.25-i*0.08})`;
+    c.beginPath();c.arc(bx+bw*0.72+Math.sin(fr*0.03+i)*2,sy,2+i,0,Math.PI*2);c.fill();
+  }
+  // Window & door
+  c.fillStyle='#3a2010';c.fillRect(bx+bw*0.1,wallY+wallH*0.45,bw*0.25,wallH*0.55);
+  c.fillStyle=window._isNight?'#ffdd88':'#aaccee';c.fillRect(bx+bw*0.6,wallY+8,7,5);
+  // Bread sign
+  c.fillStyle='#c8a050';c.fillRect(bx+bw*0.55,wallY+wallH*0.5,8,6);
+}
+
+function drawInn(c,bx,by,bw,bh,fr){
+  const SD=8,SS=-4;
+  // Shadow
+  c.fillStyle='rgba(0,0,0,0.22)';c.fillRect(bx+3,by+bh,bw+SD,3);
+  // Foundation
+  c.fillStyle='#4a3a28';c.fillRect(bx-2,by+bh-3,bw+SD+4,5);
+  // Two-story warm plaster walls
+  const wallH=bh*0.7;const wallY=by+bh-wallH;
+  c.fillStyle='#c8b888';c.fillRect(bx,wallY,bw,wallH);
+  // Timber frame pattern
+  c.fillStyle='#5a3a18';
+  c.fillRect(bx,wallY,bw,2);c.fillRect(bx,wallY+wallH*0.5,bw,2);
+  c.fillRect(bx,wallY,2,wallH);c.fillRect(bx+bw-2,wallY,2,wallH);
+  c.fillRect(bx+bw*0.5,wallY,2,wallH);
+  // Right side
+  c.fillStyle='#a89868';
+  c.beginPath();c.moveTo(bx+bw,wallY);c.lineTo(bx+bw+SD,wallY+SS);c.lineTo(bx+bw+SD,by+bh+SS);c.lineTo(bx+bw,by+bh);c.fill();
+  // Steep roof
+  c.fillStyle='#6a3a20';
+  c.beginPath();c.moveTo(bx-4,wallY);c.lineTo(bx+bw/2,wallY-bh*0.3);c.lineTo(bx+bw+4,wallY);c.fill();
+  // Roof side face
+  c.fillStyle='#5a2a18';
+  c.beginPath();c.moveTo(bx+bw+4,wallY);c.lineTo(bx+bw/2,wallY-bh*0.3);c.lineTo(bx+bw/2+SD,wallY-bh*0.3+SS);c.lineTo(bx+bw+4+SD,wallY+SS);c.fill();
+  // Sign hanging from bracket
+  c.fillStyle='#3a2010';c.fillRect(bx+bw*0.15,wallY+wallH*0.1,bw*0.3,2);
+  c.fillStyle='#c8a040';c.fillRect(bx+bw*0.18,wallY+wallH*0.12,bw*0.24,bh*0.08);
+  // Door
+  c.fillStyle='#3a2010';c.fillRect(bx+bw*0.35,wallY+wallH*0.5,bw*0.25,wallH*0.5);
+  // Windows (upper & lower)
+  c.fillStyle=window._isNight?'#ffdd88':'#aaccee';
+  c.fillRect(bx+4,wallY+6,7,5);c.fillRect(bx+bw-13,wallY+6,7,5);
+  c.fillRect(bx+4,wallY+wallH*0.55,7,5);c.fillRect(bx+bw-13,wallY+wallH*0.55,7,5);
+}
+
+function drawWarehouse(c,bx,by,bw,bh,fr){
+  // Foundation
+  c.fillStyle='#4a4a42';c.fillRect(bx-2,by+bh-3,bw+8,5);
+  // Stone walls - wide and squat
+  const wallH=bh*0.6;const wallY=by+bh-wallH;
+  c.fillStyle='#7a7a72';c.fillRect(bx,wallY,bw,wallH);
+  // Stone block pattern
+  c.fillStyle='#8a8a82';
+  for(let row=0;row<Math.floor(wallH/7);row++){
+    const off=(row%2)*5;
+    for(let col=off;col<bw-2;col+=10)c.fillRect(bx+col+1,wallY+row*7+1,8,5);
+  }
+  // Flat heavy roof
+  c.fillStyle='#4a4a3a';c.fillRect(bx-3,wallY-4,bw+6,5);
+  // Large cargo doors
+  c.fillStyle='#3a2a18';c.fillRect(bx+bw*0.15,wallY+wallH*0.3,bw*0.3,wallH*0.7);
+  c.fillRect(bx+bw*0.55,wallY+wallH*0.3,bw*0.3,wallH*0.7);
+  // Door handle bars
+  c.fillStyle='#888';c.fillRect(bx+bw*0.42,wallY+wallH*0.55,3,wallH*0.15);
+  // Crates outside
+  c.fillStyle='#8a6a30';c.fillRect(bx+bw+2,by+bh-8,6,6);
+  c.fillStyle='#7a5a28';c.fillRect(bx+bw+1,by+bh-14,5,5);
+}
+
+function drawStorehouse(c,bx,by,bw,bh,fr){
+  // Foundation
+  c.fillStyle='#5a4a30';c.fillRect(bx-1,by+bh-3,bw+3,4);
+  // Wooden walls
+  const wallH=bh*0.6;const wallY=by+bh-wallH;
+  c.fillStyle='#8a6a40';c.fillRect(bx,wallY,bw,wallH);
+  // Vertical plank lines
+  c.fillStyle='#7a5a30';
+  for(let i=0;i<Math.floor(bw/6);i++)c.fillRect(bx+i*6,wallY,1,wallH);
+  // Sloped roof
+  c.fillStyle='#5a4028';c.fillRect(bx-2,wallY-3,bw+4,4);
+  c.fillStyle='#6a4a30';c.fillRect(bx-2,wallY-6,bw+4,4);
+  // Door
+  c.fillStyle='#3a2010';c.fillRect(bx+bw*0.3,wallY+wallH*0.35,bw*0.35,wallH*0.65);
+  // Barrel outside
+  c.fillStyle='#6a4a28';
+  c.beginPath();c.ellipse(bx+bw+4,by+bh-5,4,5,0,0,Math.PI*2);c.fill();
+  c.fillStyle='#5a3a18';c.fillRect(bx+bw+1,by+bh-8,6,1);c.fillRect(bx+bw+1,by+bh-3,6,1);
+}
+
+function drawMonument(c,bx,by,bw,bh,fr){
+  // Base platform
+  c.fillStyle='#7a7a72';c.fillRect(bx+bw*0.1,by+bh*0.7,bw*0.8,bh*0.25);
+  c.fillStyle='#8a8a82';c.fillRect(bx+bw*0.15,by+bh*0.65,bw*0.7,bh*0.08);
+  // Stone pillar
+  c.fillStyle='#a0a098';c.fillRect(bx+bw*0.3,by+bh*0.15,bw*0.4,bh*0.55);
+  // Tapered top
+  c.fillStyle='#b0b0a8';
+  c.beginPath();c.moveTo(bx+bw*0.3,by+bh*0.15);c.lineTo(bx+bw*0.5,by);c.lineTo(bx+bw*0.7,by+bh*0.15);c.fill();
+  // Carved detail
+  c.fillStyle='#8a8a80';c.fillRect(bx+bw*0.35,by+bh*0.3,bw*0.3,2);
+  c.fillRect(bx+bw*0.35,by+bh*0.5,bw*0.3,2);
+  // Highlight
+  c.fillStyle='rgba(255,255,255,0.12)';c.fillRect(bx+bw*0.3,by+bh*0.15,2,bh*0.55);
+}
+
+function drawHerbalist(c,bx,by,bw,bh,fr){
+  // Foundation
+  c.fillStyle='#4a4a30';c.fillRect(bx-1,by+bh-3,bw+3,4);
+  // Green-tinted wooden walls
+  const wallH=bh*0.6;const wallY=by+bh-wallH;
+  c.fillStyle='#6a8a50';c.fillRect(bx,wallY,bw,wallH);
+  // Timber frame
+  c.fillStyle='#4a3018';c.fillRect(bx,wallY,bw,2);c.fillRect(bx,wallY,2,wallH);c.fillRect(bx+bw-2,wallY,2,wallH);
+  // Thatched roof
+  c.fillStyle='#8a7a40';
+  c.beginPath();c.moveTo(bx-4,wallY);c.lineTo(bx+bw/2,wallY-bh*0.3);c.lineTo(bx+bw+4,wallY);c.fill();
+  c.fillStyle='#9a8a48';c.fillRect(bx-2,wallY-2,bw+4,3);
+  // Door
+  c.fillStyle='#3a2810';c.fillRect(bx+bw*0.35,wallY+wallH*0.4,bw*0.3,wallH*0.6);
+  // Hanging herb bundles
+  c.fillStyle='#2a6a18';c.fillRect(bx+4,wallY-4,3,6);c.fillRect(bx+10,wallY-5,3,7);
+  c.fillStyle='#4a8a28';c.fillRect(bx+bw-10,wallY-4,3,6);
+  // Potted plant
+  c.fillStyle='#7a4a20';c.fillRect(bx+bw*0.7,by+bh-6,5,4);
+  c.fillStyle='#3a8a20';c.fillRect(bx+bw*0.7,by+bh-10,6,5);
+}
+
+function drawStonecutter(c,bx,by,bw,bh,fr){
+  // Foundation - extra solid
+  c.fillStyle='#5a5a52';c.fillRect(bx-2,by+bh-4,bw+6,5);
+  // Stone walls
+  const wallH=bh*0.55;const wallY=by+bh-wallH;
+  c.fillStyle='#8a8078';c.fillRect(bx,wallY,bw,wallH);
+  // Stone block pattern
+  c.fillStyle='#9a9088';
+  for(let row=0;row<3;row++){
+    const off=(row%2)*5;
+    for(let col=off;col<bw-2;col+=10)c.fillRect(bx+col+1,wallY+row*8+1,8,6);
+  }
+  // Flat slate roof
+  c.fillStyle='#5a5a52';c.fillRect(bx-2,wallY-3,bw+4,4);
+  // Open work area
+  c.fillStyle='#3a3028';c.fillRect(bx+bw*0.5,wallY+wallH*0.3,bw*0.45,wallH*0.7);
+  // Stone blocks stacked outside
+  c.fillStyle='#9a9088';c.fillRect(bx-4,by+bh-7,5,5);c.fillRect(bx-3,by+bh-12,4,4);
+  c.fillStyle='#8a8078';c.fillRect(bx+bw+2,by+bh-9,6,7);
+  // Chisel/tools accent
+  c.fillStyle='#666';c.fillRect(bx+bw*0.6,wallY+wallH*0.4,1,wallH*0.3);
+}
+
+function drawShrine(c,bx,by,bw,bh,fr){
+  // Stone base
+  c.fillStyle='#8a8a80';c.fillRect(bx+bw*0.15,by+bh*0.65,bw*0.7,bh*0.3);
+  // Pillar
+  c.fillStyle='#c0b8a8';c.fillRect(bx+bw*0.35,by+bh*0.2,bw*0.3,bh*0.5);
+  // Ornate pointed top
+  c.fillStyle='#a0a098';
+  c.beginPath();c.moveTo(bx+bw*0.35,by+bh*0.2);c.lineTo(bx+bw*0.5,by);c.lineTo(bx+bw*0.65,by+bh*0.2);c.fill();
+  // Glow orb
+  const glowA=0.3+0.2*Math.sin(fr*0.06);
+  c.fillStyle=`rgba(120,200,255,${glowA})`;
+  c.beginPath();c.arc(bx+bw*0.5,by+bh*0.35,bw*0.1,0,Math.PI*2);c.fill();
+  // Candle flames at base
+  c.fillStyle='#c8a040';c.fillRect(bx+bw*0.2,by+bh*0.6,2,4);c.fillRect(bx+bw*0.75,by+bh*0.6,2,4);
+  c.fillStyle=`rgba(255,200,80,${0.5+0.2*Math.sin(fr*0.12)})`;
+  c.fillRect(bx+bw*0.19,by+bh*0.56,3,3);c.fillRect(bx+bw*0.74,by+bh*0.56,3,3);
+  // Highlight
+  c.fillStyle='rgba(255,255,255,0.1)';c.fillRect(bx+bw*0.35,by+bh*0.2,2,bh*0.5);
+}
+
+function drawArena(c,bx,by,bw,bh,fr){
+  // Dirt ground
+  c.fillStyle='#7a6a40';c.fillRect(bx+2,by+bh*0.4,bw-4,bh*0.55);
+  // Arena walls - oval stone border
+  c.fillStyle='#6a5a4a';c.fillRect(bx,by+bh*0.35,bw,bh*0.08);
+  c.fillRect(bx,by+bh*0.9,bw,bh*0.08);
+  c.fillRect(bx,by+bh*0.35,bw*0.08,bh*0.63);
+  c.fillRect(bx+bw*0.92,by+bh*0.35,bw*0.08,bh*0.63);
+  // Sand/dirt center
+  c.fillStyle='#a89860';c.fillRect(bx+bw*0.15,by+bh*0.45,bw*0.7,bh*0.4);
+  // Entrance gap
+  c.fillStyle='#5a4a30';c.fillRect(bx+bw*0.4,by+bh*0.9,bw*0.2,bh*0.1);
+  // Skull trophies on walls
+  c.fillStyle='#ddd';c.fillRect(bx+bw*0.15,by+bh*0.3,4,4);c.fillRect(bx+bw*0.75,by+bh*0.3,4,4);
+  // Spike posts
+  c.fillStyle='#5a3a18';c.fillRect(bx+2,by+bh*0.22,3,bh*0.15);c.fillRect(bx+bw-5,by+bh*0.22,3,bh*0.15);
+  c.fillStyle='#888';c.fillRect(bx+2,by+bh*0.2,3,3);c.fillRect(bx+bw-5,by+bh*0.2,3,3);
+}
+
+function drawTrainingGround(c,bx,by,bw,bh,fr){
+  // Dirt/mud ground
+  c.fillStyle='#6a5a38';c.fillRect(bx+2,by+bh*0.4,bw-4,bh*0.55);
+  // Fence around perimeter
+  c.fillStyle='#7a5a30';
+  c.fillRect(bx,by+bh*0.35,bw,2);c.fillRect(bx,by+bh*0.92,bw,2);
+  c.fillRect(bx,by+bh*0.35,2,bh*0.6);c.fillRect(bx+bw-2,by+bh*0.35,2,bh*0.6);
+  // Fence posts
+  c.fillRect(bx,by+bh*0.3,3,bh*0.08);c.fillRect(bx+bw-3,by+bh*0.3,3,bh*0.08);
+  c.fillRect(bx+bw*0.5,by+bh*0.3,3,bh*0.08);
+  // Training dummy (straw man)
+  c.fillStyle='#a89050';c.fillRect(bx+bw*0.45,by+bh*0.5,bw*0.1,bh*0.25);
+  c.fillStyle='#8a7040';c.fillRect(bx+bw*0.38,by+bh*0.55,bw*0.24,bh*0.06);// arms
+  c.fillStyle='#7a6030';
+  c.beginPath();c.arc(bx+bw*0.5,by+bh*0.48,bw*0.06,0,Math.PI*2);c.fill();// head
+  // Weapon rack
+  c.fillStyle='#5a3a18';c.fillRect(bx+bw*0.75,by+bh*0.45,2,bh*0.35);
+  c.fillStyle='#888';c.fillRect(bx+bw*0.72,by+bh*0.48,8,1);c.fillRect(bx+bw*0.72,by+bh*0.6,8,1);
+  // Swords on rack
+  c.fillStyle='#aaa';c.fillRect(bx+bw*0.73,by+bh*0.42,1,bh*0.08);c.fillRect(bx+bw*0.78,by+bh*0.43,1,bh*0.07);
+}
+
 function drawBuilding(c,b,bx,by,bw,bh,fr){
   if(!isFinite(bx)||!isFinite(by)||!isFinite(bw)||!isFinite(bh)||bw<=0||bh<=0)return;
   const p=b.progress!=null?b.progress:1;
@@ -1775,6 +2189,24 @@ function drawBuilding(c,b,bx,by,bw,bh,fr){
     if(type==='apartment')return drawApartment(c,bx,by,bw,bh,fr);
     if(type==='office')return drawOffice(c,bx,by,bw,bh,fr);
     if(type==='factory')return drawFactory(c,bx,by,bw,bh,fr);
+    // New building types
+    if(type==='well')return drawWell(c,bx,by,bw,bh,fr);
+    if(type==='fountain')return drawFountain(c,bx,by,bw,bh,fr);
+    if(type==='garden')return drawGarden(c,bx,by,bw,bh,fr);
+    if(type==='cottage')return drawCottage(c,bx,by,bw,bh,fr);
+    if(type==='stable')return drawStable(c,bx,by,bw,bh,fr);
+    if(type==='barn')return drawBarn(c,bx,by,bw,bh,fr);
+    if(type==='windmill')return drawWindmill(c,bx,by,bw,bh,fr);
+    if(type==='bakery')return drawBakery(c,bx,by,bw,bh,fr);
+    if(type==='inn')return drawInn(c,bx,by,bw,bh,fr);
+    if(type==='warehouse')return drawWarehouse(c,bx,by,bw,bh,fr);
+    if(type==='storehouse')return drawStorehouse(c,bx,by,bw,bh,fr);
+    if(type==='monument')return drawMonument(c,bx,by,bw,bh,fr);
+    if(type==='herbalist')return drawHerbalist(c,bx,by,bw,bh,fr);
+    if(type==='stonecutter')return drawStonecutter(c,bx,by,bw,bh,fr);
+    if(type==='shrine')return drawShrine(c,bx,by,bw,bh,fr);
+    if(type==='arena')return drawArena(c,bx,by,bw,bh,fr);
+    if(type==='training_ground')return drawTrainingGround(c,bx,by,bw,bh,fr);
   }
   drawBuildingPixelArt(c,b,bx,by,bw,bh,fr);
 }
@@ -2728,10 +3160,10 @@ const TERRAIN_WORDS=['Riverside','Oakwood','Stoneridge','Pinewood','Meadow','Hil
 const SUFFIX_WORDS=['Hollow','Glen','Keep','Village','Settlement','Camp','Haven','Crossing','Dell','Rest'];
 
 // Building ring categories
-const RING1_TYPES=new Set(['town_hall','blacksmith','church','market','library']);
-const RING2_TYPES=new Set(['wood_hut','log_cabin','stone_house','brick_house','apartment','campfire']);
-const RING3_TYPES=new Set(['quarry','lumber_mill','farm','factory','office']);
-const RING4_TYPES=new Set(['watchtower','monument','fence','statue']);
+const RING1_TYPES=new Set(['town_hall','blacksmith','church','market','library','well','fountain','monument','shrine','tavern','inn','chapel']);
+const RING2_TYPES=new Set(['wood_hut','log_cabin','stone_house','brick_house','apartment','campfire','cottage','bakery','herbalist']);
+const RING3_TYPES=new Set(['quarry','lumber_mill','farm','factory','office','warehouse','storehouse','stonecutter','mine_shaft','brewery']);
+const RING4_TYPES=new Set(['watchtower','monument','fence','statue','stable','barn','windmill','garden','arena','training_ground','sentinel_tree','spike_tower','stone_wall']);
 
 // Agent settlement group assignment (cached)
 const agentSettlementGroup=new Map();// agentId -> groupId
