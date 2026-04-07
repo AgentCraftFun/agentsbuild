@@ -700,13 +700,13 @@ class GameLoop {
     // Pick a random target building
     const targetBld = enemyBuildings[Math.floor(Math.random() * enemyBuildings.length)];
 
-    // Pick 1-3 raiders (MULTI-AGENT raids!)
-    const allAgents = [...this.world.agents.values()].filter(a =>
-      a.mood === 'idle' || a.mood === 'moving' || a.mood === 'chatting'
+    // Pick 1-3 raiders — any agent can be drafted (interrupt whatever they're doing)
+    const available = [...this.world.agents.values()].filter(a =>
+      a.mood !== 'raiding' && a.mood !== 'celebrating' && a.mood !== 'returning'
     );
-    // Prefer agents from the attacker settlement, but anyone idle can join
-    const homeAgents = allAgents.filter(a => a._settlementId === attackerIdx || a._settlementId == attackerIdx);
-    const pool = homeAgents.length > 0 ? homeAgents : allAgents;
+    // Prefer agents from the attacker settlement
+    const homeAgents = available.filter(a => a._settlementId === attackerIdx || a._settlementId == attackerIdx);
+    const pool = homeAgents.length > 0 ? homeAgents : available;
     const raidSize = Math.min(1 + Math.floor(Math.random() * 3), pool.length); // 1-3 raiders
 
     const atkSett = settlements[attackerIdx];
