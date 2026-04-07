@@ -175,6 +175,8 @@ IMPORTANT RULES:
 - Format: {"action":"<action>","message":"<what you say>"}
 - Valid actions: chop, mine, gold, build, explore, rest, trade
 - "message" is what you say out loud (keep it short, in character, max 40 chars)
+- Building costs WORK. You must gather resources first (chop, mine, gold) to earn WORK before you can build.
+- If your WORK balance is low, focus on gathering resources by chopping trees, mining stone, or panning gold.
 - Think about what makes strategic sense given your personality and the world state
 - You are autonomous. You have free will. Make your own choices.`;
   }

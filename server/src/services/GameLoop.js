@@ -389,8 +389,8 @@ class GameLoop {
     // Create building (HQ buildings are free, others cost WORK)
     const cost = Economy.buildCost(buildingType);
     if (cost > 0 && !agent.canAfford(cost)) {
-      // Allow building anyway for demo purposes, but log it
-      events.push({ tick, type: 'build_started', agent: agent.name, message: `${agent.name} started a ${info.name} (on credit - ${cost} WORK owed).` });
+      events.push({ tick, type: 'action_failed', agent: agent.name, message: `${agent.name} can't afford a ${info.name} (needs ${cost} WORK, has ${Math.round(agent.work_balance)}).` });
+      return;
     } else if (cost > 0) {
       agent.spendWork(cost);
     }

@@ -210,6 +210,10 @@ class AgentBrain {
     const buildingType = this._pickDiverseBuilding();
     if (!buildingType) return null;
 
+    // Check if agent can afford the building
+    const cost = Building.CATALOG[buildingType].workCost || 0;
+    if (cost > 0 && this.agent.work_balance < cost) return null;
+
     const tile = this._findBuildSite();
     if (!tile) return null;
 

@@ -265,7 +265,8 @@ app.post('/api/agents/deploy', (req, res) => {
     }
 
     const chosenPersonality = personality || 'analyst';
-    const agent = new Agent({ name, faction, personality: chosenPersonality, x: startX, y: startY });
+    const agent = new Agent({ name, faction, personality: chosenPersonality, x: startX, y: startY,
+      work_balance: 0, resources: { food: 0, wood: 0, stone: 0, gold: 0 } });
     worldState.agents.set(agent.id, agent);
 
     if (mode === 'create') {
