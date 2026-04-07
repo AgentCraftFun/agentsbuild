@@ -4150,11 +4150,20 @@ if(settlements.length>=2){
 // Village/settlement names — positioned ABOVE topmost building, always visible
 for(const vl of villages){
   const vpx=vl.cx*ts+ts/2;
-  // Find topmost building in this settlement
-  const settBlds3=G.clientBuildings.filter(b2=>b2.settlement===vl.name);
+  // Find topmost building in this settlement (use server buildings when connected)
+  const allBlds=S.connected&&S.buildings.length>0?S.buildings:G.clientBuildings;
+  const settBlds3=allBlds.filter(b2=>{
+    if(b2.settlement===vl.name)return true;
+    // Fallback: buildings near this village center
+    return Math.abs(b2.x-vl.cx)+Math.abs(b2.y-vl.cy)<15;
+  });
   let topY=vl.cy*ts;
-  for(const b2 of settBlds3){const by3=b2.y*ts-(b2.ph||ts);if(by3<topY)topY=by3}
-  const nameY=topY-20;// 20px above topmost building
+  for(const b2 of settBlds3){
+    const bh2=(b2.ph||(b2.height||1)*ts);
+    const by3=b2.y*ts-bh2;
+    if(by3<topY)topY=by3;
+  }
+  const nameY=topY-30;// 30px above topmost building
   // Dark pill background
   ctx.font='bold 13px Courier New';
   const vtw=ctx.measureText(vl.name).width;
