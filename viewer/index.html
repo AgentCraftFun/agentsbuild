@@ -3037,8 +3037,8 @@ function updateAgentMovement(){
     if(S.connected&&(a.mood==='raiding'||a.mood==='celebrating'||a.mood==='returning')){
       st.state=a.mood;st.target=null;st.timer=0;st.taskCooldown=0;
       v.tx=a.x/WW;v.ty=a.y/WH;
-      // Smooth move then skip all state-machine logic
-      v.x+=(v.tx-v.x)*0.06;v.y+=(v.ty-v.y)*0.06;// faster speed for raiders
+      // Fast smooth movement for raiders — 20% per frame keeps up with server tick rate
+      v.x+=(v.tx-v.x)*0.20;v.y+=(v.ty-v.y)*0.20;
       continue;
     }
     // When agent was raiding but server says they're done, reset to idle
