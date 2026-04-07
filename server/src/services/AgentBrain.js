@@ -356,8 +356,12 @@ class AgentBrain {
     const { tiles, buildingsList, width, height } = this.world;
     const MIN_DIST = 5;
 
-    // 50% chance to pioneer when settlement is full — creates variety
-    if (Math.random() > 0.5) return null;
+    // Limit mini-settlements: max 2 beyond the 3 originals (5 total)
+    const existingSettlements = this.world.settlements || [];
+    if (existingSettlements.length >= 5) return null;
+
+    // Only 10% chance per failed build — keeps them rare
+    if (Math.random() > 0.10) return null;
 
     const settlementId = this.agent._settlementId || 0;
     const settlements = this.world.settlements || [];

@@ -3048,9 +3048,9 @@ function updateAgentMovement(){
           v.y+=rdy/rdist*Math.min(walkSpeed,rdist);
         }
       }else{
-        // No target — sync to server position
+        // No raid target — snap directly to server position (fast catch-up)
         v.tx=a.x/WW;v.ty=a.y/WH;
-        v.x+=(v.tx-v.x)*0.15;v.y+=(v.ty-v.y)*0.15;
+        v.x=v.tx;v.y=v.ty;// instant snap — no easing, prevents run-in-place
       }
       continue;
     }
@@ -3436,6 +3436,8 @@ function updateAgentMovement(){
 const ERA_ICONS=['🪵','🪨','⚔️','🏙️'];
 function updateGameUI(){
   if(frame%30!==0)return;// throttle DOM updates (every 0.5s)
+  // Minimap always updates (even when connected)
+  updateMinimap();
   // When connected, resources come from server via updateBottom() — don't overwrite
   if(S.connected)return;
   const next=getNextBuilding();
@@ -3472,8 +3474,6 @@ function updateGameUI(){
   if(frame%300===0){
     const lb=getLeaderboards();
   }
-  // Minimap
-  updateMinimap();
 }
 const STATE_ICONS={idle:'💤',walking_to_tree:'🪓',walking_to_rock:'⛏',walking_to_gold:'🪙',walking_to_fish:'🎣',chopping:'🪓',mining:'⛏',mining_gold:'🪙',building:'🔨',fishing:'🎣',raiding:'⚔️',celebrating:'🔥',returning:'🏃'};
 const STATE_LABELS={idle:'Idle',walking_to_tree:'Walking to tree',walking_to_rock:'Walking to rock',walking_to_gold:'Walking to gold',walking_to_fish:'Walking to water',chopping:'Chopping tree',mining:'Mining stone',mining_gold:'Mining gold',building:'Building',fishing:'Fishing',raiding:'Raiding!',celebrating:'Celebrating destruction!',returning:'Returning home'};
@@ -5400,6 +5400,11 @@ function updateWildlife(){
       const cnx=an.wx+Math.sin(frame*0.01+an.phase)*0.003;
       const cny=an.wy+Math.cos(frame*0.013+an.phase)*0.002;
       if(animalCanMove(cnx,cny)){an.wx=cnx;an.wy=cny}
+      // Keep chickens near their farm (leash radius 5 tiles)
+      if(an.farmId){
+        const fp=an.farmId.split(',');const fx=+fp[0],fy=+fp[1];
+        if(Math.abs(an.wx-fx)+Math.abs(an.wy-fy)>5){an.wx+=(fx-an.wx)*0.05;an.wy+=(fy-an.wy)*0.05}
+      }
     }
     an.wx=Math.max(1,Math.min(WW-1,an.wx));an.wy=Math.max(1,Math.min(WH-1,an.wy));
   }
