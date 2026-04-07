@@ -542,11 +542,11 @@ class GameLoop {
     const settlements = this.world.settlements || [];
     if (settlements.length < 2) return;
 
-    // Initialize war state
+    // Initialize war state (persists across ticks but NOT across server restarts)
     if (!this.world._warState) {
       this.world._warState = {
-        lastRaidTick: Math.max(0, (this.world.tick || 0) - 200), // allow first raid after ~100 ticks (~Day 1)
-        activeRaids: [],   // { attackerSettlement, defenderSettlement, startTick, phase }
+        lastRaidTick: 0,
+        activeRaids: [],
         raidCooldown: 300, // ~3 game days between raids
       };
     }
@@ -688,26 +688,36 @@ class GameLoop {
     }
 
     // 3. Trigger new raids periodically
-    // Need at least 10 total buildings and 500 ticks since last raid
     const totalBuildings = this.world.buildingsList.filter(b => b.isComplete()).length;
+
+    // Log war state every 100 ticks for diagnostics
+    if (tick % 100 === 0) {
+      console.log(`[War] tick=${tick} buildings=${totalBuildings} lastRaid=${war.lastRaidTick} cooldown=${war.raidCooldown} activeRaids=${war.activeRaids.length} settlements=${settlements.length}`);
+    }
+
     if (totalBuildings < 10) return;
     if (tick - war.lastRaidTick < war.raidCooldown) return;
 
-    // Random chance each tick after cooldown: ~3% per tick = happens within ~33 ticks
-    if (Math.random() > 0.03) return;
+    // 10% chance per tick after cooldown = raid triggers within ~10 ticks
+    if (Math.random() > 0.10) return;
 
     war.lastRaidTick = tick;
 
-    // Pick attacker and defender settlements
-    const settlementIdx = settlements.map((s, i) => i);
-    const attackerIdx = settlementIdx[Math.floor(Math.random() * settlementIdx.length)];
+    // Only raid between the 3 original settlements (not mini-settlements)
+    const mainSettlements = Math.min(3, settlements.length);
+    const attackerIdx = Math.floor(Math.random() * mainSettlements);
     let defenderIdx;
-    do { defenderIdx = settlementIdx[Math.floor(Math.random() * settlementIdx.length)]; }
-    while (defenderIdx === attackerIdx);
+    do { defenderIdx = Math.floor(Math.random() * mainSettlements); }
+    while (defenderIdx === attackerIdx && mainSettlements > 1);
 
-    // Pick an aggressive/capable agent from attacker settlement as the raider
-    const attackerAgents = [...this.world.agents.values()].filter(a => a._settlementId === attackerIdx);
-    if (attackerAgents.length === 0) return;
+    // Pick a raider: any agent from the attacker settlement (or assigned to it originally)
+    const attackerAgents = [...this.world.agents.values()].filter(a =>
+      (a._settlementId === attackerIdx) || (a._settlementId == attackerIdx)
+    );
+    if (attackerAgents.length === 0) {
+      console.log(`[War] No agents in settlement ${attackerIdx}, skipping raid`);
+      return;
+    }
     // Prefer aggressive agents, fall back to random
     const raider = attackerAgents.find(a => a.personality === 'aggressive') ||
                    attackerAgents[Math.floor(Math.random() * attackerAgents.length)];
@@ -725,6 +735,8 @@ class GameLoop {
 
     raider.mood = 'raiding';
     raider.message = `Marching on ${defSett.name}!`;
+
+    console.log(`[War] RAID TRIGGERED! tick=${tick} ${raider.name} from ${atkSett.name} → ${defSett.name}`);
 
     events.push({
       tick, type: 'raid_started',
