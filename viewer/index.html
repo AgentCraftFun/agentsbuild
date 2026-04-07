@@ -554,7 +554,7 @@ function drawPaths(c,buildings,fr){
     if(!_pathCanvas){_pathCanvas=document.createElement('canvas');_pathCanvas.width=WW*TS;_pathCanvas.height=WH*TS}
     const pc=_pathCanvas.getContext('2d');
     pc.clearRect(0,0,_pathCanvas.width,_pathCanvas.height);
-    pc.fillStyle='#8a7a58';pc.globalAlpha=0.3;
+    pc.fillStyle='#8a7a58';pc.globalAlpha=0.45;
     // Only connect each building to its 3 nearest neighbors (not O(n²))
     for(let i=0;i<buildings.length;i++){
       const a=buildings[i];
@@ -580,7 +580,7 @@ function drawPaths(c,buildings,fr){
           const py=ay+(by2-ay)*t+Math.cos(t*6+dists[k].j)*2;
           const tx2=Math.floor(px/TS),ty2=Math.floor(py/TS);
           if(tx2>=0&&tx2<WW&&ty2>=0&&ty2<WH){const bi2=tBiomes[ty2*WW+tx2];if(bi2===0||bi2===1||bi2===10)continue}
-          pc.fillRect(px,py,2,2);
+          pc.fillRect(px-1,py-1,4,4);
         }
       }
     }
@@ -2801,7 +2801,7 @@ function checkVillages(){
       let cx2=0,cy2=0;for(const b of blds){cx2+=b.x;cy2+=b.y}
       s.cx=cx2/blds.length;s.cy=cy2/blds.length;
       // Slow radius growth — pack tight before expanding
-      s.radius=Math.max(4,Math.min(blds.length+3,20));
+      s.radius=Math.max(4,Math.min(blds.length+3,35));
       s.buildings=blds;
       // Settlement phase transitions
       const phase=getSettlementPhase(blds.length);
@@ -2967,11 +2967,14 @@ function pickBuildSite(bdef,agentId){
   // 4 road directions: N, S, E, W
   const dirs=[[0,-1],[0,1],[-1,0],[1,0]];
 
+  // Scale max rings with settlement size so building never caps out
+  const settBldCount=sett.buildings?sett.buildings.length:G.clientBuildings.filter(b=>b.settlement===sett.name).length;
+  const extraRings=Math.floor(settBldCount/5);
   // Public buildings: ring 0-1 (close to center)
-  // Residential: ring 2-4
-  // Industrial: ring 4-6
+  // Residential: ring 2-4+
+  // Industrial: ring 4-6+
   const minRing=isPublic?1:isIndustrial?4:2;
-  const maxRing=isPublic?2:isIndustrial?6:4;
+  const maxRing=isPublic?2+extraRings:isIndustrial?6+extraRings:4+extraRings;
 
   for(let ring=minRing;ring<=maxRing;ring++){
     for(const[dx2,dy2] of dirs){
@@ -2989,7 +2992,8 @@ function pickBuildSite(bdef,agentId){
     }
   }
   // Fallback: try nearby rings only (keep buildings clustered in settlements)
-  for(let ring=1;ring<=5;ring++){
+  const fallbackMax=5+extraRings;
+  for(let ring=1;ring<=fallbackMax;ring++){
     for(const[dx2,dy2] of dirs){
       for(const side of [-1,1]){
         const px3=Math.round(sett.cx+dx2*ring*plotDist+dy2*side*sideOff+(rng3.next()-0.5)*2);
@@ -3720,17 +3724,17 @@ for(const s of settlements){
   for(const b2 of settBlds2){
     const bpx2=b2.x*ts+(b2.pw||ts)/2,bpy2=b2.y*ts+(b2.ph||ts)/2;
     // Inner packed dirt (40px radius around each building)
-    ctx.fillStyle='rgba(154,138,104,0.12)';
+    ctx.fillStyle='rgba(154,138,104,0.22)';
     ctx.beginPath();ctx.arc(bpx2,bpy2,40,0,Math.PI*2);ctx.fill();
     // Transition zone (40-60px): patchy dirt
-    ctx.fillStyle='rgba(140,120,90,0.06)';
+    ctx.fillStyle='rgba(140,120,90,0.12)';
     ctx.beginPath();ctx.arc(bpx2,bpy2,60,0,Math.PI*2);ctx.fill();
   }
   // CENTRAL PLAZA — 80px cleared dirt patch
-  ctx.fillStyle='rgba(154,138,104,0.2)';
-  ctx.beginPath();ctx.arc(scx,scy,40,0,Math.PI*2);ctx.fill();
-  ctx.fillStyle='rgba(130,110,80,0.12)';
-  ctx.beginPath();ctx.arc(scx,scy,55,0,Math.PI*2);ctx.fill();
+  ctx.fillStyle='rgba(154,138,104,0.35)';
+  ctx.beginPath();ctx.arc(scx,scy,45,0,Math.PI*2);ctx.fill();
+  ctx.fillStyle='rgba(130,110,80,0.2)';
+  ctx.beginPath();ctx.arc(scx,scy,60,0,Math.PI*2);ctx.fill();
 
   // CROSSROADS — N/S and E/W roads through center (wider, with wheel tracks)
   // Draw segment by segment, skipping water tiles
@@ -3740,19 +3744,19 @@ for(const s of settlements){
   for(let ry=scy-roadLen2;ry<scy+roadLen2;ry+=roadStep){
     const rtx=Math.floor(scx/ts),rty=Math.floor(ry/ts);
     if(rtx>=0&&rtx<WW&&rty>=0&&rty<WH){const rbi=tBiomes[rty*WW+rtx];if(rbi===0||rbi===1||rbi===10)continue}
-    ctx.fillStyle='rgba(138,122,88,0.22)';ctx.fillRect(scx-roadW/2,ry,roadW,roadStep);
-    ctx.fillStyle='rgba(106,90,56,0.15)';ctx.fillRect(scx-3,ry,2,roadStep);ctx.fillRect(scx+2,ry,2,roadStep);
+    ctx.fillStyle='rgba(138,122,88,0.38)';ctx.fillRect(scx-roadW/2,ry,roadW,roadStep);
+    ctx.fillStyle='rgba(106,90,56,0.25)';ctx.fillRect(scx-3,ry,2,roadStep);ctx.fillRect(scx+2,ry,2,roadStep);
   }
   // E-W road
   for(let rx=scx-roadLen2;rx<scx+roadLen2;rx+=roadStep){
     const rtx=Math.floor(rx/ts),rty=Math.floor(scy/ts);
     if(rtx>=0&&rtx<WW&&rty>=0&&rty<WH){const rbi=tBiomes[rty*WW+rtx];if(rbi===0||rbi===1||rbi===10)continue}
-    ctx.fillStyle='rgba(138,122,88,0.22)';ctx.fillRect(rx,scy-roadW/2,roadStep,roadW);
-    ctx.fillStyle='rgba(106,90,56,0.15)';ctx.fillRect(rx,scy-3,roadStep,2);ctx.fillRect(rx,scy+2,roadStep,2);
+    ctx.fillStyle='rgba(138,122,88,0.38)';ctx.fillRect(rx,scy-roadW/2,roadStep,roadW);
+    ctx.fillStyle='rgba(106,90,56,0.25)';ctx.fillRect(rx,scy-3,roadStep,2);ctx.fillRect(rx,scy+2,roadStep,2);
   }
 
   // BRANCH PATHS from each building to nearest road (wider, 8px)
-  ctx.fillStyle='#8a7a58';ctx.globalAlpha=0.2;
+  ctx.fillStyle='#8a7a58';ctx.globalAlpha=0.35;
   for(const b2 of settBlds2){
     const bpx2=b2.x*ts+(b2.pw||ts)/2,bpy2=b2.y*ts+(b2.ph||ts)/2;
     const toNS=Math.abs(bpx2-scx),toEW=Math.abs(bpy2-scy);
@@ -3767,7 +3771,7 @@ for(const s of settlements){
   ctx.globalAlpha=1;
 
   // ROAD INTERSECTION DETAIL — wider square at center crossroads
-  ctx.fillStyle='rgba(138,122,88,0.18)';
+  ctx.fillStyle='rgba(138,122,88,0.35)';
   ctx.fillRect(scx-14,scy-14,28,28);
 
   // TORCHES at road intersections (every 80px along roads)
@@ -3868,7 +3872,7 @@ for(const s of settlements){
       const dist5=Math.sqrt(dx5*dx5+dy5*dy5);
       if(dist5<10)continue;
       const nx5=dx5/dist5,ny5=dy5/dist5;
-      ctx.fillStyle='rgba(122,106,72,0.12)';
+      ctx.fillStyle='rgba(122,106,72,0.22)';
       for(let rd=0;rd<dist5;rd+=6){
         const rx=scx+nx5*rd,ry=scy+ny5*rd;
         // Slight curve for natural feel
@@ -3966,8 +3970,8 @@ for(const s of settlements){
       const adx=Math.abs(av.x*WW*ts-scx),ady=Math.abs(av.y*WH*ts-scy);
       return adx<wallR+30&&ady<wallR+30;// within settlement wall radius
     });
-    if(!S.connected&&wallBuilders.length>0){
-      const buildRate=0.0006*wallBuilders.length;
+    if(wallBuilders.length>0){
+      const buildRate=0.001*wallBuilders.length;
       const nextSeg=s.wallSegs.find(ws=>ws.progress<1&&!ws.isGate);
       if(nextSeg){nextSeg.progress=Math.min(1,nextSeg.progress+buildRate)}
       if(!nextSeg){const gateSeg=s.wallSegs.find(ws=>ws.isGate&&ws.progress<1);if(gateSeg)gateSeg.progress=Math.min(1,gateSeg.progress+buildRate)}
@@ -4026,8 +4030,8 @@ for(const s of settlements){
   // Central plaza (3+ buildings)
   if(s.buildings.length>=3){
     // Plaza ground
-    ctx.fillStyle='rgba(154,138,112,0.15)';
-    ctx.beginPath();ctx.arc(scx,scy,22,0,Math.PI*2);ctx.fill();
+    ctx.fillStyle='rgba(154,138,112,0.3)';
+    ctx.beginPath();ctx.arc(scx,scy,28,0,Math.PI*2);ctx.fill();
     // Central feature based on era
     if(G.era>=2){// Fountain
       ctx.fillStyle='#8a8890';ctx.beginPath();ctx.arc(scx,scy,8,0,Math.PI*2);ctx.fill();

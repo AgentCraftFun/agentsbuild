@@ -271,8 +271,19 @@ class AgentBrain {
       }
     }
 
+    // Count existing buildings in this settlement to scale search radius
+    const settlementBuildings = buildingsList.filter(b => {
+      const dx = Math.abs(b.x - cx);
+      const dy = Math.abs(b.y - cy);
+      return dx + dy < 60; // buildings roughly in this settlement
+    }).length;
+
+    // Scale rings with settlement size: start with 8, grow as area fills up
+    // Each ring adds ~3 tiles of radius, so 16 rings = ~53 tile radius
+    const maxRings = Math.min(20, 8 + Math.floor(settlementBuildings / 4));
+
     // Search in expanding rings around settlement center
-    for (let ring = 0; ring < 8; ring++) {
+    for (let ring = 0; ring < maxRings; ring++) {
       const radius = MIN_DIST + ring * 3;
       const attempts = 16 + ring * 4; // more attempts at larger radii
       for (let a = 0; a < attempts; a++) {
