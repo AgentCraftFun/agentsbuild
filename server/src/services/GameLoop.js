@@ -612,10 +612,16 @@ class GameLoop {
       if (!raid.attacked) {
         raid.attacked = true;
         raid.attackTick = tick;
-        // Find nearby buildings to burn (within 15 tiles of raider)
+        // Find nearby ENEMY buildings to burn (within 20 tiles, never own)
+        // Build set of raider's allies to exclude
+        const allyIds = new Set();
+        for (const ag of this.world.agents.values()) {
+          if (ag._settlementId === raid.attackerSettlement || ag._settlementId == raid.attackerSettlement) allyIds.add(ag.id);
+        }
         const nearby = this.world.buildingsList.filter(b =>
           b.isComplete() && !b.burning && b.workCost > 0 &&
-          Math.abs(b.x - raider.x) + Math.abs(b.y - raider.y) < 15
+          !allyIds.has(b.owner) && // never burn own buildings
+          Math.abs(b.x - raider.x) + Math.abs(b.y - raider.y) < 20
         );
         const toFire = Math.min(2 + Math.floor(Math.random() * 4), nearby.length); // 2-5 buildings
         const targets = nearby.sort(() => Math.random() - 0.5).slice(0, toFire);
@@ -688,14 +694,17 @@ class GameLoop {
     while (defenderIdx === attackerIdx && mainCount > 1);
 
     // Find target building FIRST (this is what we march toward)
+    // ONLY target buildings owned by agents in the DEFENDER settlement — never own buildings
     const defenderAgentIds = new Set();
+    const attackerAgentIds = new Set();
     for (const a of this.world.agents.values()) {
       if (a._settlementId === defenderIdx || a._settlementId == defenderIdx) defenderAgentIds.add(a.id);
+      if (a._settlementId === attackerIdx || a._settlementId == attackerIdx) attackerAgentIds.add(a.id);
     }
-    const defSett = settlements[defenderIdx];
     const enemyBuildings = this.world.buildingsList.filter(b => {
       if (!b.isComplete() || b.burning || b.workCost === 0) return false;
-      return defenderAgentIds.has(b.owner) || (defSett && Math.abs(b.x - defSett.cx) + Math.abs(b.y - defSett.cy) < 80);
+      if (attackerAgentIds.has(b.owner)) return false; // NEVER target own buildings
+      return defenderAgentIds.has(b.owner); // ONLY target defender-owned buildings
     });
     if (enemyBuildings.length === 0) return; // nothing to attack
 
@@ -730,8 +739,8 @@ class GameLoop {
       raider._raidTarget = { x: targetBld.x, y: targetBld.y }; // sent to client for smooth walk
     }
 
-    const names = raiders.map(r => r.name).join(', ');
-    console.log(`[War] RAID! tick=${tick} ${names} → ${defSett?.name || '?'} (target: ${targetBld.name} at ${targetBld.x},${targetBld.y})`);
+    const names = raiders.map(r => `${r.name}(${r.x},${r.y})`).join(', ');
+    console.log(`[War] RAID! tick=${tick} ${names} → ${defSett?.name || '?'} target=${targetBld.name}@(${targetBld.x},${targetBld.y}) dist=${Math.abs(raiders[0].x-targetBld.x)+Math.abs(raiders[0].y-targetBld.y)}`);
     events.push({
       tick, type: 'raid_started',
       message: `⚔️ ${names} ${raiders.length > 1 ? 'are' : 'is'} marching on ${defSett?.name || 'enemy territory'}!`,
