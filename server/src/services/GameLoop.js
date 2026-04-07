@@ -148,7 +148,16 @@ class GameLoop {
 
   async _processAgent(agent, tick, events) {
     // RAIDING/CELEBRATING/RETURNING: warfare system controls this agent, skip normal AI
-    if (agent.mood === 'raiding' || agent.mood === 'celebrating' || agent.mood === 'returning') return;
+    // But ONLY if there's actually an active raid for them (prevents stuck agents after restart)
+    if (agent.mood === 'raiding' || agent.mood === 'celebrating' || agent.mood === 'returning') {
+      const war = this.world._warState;
+      const hasActiveRaid = war && war.activeRaids && war.activeRaids.some(r => r.raiderId === agent.id);
+      if (hasActiveRaid) return; // legitimately raiding, skip normal AI
+      // No active raid — agent is stuck from a server restart, reset them
+      console.log(`[War] Unstuck agent ${agent.name} from stale '${agent.mood}' mood`);
+      agent.mood = 'idle';
+      agent.message = '';
+    }
 
     // STAY AT BUILDING: if agent is building, keep them there until it's done
     if (agent.mood === 'building' && agent._buildingTarget) {
@@ -549,6 +558,14 @@ class GameLoop {
         activeRaids: [],
         raidCooldown: 300, // ~3 game days between raids
       };
+      // On init (server restart), unstick any agents with stale raid moods
+      for (const agent of this.world.agents.values()) {
+        if (agent.mood === 'raiding' || agent.mood === 'celebrating' || agent.mood === 'returning') {
+          console.log(`[War] Init: resetting ${agent.name} from stale mood '${agent.mood}'`);
+          agent.mood = 'idle';
+          agent.message = '';
+        }
+      }
     }
     const war = this.world._warState;
 
@@ -593,24 +610,42 @@ class GameLoop {
       const raid = war.activeRaids[ri];
       const elapsed = tick - raid.startTick;
 
-      // Phase 1: Marching (first 30 ticks) — move raider toward target
-      if (elapsed < 30) {
+      // Phase 1: Marching — move raider toward target (scales with distance)
+      // Move 2 tiles per tick, march until close enough to attack
+      if (!raid.attacked) {
         const raider = this.world.agents.get(raid.raiderId);
         const defSett = settlements[raid.defenderSettlement];
         if (raider && defSett) {
-          // Move raider toward defender settlement center
-          const dx = Math.sign(defSett.cx - raider.x);
-          const dy = Math.sign(defSett.cy - raider.y);
-          raider.move(dx, dy, this.world.width, this.world.height);
-          raider.mood = 'raiding';
-          raider.message = 'Marching to war!';
+          const distToTarget = Math.abs(raider.x - defSett.cx) + Math.abs(raider.y - defSett.cy);
+          if (distToTarget > 5) {
+            // Still marching — move 2 tiles per tick toward target
+            const dx = Math.sign(defSett.cx - raider.x);
+            const dy = Math.sign(defSett.cy - raider.y);
+            raider.move(dx, dy, this.world.width, this.world.height);
+            raider.move(dx, dy, this.world.width, this.world.height); // double speed
+            raider.mood = 'raiding';
+            raider.message = `Marching on ${defSett.name}!`;
+            // Safety: if marching too long (100+ ticks), abort
+            if (elapsed > 100) {
+              console.log(`[War] Raid aborted — ${raider.name} took too long marching`);
+              raider.mood = 'idle';
+              raider.message = '';
+              war.activeRaids.splice(ri, 1);
+            }
+            continue;
+          }
+          // Arrived at target — fall through to attack phase
+        } else {
+          // Invalid raid (raider or settlement gone), clean up
+          war.activeRaids.splice(ri, 1);
+          continue;
         }
-        continue;
       }
 
-      // Phase 2: Attack (tick 30) — set 1-3 buildings on fire
+      // Phase 2: Attack — set 1-3 buildings on fire
       if (!raid.attacked) {
         raid.attacked = true;
+        raid.attackTick = tick; // record when attack happened for celebration timing
         const defSett = settlements[raid.defenderSettlement];
         const defBuildings = this.world.buildingsList.filter(b => {
           if (!b.isComplete() || b.burning || b.workCost === 0) return false;
@@ -652,37 +687,35 @@ class GameLoop {
         }
       }
 
-      // Phase 3: Celebration (ticks 30-50) — raider dances near the fire
-      if (elapsed >= 30 && elapsed < 50) {
+      // Phase 3: Celebration — raider dances near the fire for 20 ticks after attack
+      const ticksSinceAttack = tick - (raid.attackTick || raid.startTick);
+      if (ticksSinceAttack < 20) {
         const raider = this.world.agents.get(raid.raiderId);
         if (raider) {
           raider.mood = 'celebrating';
-          // Small dance movement — bob back and forth
-          raider.move(elapsed % 2 === 0 ? 1 : -1, 0, this.world.width, this.world.height);
+          raider.move(ticksSinceAttack % 2 === 0 ? 1 : -1, 0, this.world.width, this.world.height);
         }
         continue;
       }
 
-      // Phase 4: Return (ticks 50+) — raider walks home, cleanup after 80 ticks
-      if (elapsed > 80) {
-        const raider = this.world.agents.get(raid.raiderId);
-        if (raider) {
-          raider.mood = 'idle';
-          raider.message = '';
-        }
+      // Phase 4: Return home — move raider back, cleanup when home or after 50 ticks
+      const raider = this.world.agents.get(raid.raiderId);
+      const atkSett = settlements[raid.attackerSettlement];
+      if (!raider || !atkSett || ticksSinceAttack > 70) {
+        // Done or invalid — cleanup
+        if (raider) { raider.mood = 'idle'; raider.message = ''; }
         war.activeRaids.splice(ri, 1);
-      } else if (elapsed >= 50) {
-        // Move raider back toward home settlement
-        const raider = this.world.agents.get(raid.raiderId);
-        if (raider) {
-          raider.mood = 'returning';
-          raider.message = 'Returning victorious!';
-        }
-        const atkSett = settlements[raid.attackerSettlement];
-        if (raider && atkSett) {
-          const dx = Math.sign(atkSett.cx - raider.x);
-          const dy = Math.sign(atkSett.cy - raider.y);
-          raider.move(dx, dy, this.world.width, this.world.height);
+      } else {
+        raider.mood = 'returning';
+        raider.message = 'Returning victorious!';
+        const dx = Math.sign(atkSett.cx - raider.x);
+        const dy = Math.sign(atkSett.cy - raider.y);
+        raider.move(dx, dy, this.world.width, this.world.height);
+        raider.move(dx, dy, this.world.width, this.world.height); // double speed home too
+        // If close to home, done
+        if (Math.abs(raider.x - atkSett.cx) + Math.abs(raider.y - atkSett.cy) < 5) {
+          raider.mood = 'idle'; raider.message = '';
+          war.activeRaids.splice(ri, 1);
         }
       }
     }
