@@ -551,265 +551,187 @@ class GameLoop {
     const settlements = this.world.settlements || [];
     if (settlements.length < 2) return;
 
-    // Initialize war state (persists across ticks but NOT across server restarts)
+    // Initialize war state
     if (!this.world._warState) {
-      this.world._warState = {
-        lastRaidTick: 0,
-        activeRaids: [],
-        raidCooldown: 300, // ~3 game days between raids
-      };
-      // On init (server restart), unstick any agents with stale raid moods
+      this.world._warState = { activeRaids: [], lastRaidTick: 0 };
+      // Unstick any agents with stale raid moods from server restart
       for (const agent of this.world.agents.values()) {
         if (agent.mood === 'raiding' || agent.mood === 'celebrating' || agent.mood === 'returning') {
-          console.log(`[War] Init: resetting ${agent.name} from stale mood '${agent.mood}'`);
-          agent.mood = 'idle';
-          agent.message = '';
+          agent.mood = 'idle'; agent.message = '';
         }
       }
     }
     const war = this.world._warState;
 
-    // 1. Process burning buildings — fire spreads damage over time
+    // ── 1. Burn damage on burning buildings ──
     for (let i = this.world.buildingsList.length - 1; i >= 0; i--) {
       const bld = this.world.buildingsList[i];
       if (!bld.burning) continue;
-
-      // Burn damage: lose 8% hp per tick (building destroyed in ~12 ticks / ~12 seconds)
       bld.hp = Math.max(0, (bld.hp || 1) - 0.08);
-
       if (!this.world._dirtyTiles) this.world._dirtyTiles = new Set();
       this.world._dirtyTiles.add(`${bld.x},${bld.y}`);
-
-      // Building destroyed
       if (bld.hp <= 0) {
         bld.burning = false;
         const tile = this.world.tiles.get(`${bld.x},${bld.y}`);
-        if (tile) {
-          tile.building = null;
-          this.world._dirtyTiles.add(`${bld.x},${bld.y}`);
-        }
-
-        // Remove from owner's buildings list
+        if (tile) { tile.building = null; this.world._dirtyTiles.add(`${bld.x},${bld.y}`); }
         const owner = this.world.agents.get(bld.owner);
-        if (owner) {
-          owner.buildings = owner.buildings.filter(b => b !== bld);
-        }
-
-        // Remove from global buildings list
+        if (owner) owner.buildings = owner.buildings.filter(b => b !== bld);
         this.world.buildingsList.splice(i, 1);
-
-        events.push({
-          tick, type: 'building_destroyed',
-          message: `💀 ${bld.name} at (${bld.x}, ${bld.y}) burned to the ground!`,
-        });
+        events.push({ tick, type: 'building_destroyed', message: `💀 ${bld.name} at (${bld.x}, ${bld.y}) burned to the ground!` });
       }
     }
 
-    // 2. Process active raids — agents march to enemy settlement and set fires
+    // ── 2. Process active raids ──
     for (let ri = war.activeRaids.length - 1; ri >= 0; ri--) {
       const raid = war.activeRaids[ri];
+      const raider = this.world.agents.get(raid.raiderId);
+      if (!raider) { war.activeRaids.splice(ri, 1); continue; }
       const elapsed = tick - raid.startTick;
 
-      // Phase 1: Marching — move raider toward nearest enemy building
-      if (!raid.attacked) {
-        const raider = this.world.agents.get(raid.raiderId);
-        if (!raider) { war.activeRaids.splice(ri, 1); continue; }
+      // Safety timeout: 150 ticks max per raid
+      if (elapsed > 150) {
+        raider.mood = 'idle'; raider.message = '';
+        war.activeRaids.splice(ri, 1); continue;
+      }
 
-        // Find the nearest enemy building to march toward
-        const defenderAgentIds = new Set();
-        for (const a of this.world.agents.values()) {
-          if (a._settlementId === raid.defenderSettlement || a._settlementId == raid.defenderSettlement) {
-            defenderAgentIds.add(a.id);
-          }
-        }
-        const defSett = settlements[raid.defenderSettlement];
-        let targetX = defSett ? defSett.cx : raider.x;
-        let targetY = defSett ? defSett.cy : raider.y;
-
-        // Find closest enemy building to march toward
-        let closestDist = Infinity;
-        for (const b of this.world.buildingsList) {
-          if (!b.isComplete() || b.burning || b.workCost === 0) continue;
-          const isEnemy = defenderAgentIds.has(b.owner) ||
-            (defSett && Math.abs(b.x - defSett.cx) + Math.abs(b.y - defSett.cy) < 80);
-          if (!isEnemy) continue;
-          const d = Math.abs(b.x - raider.x) + Math.abs(b.y - raider.y);
-          if (d < closestDist) { closestDist = d; targetX = b.x; targetY = b.y; }
-        }
-
-        const distToTarget = Math.abs(raider.x - targetX) + Math.abs(raider.y - targetY);
-        if (distToTarget > 3) {
-          // Still marching
-          const dx = Math.sign(targetX - raider.x);
-          const dy = Math.sign(targetY - raider.y);
+      // MARCHING: Move toward target building
+      if (!raid.arrived) {
+        const tx = raid.targetX, ty = raid.targetY;
+        const dist = Math.abs(raider.x - tx) + Math.abs(raider.y - ty);
+        if (dist > 2) {
+          const dx = Math.sign(tx - raider.x), dy = Math.sign(ty - raider.y);
           raider.move(dx, dy, this.world.width, this.world.height);
           raider.move(dx, dy, this.world.width, this.world.height);
           raider.mood = 'raiding';
-          raider.message = defSett ? `Marching on ${defSett.name}!` : 'Marching to war!';
-          if (elapsed > 120) {
-            console.log(`[War] Raid aborted — ${raider.name} took too long`);
-            raider.mood = 'idle'; raider.message = '';
-            war.activeRaids.splice(ri, 1);
-          }
           continue;
         }
-        // Arrived — fall through to attack phase
+        raid.arrived = true;
       }
 
-      // Phase 2: Attack — set 1-3 buildings on fire
+      // ATTACK: Set buildings on fire (happens once on arrival)
       if (!raid.attacked) {
         raid.attacked = true;
         raid.attackTick = tick;
-        const raiderForLog = this.world.agents.get(raid.raiderId);
-        console.log(`[War] ATTACK PHASE: ${raiderForLog ? raiderForLog.name : '?'} at (${raiderForLog?.x},${raiderForLog?.y}) attacking settlement ${raid.defenderSettlement}`);
-
-        // Find buildings belonging to agents in the defender settlement
-        const defenderAgentIds = new Set();
-        for (const a of this.world.agents.values()) {
-          if (a._settlementId === raid.defenderSettlement || a._settlementId == raid.defenderSettlement) {
-            defenderAgentIds.add(a.id);
-          }
-        }
-        // Also include buildings near defender settlement center as fallback
-        const defSett = settlements[raid.defenderSettlement];
-        const defBuildings = this.world.buildingsList.filter(b => {
-          if (!b.isComplete() || b.burning || b.workCost === 0) return false;
-          const ownedByDefender = defenderAgentIds.has(b.owner);
-          const nearCenter = defSett && (Math.abs(b.x - defSett.cx) + Math.abs(b.y - defSett.cy) < 80);
-          return ownedByDefender || nearCenter;
-        });
-
-        const raider = this.world.agents.get(raid.raiderId);
-        const atkSett = settlements[raid.attackerSettlement];
-
-        if (defBuildings.length === 0) {
-          // No valid targets — abort raid
-          console.log(`[War] Raid failed — no buildings to burn in settlement ${raid.defenderSettlement}`);
-          if (raider) { raider.mood = 'idle'; raider.message = 'Nothing to burn...'; }
-          war.activeRaids.splice(ri, 1);
-          continue;
-        }
-
-        // Set 1-3 random buildings on fire
-        const toFire = Math.min(1 + Math.floor(Math.random() * 3), defBuildings.length);
-        const shuffled = defBuildings.sort(() => Math.random() - 0.5);
-        for (let fi = 0; fi < toFire; fi++) {
-          const target = shuffled[fi];
-          target.burning = true;
-          target.hp = target.hp || 1.0;
+        // Find nearby buildings to burn (within 15 tiles of raider)
+        const nearby = this.world.buildingsList.filter(b =>
+          b.isComplete() && !b.burning && b.workCost > 0 &&
+          Math.abs(b.x - raider.x) + Math.abs(b.y - raider.y) < 15
+        );
+        const toFire = Math.min(2 + Math.floor(Math.random() * 4), nearby.length); // 2-5 buildings
+        const targets = nearby.sort(() => Math.random() - 0.5).slice(0, toFire);
+        for (const t of targets) {
+          t.burning = true; t.hp = t.hp || 1.0;
           if (!this.world._dirtyTiles) this.world._dirtyTiles = new Set();
-          this.world._dirtyTiles.add(`${target.x},${target.y}`);
-          events.push({
-            tick, type: 'building_burning',
-            message: `🔥 ${target.name} at (${target.x}, ${target.y}) is on fire!`,
-          });
+          this.world._dirtyTiles.add(`${t.x},${t.y}`);
+          events.push({ tick, type: 'building_burning', message: `🔥 ${t.name} at (${t.x}, ${t.y}) is on fire!` });
         }
-
-        if (atkSett && defSett) {
-          events.push({
-            tick, type: 'raid_success',
-            message: `⚔️ ${atkSett.name} raided ${defSett.name}! ${toFire} building${toFire > 1 ? 's' : ''} set ablaze!`,
-          });
+        if (targets.length > 0) {
+          raider.x = targets[0].x + 1; raider.y = targets[0].y + 1;
+          events.push({ tick, type: 'raid_success', message: `⚔️ ${raider.name} set ${targets.length} buildings ablaze!` });
         }
-
-        // Position raider at the first burning building to celebrate
-        if (raider) {
-          const firstTarget = shuffled[0];
-          raider.x = firstTarget.x + 1;
-          raider.y = firstTarget.y + 1;
-          raider.mood = 'celebrating';
-          raider.message = 'BURN IT ALL! 🔥';
-        }
+        raider.mood = 'celebrating'; raider.message = 'BURN IT ALL! 🔥';
+        console.log(`[War] ATTACK: ${raider.name} burned ${targets.length} buildings at (${raider.x},${raider.y})`);
       }
 
-      // Phase 3: Celebration — raider dances near the fire for 20 ticks after attack
-      const ticksSinceAttack = tick - (raid.attackTick || raid.startTick);
-      if (ticksSinceAttack < 20) {
-        const raider = this.world.agents.get(raid.raiderId);
-        if (raider) {
-          raider.mood = 'celebrating';
-          raider.move(ticksSinceAttack % 2 === 0 ? 1 : -1, 0, this.world.width, this.world.height);
-        }
+      // CELEBRATING: Dance for 15 ticks
+      const sinceFire = tick - (raid.attackTick || tick);
+      if (sinceFire < 15) {
+        raider.mood = 'celebrating';
+        raider.move(sinceFire % 2 === 0 ? 1 : -1, 0, this.world.width, this.world.height);
         continue;
       }
 
-      // Phase 4: Return home — move raider back, cleanup when home or after 50 ticks
-      const raider = this.world.agents.get(raid.raiderId);
-      const atkSett = settlements[raid.attackerSettlement];
-      if (!raider || !atkSett || ticksSinceAttack > 70) {
-        // Done or invalid — cleanup
-        if (raider) { raider.mood = 'idle'; raider.message = ''; }
-        war.activeRaids.splice(ri, 1);
-      } else {
-        raider.mood = 'returning';
-        raider.message = 'Returning victorious!';
-        const dx = Math.sign(atkSett.cx - raider.x);
-        const dy = Math.sign(atkSett.cy - raider.y);
+      // RETURNING: Walk home
+      raider.mood = 'returning'; raider.message = 'Returning victorious!';
+      const homeSett = settlements[raid.attackerSettlement];
+      if (homeSett) {
+        const dx = Math.sign(homeSett.cx - raider.x), dy = Math.sign(homeSett.cy - raider.y);
         raider.move(dx, dy, this.world.width, this.world.height);
-        raider.move(dx, dy, this.world.width, this.world.height); // double speed home too
-        // If close to home, done
-        if (Math.abs(raider.x - atkSett.cx) + Math.abs(raider.y - atkSett.cy) < 5) {
+        raider.move(dx, dy, this.world.width, this.world.height);
+        if (Math.abs(raider.x - homeSett.cx) + Math.abs(raider.y - homeSett.cy) < 8) {
           raider.mood = 'idle'; raider.message = '';
           war.activeRaids.splice(ri, 1);
         }
+      } else {
+        raider.mood = 'idle'; raider.message = '';
+        war.activeRaids.splice(ri, 1);
       }
     }
 
-    // 3. Trigger new raids periodically
+    // ── 3. Trigger new raids — FREQUENT and MULTI-AGENT ──
     const totalBuildings = this.world.buildingsList.filter(b => b.isComplete()).length;
-
-    // Log war state every 100 ticks for diagnostics
     if (tick % 100 === 0) {
-      console.log(`[War] tick=${tick} buildings=${totalBuildings} lastRaid=${war.lastRaidTick} cooldown=${war.raidCooldown} activeRaids=${war.activeRaids.length} settlements=${settlements.length}`);
+      console.log(`[War] tick=${tick} blds=${totalBuildings} raids=${war.activeRaids.length} last=${war.lastRaidTick}`);
     }
+    if (totalBuildings < 8) return;
 
-    if (totalBuildings < 10) return;
-    if (tick - war.lastRaidTick < war.raidCooldown) return;
+    // Raid frequency scales with building count: more buildings = more raids
+    // Cooldown: 60 ticks (~36 sec) base, shorter with more buildings
+    const cooldown = Math.max(30, 80 - Math.floor(totalBuildings / 10));
+    if (tick - war.lastRaidTick < cooldown) return;
 
-    // 10% chance per tick after cooldown = raid triggers within ~10 ticks
-    if (Math.random() > 0.10) return;
+    // Higher trigger chance: 20% per tick after cooldown
+    if (Math.random() > 0.20) return;
+
+    // Don't allow more than 3 simultaneous raids
+    if (war.activeRaids.length >= 3) return;
 
     war.lastRaidTick = tick;
 
-    // Only raid between the 3 original settlements (not mini-settlements)
-    const mainSettlements = Math.min(3, settlements.length);
-    const attackerIdx = Math.floor(Math.random() * mainSettlements);
+    // Pick attacker and defender from the 3 main settlements
+    const mainCount = Math.min(3, settlements.length);
+    const attackerIdx = Math.floor(Math.random() * mainCount);
     let defenderIdx;
-    do { defenderIdx = Math.floor(Math.random() * mainSettlements); }
-    while (defenderIdx === attackerIdx && mainSettlements > 1);
+    do { defenderIdx = Math.floor(Math.random() * mainCount); }
+    while (defenderIdx === attackerIdx && mainCount > 1);
 
-    // Pick a raider: any agent from the attacker settlement (or assigned to it originally)
-    const attackerAgents = [...this.world.agents.values()].filter(a =>
-      (a._settlementId === attackerIdx) || (a._settlementId == attackerIdx)
-    );
-    if (attackerAgents.length === 0) {
-      console.log(`[War] No agents in settlement ${attackerIdx}, skipping raid`);
-      return;
+    // Find target building FIRST (this is what we march toward)
+    const defenderAgentIds = new Set();
+    for (const a of this.world.agents.values()) {
+      if (a._settlementId === defenderIdx || a._settlementId == defenderIdx) defenderAgentIds.add(a.id);
     }
-    // Prefer aggressive agents, fall back to random
-    const raider = attackerAgents.find(a => a.personality === 'aggressive') ||
-                   attackerAgents[Math.floor(Math.random() * attackerAgents.length)];
+    const defSett = settlements[defenderIdx];
+    const enemyBuildings = this.world.buildingsList.filter(b => {
+      if (!b.isComplete() || b.burning || b.workCost === 0) return false;
+      return defenderAgentIds.has(b.owner) || (defSett && Math.abs(b.x - defSett.cx) + Math.abs(b.y - defSett.cy) < 80);
+    });
+    if (enemyBuildings.length === 0) return; // nothing to attack
+
+    // Pick a random target building
+    const targetBld = enemyBuildings[Math.floor(Math.random() * enemyBuildings.length)];
+
+    // Pick 1-3 raiders (MULTI-AGENT raids!)
+    const allAgents = [...this.world.agents.values()].filter(a =>
+      a.mood === 'idle' || a.mood === 'moving' || a.mood === 'chatting'
+    );
+    // Prefer agents from the attacker settlement, but anyone idle can join
+    const homeAgents = allAgents.filter(a => a._settlementId === attackerIdx || a._settlementId == attackerIdx);
+    const pool = homeAgents.length > 0 ? homeAgents : allAgents;
+    const raidSize = Math.min(1 + Math.floor(Math.random() * 3), pool.length); // 1-3 raiders
 
     const atkSett = settlements[attackerIdx];
-    const defSett = settlements[defenderIdx];
+    const raiders = pool.sort(() => Math.random() - 0.5).slice(0, raidSize);
 
-    war.activeRaids.push({
-      attackerSettlement: attackerIdx,
-      defenderSettlement: defenderIdx,
-      raiderId: raider.id,
-      startTick: tick,
-      attacked: false,
-    });
+    for (const raider of raiders) {
+      war.activeRaids.push({
+        attackerSettlement: attackerIdx,
+        defenderSettlement: defenderIdx,
+        raiderId: raider.id,
+        targetX: targetBld.x,
+        targetY: targetBld.y,
+        startTick: tick,
+        arrived: false,
+        attacked: false,
+      });
+      raider.mood = 'raiding';
+      raider.message = defSett ? `Marching on ${defSett.name}!` : 'To war!';
+    }
 
-    raider.mood = 'raiding';
-    raider.message = `Marching on ${defSett.name}!`;
-
-    console.log(`[War] RAID TRIGGERED! tick=${tick} ${raider.name} from ${atkSett.name} → ${defSett.name}`);
-
+    const names = raiders.map(r => r.name).join(', ');
+    console.log(`[War] RAID! tick=${tick} ${names} → ${defSett?.name || '?'} (target: ${targetBld.name} at ${targetBld.x},${targetBld.y})`);
     events.push({
       tick, type: 'raid_started',
-      agent: raider.name,
-      message: `⚔️ ${raider.name} from ${atkSett.name} is marching on ${defSett.name}!`,
+      message: `⚔️ ${names} ${raiders.length > 1 ? 'are' : 'is'} marching on ${defSett?.name || 'enemy territory'}!`,
     });
   }
 
