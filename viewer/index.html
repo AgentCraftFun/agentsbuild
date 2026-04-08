@@ -3677,21 +3677,10 @@ function updateAgentMovement(){
     // in a client-side chopping/mining/building state while the server moves them
     if(S.connected&&(a.mood==='raiding'||a.mood==='celebrating'||a.mood==='returning')){
       st.state=a.mood;st.target=null;st.timer=0;st.taskCooldown=0;
-      // Always sync to server position — server moves raiders 3 tiles/tick
-      // so client must keep up by snapping toward server pos quickly
-      const sx=a.x/WW,sy=a.y/WH;
-      v.tx=sx;v.ty=sy;
-      const rdx=sx-v.x,rdy=sy-v.y;
-      const rdist=Math.sqrt(rdx*rdx+rdy*rdy);
-      if(rdist>0.002){
-        // Fast march speed — 3x normal walking so client keeps up with server
-        const marchSpeed=0.012;
-        v.x+=rdx/rdist*Math.min(marchSpeed,rdist);
-        v.y+=rdy/rdist*Math.min(marchSpeed,rdist);
-      }else{
-        v.x=sx;v.y=sy;// close enough, snap
-      }
-      continue;
+      // Set target to server position — let normal smooth easing (below) handle movement
+      // Server moves raiders 1 tile/tick, same as normal walking, so standard interpolation works
+      v.tx=a.x/WW;v.ty=a.y/WH;
+      // Don't skip the normal easing below — remove `continue` so v.x/v.y gets smoothed
     }
     // When agent was raiding but server says they're done, reset to idle
     if(S.connected&&(st.state==='raiding'||st.state==='celebrating'||st.state==='returning')&&a.mood!=='raiding'&&a.mood!=='celebrating'&&a.mood!=='returning'){

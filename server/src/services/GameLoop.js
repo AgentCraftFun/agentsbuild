@@ -597,8 +597,8 @@ class GameLoop {
       if (!raider) { war.activeRaids.splice(ri, 1); continue; }
       const elapsed = tick - raid.startTick;
 
-      // Safety timeout: 200 ticks max
-      if (elapsed > 200) {
+      // Safety timeout: 500 ticks max (raiders walk 1 tile/tick, map is ~200 tiles)
+      if (elapsed > 500) {
         raider.mood = 'idle'; raider.message = ''; raider._raidTarget = null;
         war.activeRaids.splice(ri, 1); continue;
       }
@@ -607,12 +607,10 @@ class GameLoop {
       if (!raid.arrived) {
         const tx = raid.targetX, ty = raid.targetY;
         const dist = Math.abs(raider.x - tx) + Math.abs(raider.y - ty);
-        if (dist > 3) {
+        if (dist > 2) {
           const dx = Math.sign(tx - raider.x), dy = Math.sign(ty - raider.y);
-          // Move 3 steps per tick for fast marching
-          for (let step = 0; step < 3; step++) {
-            raider.move(dx, dy, this.world.width, this.world.height);
-          }
+          // Move 1 tile per tick — same as normal walking for smooth animation
+          raider.move(dx, dy, this.world.width, this.world.height);
           raider.mood = 'raiding';
           raider.message = `Marching to attack! (${dist} tiles away)`;
           continue;
@@ -664,9 +662,8 @@ class GameLoop {
         if (homeD > 5) {
           raider.mood = 'returning'; raider.message = 'Returning victorious!';
           const dx = Math.sign(homeSett.cx - raider.x), dy = Math.sign(homeSett.cy - raider.y);
-          for (let step = 0; step < 3; step++) {
-            raider.move(dx, dy, this.world.width, this.world.height);
-          }
+          // Move 1 tile per tick — same as normal walking
+          raider.move(dx, dy, this.world.width, this.world.height);
           continue;
         }
       }
