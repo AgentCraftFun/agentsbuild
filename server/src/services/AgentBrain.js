@@ -207,8 +207,8 @@ class AgentBrain {
 
   /**
    * Try to build something. Returns a build decision or null.
-   * Picks the least-built building type for variety, finds a spot
-   * in this agent's settlement.
+   * Prefers small villages (4-10 buildings). Once current settlement is
+   * big enough, agent will proactively pioneer a new one.
    */
   _tryBuild() {
     if (!this._canBuild) return null;
@@ -220,23 +220,53 @@ class AgentBrain {
     const cost = Building.CATALOG[buildingType].workCost || 0;
     if (cost > 0 && this.agent.work_balance < cost) return null;
 
-    let tile = this._findBuildSite(buildingType);
+    // Count buildings in current settlement
+    const settlementId = this.agent._settlementId || 0;
+    const settlements = this.world.settlements || [];
+    const settlement = settlements[settlementId];
+    const cx = settlement ? settlement.cx : 0;
+    const cy = settlement ? settlement.cy : 0;
+    const settlementBuildingCount = (this.world.buildingsList || []).filter(b => {
+      return Math.abs(b.x - cx) + Math.abs(b.y - cy) < 30;
+    }).length;
 
-    // If main settlement is full, try founding a mini-settlement
-    if (!tile) {
-      tile = this._findMiniSettlementSite();
+    // TARGET: small villages of 4-10 buildings.
+    // Once a settlement has 6+ buildings, 60% chance to pioneer instead.
+    // Once 10+, 90% chance to pioneer.
+    const shouldPioneer = settlementBuildingCount >= 10 ? Math.random() < 0.90
+      : settlementBuildingCount >= 6 ? Math.random() < 0.60
+      : false;
+
+    if (shouldPioneer) {
+      const tile = this._findNewSettlementSite();
       if (tile) {
         return {
           type: 'build',
           payload: { building: buildingType, x: tile.x, y: tile.y },
           message: AgentBrain._pick([
-            `No room in town... I\'ll build my own village!`,
-            `Time to pioneer new lands!`,
-            `This spot looks perfect for a new outpost.`,
+            `${settlement ? settlement.name : 'Town'} is thriving. Time to explore new lands!`,
+            `I\'ll found a new village out here!`,
+            `This spot looks perfect for a fresh start.`,
+            `The frontier calls! Building a new outpost.`,
           ]),
         };
       }
-      return null;
+    }
+
+    // Otherwise build in current settlement
+    let tile = this._findBuildSite(buildingType);
+    if (!tile) {
+      // Settlement is physically full — must pioneer
+      tile = this._findNewSettlementSite();
+      if (!tile) return null;
+      return {
+        type: 'build',
+        payload: { building: buildingType, x: tile.x, y: tile.y },
+        message: AgentBrain._pick([
+          `No room left... building somewhere new!`,
+          `Time to pioneer new lands!`,
+        ]),
+      };
     }
 
     return {
@@ -373,65 +403,62 @@ class AgentBrain {
   }
 
   /**
-   * Find a site for a new mini-settlement far from existing buildings.
-   * Picks a random buildable spot 30-60 tiles from the agent's current settlement.
+   * Find a site for a brand new settlement anywhere on the map.
+   * Searches random locations, preferring spots far from ALL existing settlements.
+   * Minimum 15 tiles from any settlement center, 5 from any building.
    */
-  _findMiniSettlementSite() {
+  _findNewSettlementSite() {
     const { tiles, buildingsList, width, height } = this.world;
-    const MIN_DIST = 5;
+    const MIN_BUILD_DIST = 5;
+    const MIN_SETTLEMENT_DIST = 15; // tiles from any existing settlement center
 
-    // Allow more settlements — no hard cap, just soft spacing constraints
-    const existingSettlements = this.world.settlements || [];
-
-    // 35% chance per failed build — agents freely pioneer new areas
-    if (Math.random() > 0.35) return null;
-
-    const settlementId = this.agent._settlementId || 0;
     const settlements = this.world.settlements || [];
-    const settlement = settlements[settlementId];
-    const homeCx = settlement ? settlement.cx : Math.round(width * 0.5);
-    const homeCy = settlement ? settlement.cy : Math.round(height * 0.5);
 
-    // Try random locations 20-50 tiles away from home settlement
-    for (let attempt = 0; attempt < 50; attempt++) {
-      const angle = Math.random() * Math.PI * 2;
-      const dist = 20 + Math.random() * 30;
-      const rx = Math.round(homeCx + Math.cos(angle) * dist);
-      const ry = Math.round(homeCy + Math.sin(angle) * dist);
-
-      if (rx < 3 || rx >= width - 3 || ry < 3 || ry >= height - 3) continue;
+    // Try 80 random locations across the entire map
+    for (let attempt = 0; attempt < 80; attempt++) {
+      // Random location anywhere on the map (with 5-tile margin from edges)
+      const rx = 5 + Math.floor(Math.random() * (width - 10));
+      const ry = 5 + Math.floor(Math.random() * (height - 10));
 
       const tid = `${rx},${ry}`;
       const t = tiles.get(tid);
       if (!t || t.building) continue;
       if (!WorldGen.isBuildable(t.biome)) continue;
 
-      // Check neighbors are buildable
-      let neighborsBad = false;
-      for (let dy = 0; dy <= 1; dy++) {
-        for (let dx = 0; dx <= 1; dx++) {
-          const nt = tiles.get(`${rx + dx},${ry + dy}`);
-          if (!nt || !WorldGen.isBuildable(nt.biome)) { neighborsBad = true; break; }
-        }
-        if (neighborsBad) break;
+      // Must be far enough from ALL existing settlement centers
+      let tooCloseToSettlement = false;
+      for (const s of settlements) {
+        const dist = Math.abs(s.cx - rx) + Math.abs(s.cy - ry);
+        if (dist < MIN_SETTLEMENT_DIST) { tooCloseToSettlement = true; break; }
       }
-      if (neighborsBad) continue;
+      if (tooCloseToSettlement) continue;
+
+      // Check 3x3 area is all buildable (room for a small village)
+      let areaBad = false;
+      for (let dy = -1; dy <= 1; dy++) {
+        for (let dx = -1; dx <= 1; dx++) {
+          const nt = tiles.get(`${rx + dx},${ry + dy}`);
+          if (!nt || !WorldGen.isBuildable(nt.biome)) { areaBad = true; break; }
+        }
+        if (areaBad) break;
+      }
+      if (areaBad) continue;
 
       // Check min spacing from existing buildings
       let tooClose = false;
       for (const b of buildingsList) {
-        if (Math.abs(b.x - rx) + Math.abs(b.y - ry) < MIN_DIST) { tooClose = true; break; }
+        if (Math.abs(b.x - rx) + Math.abs(b.y - ry) < MIN_BUILD_DIST) { tooClose = true; break; }
       }
       if (tooClose) continue;
 
-      // Found a valid spot — create a new mini-settlement
+      // Found a valid spot — create a new settlement
       const newSettId = settlements.length;
-      const settlementName = AgentBrain._pick([
-        `${this.agent.name}'s Outpost`, `New ${settlement ? settlement.name : 'Settlement'}`,
-        `Far ${AgentBrain._pick(['Haven', 'Watch', 'Hollow', 'Ridge', 'Camp', 'Post'])}`,
-      ]);
+      const prefixes = ['Oak', 'Pine', 'Stone', 'Iron', 'Moss', 'Elm', 'Ash', 'Copper', 'Silver', 'Willow', 'Fern', 'Briar', 'Thorn', 'River', 'Storm', 'Dawn', 'Dusk', 'Moon', 'Sun', 'Fox'];
+      const suffixes = ['hollow', 'vale', 'stead', 'haven', 'watch', 'ridge', 'dell', 'ford', 'brook', 'moor', 'glen', 'crest', 'wood', 'field', 'gate', 'keep', 'rest', 'fall', 'wick', 'town'];
+      const settlementName = AgentBrain._pick(prefixes) + AgentBrain._pick(suffixes);
+
       settlements.push({ id: newSettId, name: settlementName, cx: rx, cy: ry });
-      this.agent._settlementId = newSettId; // reassign agent to new settlement
+      this.agent._settlementId = newSettId;
 
       // Claim tile
       if (!t.owner) {

@@ -1,6 +1,7 @@
 /**
- * Seed script: creates 8 demo agents across 3 settlements.
- * Each settlement gets 2-3 agents and a town hall at its center.
+ * Seed script: creates 8 demo agents across 8 spread-out settlements.
+ * Each agent gets their own starting settlement to encourage map-wide spread.
+ * Agents will organically found new villages as the game progresses.
  */
 
 const Agent = require('./models/Agent');
@@ -18,15 +19,20 @@ const DEMO_AGENTS = [
   { name: 'Faelith',  faction: 'elf',   personality: 'confused' },
 ];
 
-// 3 settlement locations — well spread, away from rivers (x~90, y~82)
+// 8 settlement locations — spread across entire map, each agent gets their own
 const SETTLEMENTS = [
-  { cx: 0.30, cy: 0.25, name: 'Northvale' },   // upper-left
-  { cx: 0.75, cy: 0.30, name: 'Eastwatch' },    // upper-right
-  { cx: 0.55, cy: 0.75, name: 'Southmere' },    // lower-center (below horizontal river)
+  { cx: 0.20, cy: 0.20, name: 'Northvale' },     // top-left
+  { cx: 0.80, cy: 0.18, name: 'Eastwatch' },      // top-right
+  { cx: 0.50, cy: 0.30, name: 'Midfield' },       // top-center
+  { cx: 0.15, cy: 0.55, name: 'Westhollow' },     // mid-left
+  { cx: 0.85, cy: 0.55, name: 'Ironridge' },      // mid-right
+  { cx: 0.35, cy: 0.75, name: 'Southmere' },      // bottom-left
+  { cx: 0.65, cy: 0.80, name: 'Duskfen' },        // bottom-right
+  { cx: 0.50, cy: 0.55, name: 'Hearthstone' },    // center
 ];
 
-// Agent-to-settlement assignments: 3, 3, 2
-const AGENT_SETTLEMENTS = [0, 0, 0, 1, 1, 1, 2, 2];
+// Each agent gets their own settlement
+const AGENT_SETTLEMENTS = [0, 1, 2, 3, 4, 5, 6, 7];
 
 function seedAgents(worldState) {
   const { tiles, width, height } = worldState;

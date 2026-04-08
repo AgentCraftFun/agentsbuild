@@ -354,8 +354,8 @@ class GameLoop {
       return;
     }
 
-    // 2. MINIMUM SPACING: 120px = 5 tiles (TS=24, 120/24=5) from any existing building center
-    const MIN_DIST = 5;
+    // 2. MINIMUM SPACING: 3 tiles from any existing building center (denser villages)
+    const MIN_DIST = 3;
     if (!resume) {
       let tooClose = false;
       for (const b of this.world.buildingsList) {
