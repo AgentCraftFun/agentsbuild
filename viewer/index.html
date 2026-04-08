@@ -2262,6 +2262,54 @@ function drawBuilding(c,b,bx,by,bw,bh,fr){
   drawBuildingPixelArt(c,b,bx,by,bw,bh,fr);
 }
 
+// Environmental props drawn around completed buildings
+function drawBuildingProps(c,b,bx,by,bw,bh,fr){
+  if(!b.complete&&(b.progress==null||b.progress<0.95))return;
+  const h=tileHash(b.x||0,b.y||0);
+  // Each building gets 0-3 props based on hash — deterministic per building
+  const propCount=h%4;
+  if(propCount===0)return;
+  for(let i=0;i<propCount;i++){
+    const propType=(h>>(i*4+4))%6;
+    const side=(h>>(i*2))%2===0?-1:1;// left or right of building
+    const px=side<0?bx-8-i*6:bx+bw+4+i*6;
+    const py=by+bh-6-(i*3);
+    switch(propType){
+      case 0:// Barrel
+        c.fillStyle='#6a4a28';c.fillRect(px,py,6,8);
+        c.fillStyle='#5a3a18';c.fillRect(px,py+2,6,1);c.fillRect(px,py+5,6,1);
+        c.fillStyle='#8a6a38';c.fillRect(px+1,py+1,4,1);
+        break;
+      case 1:// Wooden crate
+        c.fillStyle='#8a6a30';c.fillRect(px,py+1,7,6);
+        c.fillStyle='#7a5a28';c.fillRect(px,py+1,7,1);c.fillRect(px+3,py+1,1,6);
+        c.fillStyle='#6a4a20';c.fillRect(px,py+4,7,1);
+        break;
+      case 2:// Sack/bag
+        c.fillStyle='#b8a070';c.fillRect(px+1,py+2,5,5);
+        c.fillStyle='#a89060';c.fillRect(px+2,py+1,3,2);
+        c.fillStyle='#8a7050';c.fillRect(px+3,py,1,2);
+        break;
+      case 3:// Flower pot
+        c.fillStyle='#8a5030';c.fillRect(px+1,py+3,5,4);
+        c.fillStyle='#7a4020';c.fillRect(px+2,py+3,3,1);
+        c.fillStyle='#3a8a28';c.fillRect(px+2,py,3,4);
+        c.fillStyle='#ff6688';c.fillRect(px+2,py-1,2,2);
+        break;
+      case 4:// Log pile
+        c.fillStyle='#6a4a20';c.fillRect(px,py+4,8,3);
+        c.fillStyle='#7a5a28';c.fillRect(px+1,py+2,6,3);
+        c.fillStyle='#5a3a18';c.fillRect(px+2,py+1,4,2);
+        break;
+      case 5:// Small fence section
+        c.fillStyle='#7a5a30';
+        c.fillRect(px,py,2,8);c.fillRect(px+6,py,2,8);
+        c.fillRect(px,py+2,8,1);c.fillRect(px,py+5,8,1);
+        break;
+    }
+  }
+}
+
 const TEAM_COL={human:'#3366ee',orc:'#cc3311',dwarf:'#cc8822',elf:'#22aa44'};
 const TEAM_LIGHT={human:'#88aaff',orc:'#ff8866',dwarf:'#ffcc88',elf:'#88ffaa'};
 const TEAM_SKIN={human:'#d4a870',orc:'#7a9a30',dwarf:'#c47a40',elf:'#d0c8a0'};
@@ -4877,7 +4925,7 @@ for(const item of renderItems){
     if(!b||typeof b.x!=='number'||!isFinite(b.x)||typeof b.y!=='number'||!isFinite(b.y))continue;
     const bw=b.pw||(b.width||1)*ts,bh=b.ph||(b.height||1)*ts,bx=b.x*ts,by=b.y*ts-Math.max(0,bh-ts);
     if(!isFinite(bw)||!isFinite(bh)||bw<=0||bh<=0)continue;
-    try{drawBuilding(ctx,b,bx+2,by+2,bw-4,bh-4,frame)}catch(be){console.warn('Building draw error:',be)}
+    try{drawBuilding(ctx,b,bx+2,by+2,bw-4,bh-4,frame);drawBuildingProps(ctx,b,bx+2,by+2,bw-4,bh-4,frame)}catch(be){console.warn('Building draw error:',be)}
     // HP bar for damaged buildings
     const bhp=b.hp!=null?b.hp:1;
     if(bhp<1&&bhp>0){
