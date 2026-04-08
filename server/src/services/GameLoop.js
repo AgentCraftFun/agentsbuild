@@ -661,8 +661,8 @@ class GameLoop {
         const homeD = Math.abs(raider.x - homeSett.cx) + Math.abs(raider.y - homeSett.cy);
         if (homeD > 5) {
           raider.mood = 'returning'; raider.message = 'Returning victorious!';
+          raider._raidTarget = { x: homeSett.cx, y: homeSett.cy }; // client uses this for smooth walk
           const dx = Math.sign(homeSett.cx - raider.x), dy = Math.sign(homeSett.cy - raider.y);
-          // Move 1 tile per tick — same as normal walking
           raider.move(dx, dy, this.world.width, this.world.height);
           continue;
         }
