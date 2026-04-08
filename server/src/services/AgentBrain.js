@@ -220,6 +220,23 @@ class AgentBrain {
     const cost = Building.CATALOG[buildingType].workCost || 0;
     if (cost > 0 && this.agent.work_balance < cost) return null;
 
+    // Displaced agents (village destroyed by raid) always pioneer a new settlement
+    if (this.agent._displaced) {
+      const tile = this._findNewSettlementSite();
+      if (tile) {
+        this.agent._displaced = false;
+        return {
+          type: 'build',
+          payload: { building: buildingType, x: tile.x, y: tile.y },
+          message: AgentBrain._pick([
+            `My home was destroyed... but I will rebuild!`,
+            `Rising from the ashes. A new beginning.`,
+            `They burned my village, but not my spirit!`,
+          ]),
+        };
+      }
+    }
+
     // Count buildings in current settlement
     const settlementId = this.agent._settlementId || 0;
     const settlements = this.world.settlements || [];

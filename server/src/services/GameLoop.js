@@ -575,7 +575,20 @@ class GameLoop {
         const tile = this.world.tiles.get(`${bld.x},${bld.y}`);
         if (tile) { tile.building = null; this.world._dirtyTiles.add(`${bld.x},${bld.y}`); }
         const owner = this.world.agents.get(bld.owner);
-        if (owner) owner.buildings = owner.buildings.filter(b => b !== bld);
+        if (owner) {
+          owner.buildings = owner.buildings.filter(b => b !== bld);
+          // Check if owner's settlement is mostly destroyed — mark for displacement
+          const ownSettId = owner._settlementId;
+          const remainingInSett = this.world.buildingsList.filter(b2 =>
+            b2 !== bld && b2.owner === owner.id && b2.isComplete()
+          ).length;
+          if (remainingInSett <= 1) {
+            // Displaced! Agent will seek new settlement on next build attempt
+            owner._displaced = true;
+            events.push({ tick, type: 'agent_displaced', agent: owner.name,
+              message: `${owner.name}'s village was destroyed! They must find new land.` });
+          }
+        }
         this.world.buildingsList.splice(i, 1);
         events.push({ tick, type: 'building_destroyed', message: `💀 ${bld.name} at (${bld.x}, ${bld.y}) burned to the ground!` });
       }
@@ -686,39 +699,46 @@ class GameLoop {
 
     war.lastRaidTick = tick;
 
-    // Pick attacker and defender from the 3 main settlements
-    const mainCount = Math.min(3, settlements.length);
-    const attackerIdx = Math.floor(Math.random() * mainCount);
+    // Pick attacker and defender from ALL settlements (not just first 3)
+    const settCount = settlements.length;
+    if (settCount < 2) return;
+    const attackerIdx = Math.floor(Math.random() * settCount);
     let defenderIdx;
-    do { defenderIdx = Math.floor(Math.random() * mainCount); }
-    while (defenderIdx === attackerIdx && mainCount > 1);
+    do { defenderIdx = Math.floor(Math.random() * settCount); }
+    while (defenderIdx === attackerIdx);
 
-    // Find target building FIRST (this is what we march toward)
-    // ONLY target buildings owned by agents in the DEFENDER settlement — never own buildings
-    const defenderAgentIds = new Set();
+    // Build alliance groups: agents in same settlement are allies
     const attackerAgentIds = new Set();
-    for (const a of this.world.agents.values()) {
-      if (a._settlementId === defenderIdx || a._settlementId == defenderIdx) defenderAgentIds.add(a.id);
-      if (a._settlementId === attackerIdx || a._settlementId == attackerIdx) attackerAgentIds.add(a.id);
+    const defenderAgentIds = new Set();
+    // Temporary alliances: 30% chance a nearby settlement joins the attacker
+    const allySettlements = new Set([attackerIdx]);
+    for (let si = 0; si < settCount; si++) {
+      if (si === attackerIdx || si === defenderIdx) continue;
+      if (Math.random() < 0.30) allySettlements.add(si);
     }
+    for (const a of this.world.agents.values()) {
+      const sid = a._settlementId;
+      if (allySettlements.has(sid)) attackerAgentIds.add(a.id);
+      if (sid === defenderIdx) defenderAgentIds.add(a.id);
+    }
+
+    // Target buildings owned by defenders — never own or ally buildings
     const enemyBuildings = this.world.buildingsList.filter(b => {
       if (!b.isComplete() || b.burning || b.workCost === 0) return false;
-      if (attackerAgentIds.has(b.owner)) return false; // NEVER target own buildings
-      return defenderAgentIds.has(b.owner); // ONLY target defender-owned buildings
+      if (attackerAgentIds.has(b.owner)) return false;
+      return defenderAgentIds.has(b.owner);
     });
-    if (enemyBuildings.length === 0) return; // nothing to attack
+    if (enemyBuildings.length === 0) return;
 
-    // Pick a random target building
     const targetBld = enemyBuildings[Math.floor(Math.random() * enemyBuildings.length)];
 
-    // Pick 1-3 raiders — any agent can be drafted (interrupt whatever they're doing)
+    // Pick 1-3 raiders from attacker + allies
     const available = [...this.world.agents.values()].filter(a =>
       a.mood !== 'raiding' && a.mood !== 'celebrating' && a.mood !== 'returning'
     );
-    // Prefer agents from the attacker settlement
-    const homeAgents = available.filter(a => a._settlementId === attackerIdx || a._settlementId == attackerIdx);
-    const pool = homeAgents.length > 0 ? homeAgents : available;
-    const raidSize = Math.min(1 + Math.floor(Math.random() * 3), pool.length); // 1-3 raiders
+    const allyAgents = available.filter(a => allySettlements.has(a._settlementId));
+    const pool = allyAgents.length > 0 ? allyAgents : available;
+    const raidSize = Math.min(1 + Math.floor(Math.random() * 3), pool.length);
 
     const atkSett = settlements[attackerIdx];
     const raiders = pool.sort(() => Math.random() - 0.5).slice(0, raidSize);

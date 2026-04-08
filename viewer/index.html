@@ -4975,6 +4975,21 @@ for(const item of renderItems){
       ctx.fillStyle=`rgba(0,0,0,${0.3*(1-bhp)})`;
       ctx.fillRect(bx,by,bw,bh);
     }
+    // Charred/damaged overlay for buildings that survived fire (low HP)
+    if(!b.burning&&bhp<0.8&&bhp>0){
+      // Soot/char darkening
+      ctx.fillStyle=`rgba(20,15,10,${0.3*(1-bhp)})`;ctx.fillRect(bx,by,bw,bh);
+      // Scorch marks
+      ctx.fillStyle=`rgba(40,30,20,${0.2*(1-bhp)})`;
+      ctx.fillRect(bx+bw*0.1,by+bh*0.2,bw*0.3,bh*0.15);
+      ctx.fillRect(bx+bw*0.5,by+bh*0.6,bw*0.4,bh*0.1);
+      // Residual smoke wisps for heavily damaged
+      if(bhp<0.5){
+        const wsy=by-4-((frame*0.3)%20);
+        ctx.fillStyle=`rgba(100,95,90,${0.08+0.04*Math.sin(frame*0.05)})`;
+        ctx.beginPath();ctx.arc(bx+bw*0.6+Math.sin(frame*0.02)*3,wsy,3,0,Math.PI*2);ctx.fill();
+      }
+    }
     // Progress bar above building during construction
     const p=b.progress!=null?b.progress:1;
     if(p<1&&!b.burning){
