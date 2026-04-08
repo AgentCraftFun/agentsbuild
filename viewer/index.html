@@ -607,6 +607,87 @@ function drawPaths(c,buildings,fr){
   c.drawImage(_pathCanvas,0,0);
 }
 
+// === Settlement Fence/Wall Rendering ===
+let _fenceCanvas=null,_fenceBldCount=-1;
+function drawSettlementFences(c,buildings,settlements,fr){
+  if(!settlements||settlements.length===0||buildings.length<3)return;
+  // Rebuild only when building count changes
+  if(_fenceCanvas&&_fenceBldCount===buildings.length)return void c.drawImage(_fenceCanvas,0,0);
+  _fenceBldCount=buildings.length;
+  if(!_fenceCanvas){_fenceCanvas=document.createElement('canvas');_fenceCanvas.width=WW*TS;_fenceCanvas.height=WH*TS}
+  const fc=_fenceCanvas.getContext('2d');
+  fc.clearRect(0,0,_fenceCanvas.width,_fenceCanvas.height);
+
+  // Group buildings by nearest settlement
+  const settGroups=new Map();
+  for(const s of settlements){settGroups.set(s.name,[])}
+  for(const b of buildings){
+    let best=null,bestD=Infinity;
+    for(const s of settlements){
+      const d=Math.abs((b.x||0)-s.cx)+Math.abs((b.y||0)-s.cy);
+      if(d<bestD){bestD=d;best=s.name}
+    }
+    if(best&&bestD<40)settGroups.get(best).push(b);
+  }
+
+  // Draw fence around each settlement with 3+ buildings
+  for(const[name,blds] of settGroups){
+    if(blds.length<3)continue;
+    // Compute bounding box with margin
+    let minX=Infinity,minY=Infinity,maxX=-Infinity,maxY=-Infinity;
+    for(const b of blds){
+      const bx=b.x*TS,by=b.y*TS;
+      const bw=(b.width||2)*TS,bh=(b.height||2)*TS;
+      if(bx<minX)minX=bx;if(by<minY)minY=by;
+      if(bx+bw>maxX)maxX=bx+bw;if(by+bh>maxY)maxY=by+bh;
+    }
+    const margin=TS*2;// 2 tile margin around settlement
+    minX-=margin;minY-=margin;maxX+=margin;maxY+=margin;
+
+    // Draw wooden fence posts along the perimeter
+    const postSpacing=14;// pixels between posts
+    fc.fillStyle='#6a4a28';
+    // Top edge
+    for(let x=minX;x<=maxX;x+=postSpacing){
+      fc.fillRect(x,minY,3,8);
+      fc.fillRect(x,minY+2,postSpacing+1,1);// horizontal rail
+      fc.fillRect(x,minY+5,postSpacing+1,1);
+    }
+    // Bottom edge
+    for(let x=minX;x<=maxX;x+=postSpacing){
+      fc.fillRect(x,maxY-4,3,8);
+      fc.fillRect(x,maxY-1,postSpacing+1,1);
+      fc.fillRect(x,maxY+2,postSpacing+1,1);
+    }
+    // Left edge
+    for(let y=minY;y<=maxY;y+=postSpacing){
+      fc.fillRect(minX,y,3,8);
+      fc.fillRect(minX+1,y,1,postSpacing+1);
+      fc.fillRect(minX-1,y,1,postSpacing+1);
+    }
+    // Right edge
+    for(let y=minY;y<=maxY;y+=postSpacing){
+      fc.fillRect(maxX,y,3,8);
+      fc.fillRect(maxX+1,y,1,postSpacing+1);
+      fc.fillRect(maxX-1,y,1,postSpacing+1);
+    }
+    // Corner posts (thicker)
+    fc.fillStyle='#5a3a18';
+    fc.fillRect(minX-1,minY-1,5,10);fc.fillRect(maxX-1,minY-1,5,10);
+    fc.fillRect(minX-1,maxY-2,5,10);fc.fillRect(maxX-1,maxY-2,5,10);
+
+    // Gate opening in bottom fence (entrance)
+    const gateX=minX+(maxX-minX)/2-10;
+    fc.clearRect(gateX,maxY-5,20,14);
+    // Gate posts
+    fc.fillStyle='#5a3a18';
+    fc.fillRect(gateX-2,maxY-6,4,12);fc.fillRect(gateX+18,maxY-6,4,12);
+    // Gate lintel
+    fc.fillStyle='#6a4a28';fc.fillRect(gateX-2,maxY-7,22,3);
+  }
+  c.drawImage(_fenceCanvas,0,0);
+}
+
 // === Vegetation System ===
 function detailHash(x,y){return((x*198491317+y*668265263)^(x*77))>>>0}
 function hash2(x,y){return((x*374761393+y*1274126177)^12345)>>>0}
@@ -4754,6 +4835,8 @@ for(const b of G.clientBuildings){
 
 // Path trails between buildings
 if(!_lowPerf)drawPaths(ctx,S.buildings,frame);
+// Settlement perimeter fences
+if(!_lowPerf&&settlements.length>0)drawSettlementFences(ctx,S.buildings,settlements,frame);
 
 // Water animation — calm and gentle
 // Gentle wave lines every 3-4 rows
