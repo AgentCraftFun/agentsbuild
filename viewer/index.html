@@ -1070,6 +1070,8 @@ const BNames={town_hall:'Town Hall',farmstead:'Farmstead',lumber_mill:'Lumber Mi
 const canvasEl=document.getElementById('world'),ctx=canvasEl.getContext('2d'),wrap=document.getElementById('canvas-wrap');
 let vpX=0,vpY=0,zoom=1,dragging=false,dsx=0,dsy=0,dvx=0,dvy=0,mx=-1,my=-1,selAgent=null;
 function resize(){canvasEl.width=wrap.clientWidth;canvasEl.height=wrap.clientHeight}
+// Mobile: start more zoomed in so the world fills the screen (less water visible)
+if(window.innerWidth<=768){zoom=1.5;targetZoom=1.5}
 wrap.addEventListener('mousedown',e=>{lastInputFrame=frame;if(tvMode)tvMode=false;
   if(followAgent&&!tvMode){followAgent=null;const ti3=document.getElementById('tracking-indicator');if(ti3)ti3.style.display='none'}// release tracking on click
   if(e.button===0){dragging=true;dsx=e.clientX;dsy=e.clientY;dvx=vpX;dvy=vpY;if(cursorGrab)setCursor('grab')}});
@@ -1110,9 +1112,10 @@ wrap.addEventListener('touchmove',e=>{e.preventDefault();
     const r=canvasEl.getBoundingClientRect();mx=t.clientX-r.left;my=t.clientY-r.top}
   if(e.touches.length===2){const dx=e.touches[0].clientX-e.touches[1].clientX,dy=e.touches[0].clientY-e.touches[1].clientY;
     const dist=Math.sqrt(dx*dx+dy*dy);if(_pinchDist>0){const scale=dist/_pinchDist;
+    // Zoom anchor = midpoint of two fingers in SCREEN coords (same as mouse wheel)
     const midX=(e.touches[0].clientX+e.touches[1].clientX)/2,midY=(e.touches[0].clientY+e.touches[1].clientY)/2;
-    const r=canvasEl.getBoundingClientRect();const wcx=(midX-r.left)/zoom-vpX,wcy=(midY-r.top)/zoom-vpY;
-    targetZoom=Math.max(0.25,Math.min(6,zoom*scale));zoomAnchorX=wcx;zoomAnchorY=wcy}
+    const r=canvasEl.getBoundingClientRect();zoomAnchorX=midX-r.left;zoomAnchorY=midY-r.top;
+    targetZoom=Math.max(0.25,Math.min(6,zoom*scale))}
     _pinchDist=dist}
 },{passive:false});
 wrap.addEventListener('touchend',e=>{
