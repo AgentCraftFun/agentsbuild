@@ -477,7 +477,7 @@ class GameLoop {
         agent.resources.gold += stolen;
       }
 
-      agent.mood = 'raiding';
+      agent.mood = 'idle'; // instant tile-steal, don't enter warfare 'raiding' state
       agent.current_action = { type: 'raid', tileId, success: true };
       agent.idle_ticks = 0;
       agent.message = decision.message || '';
@@ -676,15 +676,15 @@ class GameLoop {
     const totalBuildings = this.world.buildingsList.filter(b => b.isComplete()).length;
     if (totalBuildings < 6) return;
 
-    // Cooldown: shorter with more buildings (min 20 ticks)
-    const cooldown = Math.max(20, 60 - Math.floor(totalBuildings / 8));
+    // Cooldown: short — raids should happen regularly (every 8-15 ticks = 24-45 sec)
+    const cooldown = Math.max(8, 20 - Math.floor(totalBuildings / 20));
     if (tick - war.lastRaidTick < cooldown) return;
 
-    // 25% trigger chance per tick after cooldown
-    if (Math.random() > 0.25) return;
+    // 40% trigger chance per tick after cooldown — frequent raids
+    if (Math.random() > 0.40) return;
 
-    // Max 3 simultaneous raids
-    if (war.activeRaids.length >= 3) return;
+    // Max 4 simultaneous raids
+    if (war.activeRaids.length >= 4) return;
 
     war.lastRaidTick = tick;
 

@@ -681,8 +681,8 @@ function drawSettlementFences(c,buildings,settlements,fr){
   }
 
   for(const[name,{s,blds}] of settGroups){
-    // Only fence small, cozy settlements (4-12 buildings) — skip tiny or huge ones
-    if(blds.length<4||blds.length>12)continue;
+    // Only fence tiny perimeter villages (3-5 buildings) — skip anything bigger
+    if(blds.length<3||blds.length>5)continue;
     const h=tileHash(s.cx,s.cy);
     const isStone=h%3===0;// ~33% stone walls, rest wood fences
     const postSpacing=isStone?10:14;
