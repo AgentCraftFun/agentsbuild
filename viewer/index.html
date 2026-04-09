@@ -1077,8 +1077,7 @@ const BNames={town_hall:'Town Hall',farmstead:'Farmstead',lumber_mill:'Lumber Mi
 const canvasEl=document.getElementById('world'),ctx=canvasEl.getContext('2d'),wrap=document.getElementById('canvas-wrap');
 let vpX=0,vpY=0,zoom=1,dragging=false,dsx=0,dsy=0,dvx=0,dvy=0,mx=-1,my=-1,selAgent=null;
 function resize(){canvasEl.width=wrap.clientWidth;canvasEl.height=wrap.clientHeight}
-// Mobile: start more zoomed in so the world fills the screen (less water visible)
-if(window.innerWidth<=768){zoom=1.5;targetZoom=1.5}
+// Mobile: start more zoomed in (targetZoom set after its declaration below)
 wrap.addEventListener('mousedown',e=>{lastInputFrame=frame;if(tvMode)tvMode=false;
   if(followAgent&&!tvMode){followAgent=null;const ti3=document.getElementById('tracking-indicator');if(ti3)ti3.style.display='none'}// release tracking on click
   if(e.button===0){dragging=true;dsx=e.clientX;dsy=e.clientY;dvx=vpX;dvy=vpY;if(cursorGrab)setCursor('grab')}});
@@ -1096,6 +1095,8 @@ window.addEventListener('mouseup',()=>{
   dragging=false;setCursor('normal');
 });
 let targetZoom=1;
+// Mobile: start more zoomed in so the world fills the screen
+if(window.innerWidth<=768){zoom=1.5;targetZoom=1.5}
 let zoomAnchorX=0,zoomAnchorY=0;// world point to keep under mouse during zoom
 let _pendingWheelEvents=[];// queue wheel events for start-of-frame processing
 wrap.addEventListener('wheel',e=>{e.preventDefault();lastInputFrame=frame;if(tvMode)tvMode=false;
