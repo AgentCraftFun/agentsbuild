@@ -315,6 +315,62 @@ app.get('/api/agents/llm-status', (req, res) => {
   res.json({ agents: llmBrain.getRegisteredAgents() });
 });
 
+// ─── Manual Meteor Trigger ───
+app.post('/api/meteor', (req, res) => {
+  const events = [];
+  const tick = worldState.tick || 0;
+  const buildings = worldState.buildingsList || [];
+  const completed = buildings.filter(b => b.isComplete());
+
+  // Pick impact location
+  let impactX, impactY;
+  if (req.body && req.body.x != null && req.body.y != null) {
+    impactX = Math.max(5, Math.min(worldState.width - 5, req.body.x));
+    impactY = Math.max(5, Math.min(worldState.height - 5, req.body.y));
+  } else if (completed.length > 0) {
+    const target = completed[Math.floor(Math.random() * completed.length)];
+    impactX = target.x + Math.floor(Math.random() * 8) - 4;
+    impactY = target.y + Math.floor(Math.random() * 8) - 4;
+  } else {
+    impactX = Math.floor(worldState.width / 2);
+    impactY = Math.floor(worldState.height / 2);
+  }
+
+  // Find and burn nearby buildings
+  const BLAST_RADIUS = 8;
+  const hit = buildings.filter(b =>
+    b.isComplete() && !b.burning &&
+    Math.abs(b.x - impactX) + Math.abs(b.y - impactY) < BLAST_RADIUS
+  );
+  const targets = hit.sort(() => Math.random() - 0.5).slice(0, 4);
+  for (const t of targets) {
+    t.burning = true; t.hp = t.hp || 1.0;
+    if (!worldState._dirtyTiles) worldState._dirtyTiles = new Set();
+    worldState._dirtyTiles.add(`${t.x},${t.y}`);
+  }
+
+  // Find nearest settlement for the message
+  let nearName = null;
+  let nearDist = Infinity;
+  for (const s of (worldState.settlements || [])) {
+    const d = Math.abs(s.cx - impactX) + Math.abs(s.cy - impactY);
+    if (d < nearDist) { nearDist = d; nearName = s.name; }
+  }
+  const loc = nearName && nearDist < 30 ? `near ${nearName}` : `at (${impactX}, ${impactY})`;
+
+  const event = {
+    tick, type: 'meteor_strike', impactX, impactY, burnCount: targets.length,
+    message: targets.length > 0
+      ? `A meteor crashed ${loc}, setting ${targets.length} building${targets.length > 1 ? 's' : ''} ablaze!`
+      : `A meteor crashed ${loc}! No buildings were hit.`,
+  };
+  worldState.events = worldState.events || [];
+  worldState.events.push(event);
+
+  console.log(`[Meteor] MANUAL strike at (${impactX},${impactY}) ${loc} — ${targets.length} buildings burning`);
+  res.json({ success: true, impactX, impactY, buildingsBurning: targets.length, message: event.message });
+});
+
 // ─── AI Building Generation Endpoint ───
 
 let _lastAiBuildCall = 0;
