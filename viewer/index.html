@@ -3678,16 +3678,25 @@ function updateAgentMovement(){
     // in a client-side chopping/mining/building state while the server moves them
     if(S.connected&&(a.mood==='raiding'||a.mood==='celebrating'||a.mood==='returning')){
       st.state=a.mood;st.target=null;st.timer=0;st.taskCooldown=0;
-      // Use _raidTarget as final destination for smooth walk (not server pos which jumps per tick)
-      const rt=a._raidTarget;
-      if(rt&&(a.mood==='raiding'||a.mood==='returning')){
-        // Walk smoothly toward the raid/return destination
-        v.tx=rt.x/WW;v.ty=rt.y/WH;
-      }else{
-        // Celebrating or no target — sync to server position
-        v.tx=a.x/WW;v.ty=a.y/WH;
+      // Target is always the SERVER position (updates 1 tile per 3s tick).
+      // Use LINEAR interpolation at constant speed so the agent walks steadily
+      // between tick updates instead of exponential easing (which races ahead).
+      const sx=a.x/WW,sy=a.y/WH;
+      v.tx=sx;v.ty=sy;
+      const dx=sx-v.x,dy=sy-v.y;
+      const dist=Math.sqrt(dx*dx+dy*dy);
+      if(dist>0.001){
+        // Constant walk speed: ~1 tile per 3 seconds (1/WW per tick, 60fps per tick)
+        // = 1/(WW*60) per frame ≈ 0.000083 for WW=200. Use slightly faster for visual smoothness.
+        const walkSpeed=1.5/(WW*20);// ~0.000375 per frame — covers 1 tile in ~13 frames
+        if(dist>walkSpeed){
+          v.x+=dx/dist*walkSpeed;
+          v.y+=dy/dist*walkSpeed;
+        }else{
+          v.x=sx;v.y=sy;
+        }
       }
-      // Fall through to normal smooth easing at line below
+      continue;// skip exponential easing and idle state handlers
     }
     // When agent was raiding but server says they're done, reset to idle
     if(S.connected&&(st.state==='raiding'||st.state==='celebrating'||st.state==='returning')&&a.mood!=='raiding'&&a.mood!=='celebrating'&&a.mood!=='returning'){
