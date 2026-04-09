@@ -101,6 +101,9 @@ class GameLoop {
       // 5b. Process burning buildings and inter-settlement wars
       this._processWarfare(tick, events);
 
+      // 5c. Process meteor events
+      this._processMeteors(tick, events);
+
       // 6. Generate event feed entries (already collected above, add tick summary)
       if (tick % 10 === 0) {
         const agentCount = this.world.agents.size;
@@ -749,6 +752,87 @@ class GameLoop {
       tick, type: 'raid_started',
       message: `${names} ${raidGroup.length > 1 ? 'are' : 'is'} marching on ${targetName}!`,
     });
+  }
+
+  // ─── METEOR EVENTS ───
+
+  _processMeteors(tick, events) {
+    // Initialize meteor state
+    if (!this.world._meteorState) {
+      this.world._meteorState = { lastMeteorTick: 0 };
+    }
+    const ms = this.world._meteorState;
+
+    const totalBuildings = this.world.buildingsList.filter(b => b.isComplete()).length;
+    // Don't send meteors until there are enough buildings to make it interesting
+    if (totalBuildings < 15) return;
+
+    // Meteor frequency: one every 300-600 ticks (~15-30 minutes with 3s ticks)
+    const cooldown = 300 + Math.floor(Math.random() * 300);
+    if (tick - ms.lastMeteorTick < 200) return; // hard minimum cooldown
+
+    // 3% chance per tick after minimum cooldown
+    if (Math.random() > 0.03) return;
+
+    ms.lastMeteorTick = tick;
+
+    // Pick impact location: random spot on the map, biased toward areas with buildings
+    let impactX, impactY;
+    if (Math.random() < 0.7 && this.world.buildingsList.length > 0) {
+      // 70% chance: target near an existing settlement for drama
+      const targetBld = this.world.buildingsList[Math.floor(Math.random() * this.world.buildingsList.length)];
+      impactX = targetBld.x + Math.floor(Math.random() * 10) - 5;
+      impactY = targetBld.y + Math.floor(Math.random() * 10) - 5;
+    } else {
+      // 30% chance: random wilderness location
+      impactX = 10 + Math.floor(Math.random() * (this.world.width - 20));
+      impactY = 10 + Math.floor(Math.random() * (this.world.height - 20));
+    }
+    // Clamp to map bounds
+    impactX = Math.max(5, Math.min(this.world.width - 5, impactX));
+    impactY = Math.max(5, Math.min(this.world.height - 5, impactY));
+
+    // Find buildings within blast radius (8 tiles)
+    const BLAST_RADIUS = 8;
+    const hitBuildings = this.world.buildingsList.filter(b =>
+      b.isComplete() && !b.burning &&
+      Math.abs(b.x - impactX) + Math.abs(b.y - impactY) < BLAST_RADIUS
+    );
+
+    // Set them on fire
+    const burnCount = Math.min(hitBuildings.length, 4); // max 4 buildings per meteor
+    const targets = hitBuildings.sort(() => Math.random() - 0.5).slice(0, burnCount);
+    for (const t of targets) {
+      t.burning = true;
+      t.hp = t.hp || 1.0;
+      if (!this.world._dirtyTiles) this.world._dirtyTiles = new Set();
+      this.world._dirtyTiles.add(`${t.x},${t.y}`);
+    }
+
+    // Find nearest settlement name for the event message
+    let nearestSettlement = null;
+    let nearestDist = Infinity;
+    for (const s of (this.world.settlements || [])) {
+      const d = Math.abs(s.cx - impactX) + Math.abs(s.cy - impactY);
+      if (d < nearestDist) { nearestDist = d; nearestSettlement = s; }
+    }
+
+    const locationName = nearestSettlement && nearestDist < 30
+      ? `near ${nearestSettlement.name}` : `at (${impactX}, ${impactY})`;
+
+    // Broadcast the meteor event (viewer uses this to play the animation)
+    events.push({
+      tick,
+      type: 'meteor_strike',
+      impactX,
+      impactY,
+      burnCount: targets.length,
+      message: targets.length > 0
+        ? `A meteor crashed ${locationName}, setting ${targets.length} building${targets.length > 1 ? 's' : ''} ablaze!`
+        : `A meteor crashed ${locationName}! No buildings were hit.`,
+    });
+
+    console.log(`[Meteor] Strike at (${impactX},${impactY}) ${locationName} — ${targets.length} buildings burning`);
   }
 
   _buildDiff(events) {

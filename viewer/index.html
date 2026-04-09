@@ -44,6 +44,7 @@ canvas{display:block;image-rendering:pixelated;image-rendering:crisp-edges}
 .event-row.raid_started{border-left:2px solid #ff6600}
 .event-row.building_burning{border-left:2px solid #ff4400}
 .event-row.building_destroyed{border-left:2px solid #880000}
+.event-row.meteor_strike{border-left:2px solid #ff8800;background:rgba(255,136,0,0.05)}
 .event-row.agent_message{border-left:2px solid #8888aa}
 #bottom-bar{grid-column:1/3;background:var(--panel);border-top:1px solid var(--border);display:flex;align-items:center;padding:0 16px;gap:24px;font-size:12px}
 .res-item{display:flex;align-items:center;gap:3px}
@@ -5369,6 +5370,81 @@ for(let i=bubbles.length-1;i>=0;i--){
   ctx.lineWidth=1;
 }
 
+// === METEOR ANIMATION (world-space) ===
+for(var mi=activeMeteors.length-1;mi>=0;mi--){
+  var m=activeMeteors[mi];
+  var mf=frame-m.startFrame;// frames since meteor started
+  var ix=m.impactX*ts+ts/2,iy=m.impactY*ts+ts/2;// impact point in pixels
+  if(mf>m.maxFrames){activeMeteors.splice(mi,1);continue}
+
+  // Phase 1: STREAK across sky (frames 0-60)
+  if(mf<60){
+    var streakP=mf/60;// 0→1
+    // Meteor travels from top-right to impact point
+    var startX=ix+300-300*streakP*streakP;
+    var startY=iy-400+400*streakP*streakP;
+    // Fireball head
+    var headR=8+4*Math.sin(mf*0.5);
+    ctx.fillStyle='#ff6600';ctx.beginPath();ctx.arc(startX,startY,headR,0,Math.PI*2);ctx.fill();
+    ctx.fillStyle='#ffcc00';ctx.beginPath();ctx.arc(startX,startY,headR*0.6,0,Math.PI*2);ctx.fill();
+    ctx.fillStyle='#fff';ctx.beginPath();ctx.arc(startX,startY,headR*0.25,0,Math.PI*2);ctx.fill();
+    // Tail (trail of sparks)
+    for(var ti=1;ti<8;ti++){
+      var tp=ti/8;
+      var tx2=startX+tp*40+Math.sin(mf*0.3+ti)*3;
+      var ty2=startY-tp*50+Math.cos(mf*0.4+ti)*2;
+      var ta=0.6-tp*0.5;
+      ctx.fillStyle='rgba(255,'+(150+Math.floor(tp*100))+',0,'+ta+')';
+      ctx.beginPath();ctx.arc(tx2,ty2,3-tp*2,0,Math.PI*2);ctx.fill();
+    }
+    // Smoke trail
+    for(var si=0;si<5;si++){
+      var sp=si/5;
+      var sx2=startX+sp*60+Math.sin(mf*0.15+si*2)*5;
+      var sy2=startY-sp*80;
+      ctx.fillStyle='rgba(100,80,60,'+(0.15-sp*0.1)+')';
+      ctx.beginPath();ctx.arc(sx2,sy2,5+sp*4,0,Math.PI*2);ctx.fill();
+    }
+  }
+  // Phase 2: IMPACT FLASH (frames 60-80)
+  else if(mf<80){
+    var flashP=(mf-60)/20;
+    // Bright flash at impact
+    var flashR=80*(1-flashP*flashP);
+    var flashA=0.8*(1-flashP);
+    ctx.fillStyle='rgba(255,220,100,'+flashA+')';ctx.beginPath();ctx.arc(ix,iy,flashR,0,Math.PI*2);ctx.fill();
+    ctx.fillStyle='rgba(255,255,255,'+(flashA*0.6)+')';ctx.beginPath();ctx.arc(ix,iy,flashR*0.4,0,Math.PI*2);ctx.fill();
+    // Flying debris
+    for(var di=0;di<12;di++){
+      var da=di/12*Math.PI*2+mf*0.05;
+      var dd=20+flashP*60+((di*7)%20);
+      var dx2=ix+Math.cos(da)*dd;
+      var dy2=iy+Math.sin(da)*dd-flashP*20;
+      ctx.fillStyle='rgba(180,120,40,'+(0.7-flashP*0.6)+')';
+      ctx.fillRect(dx2-2,dy2-2,4,3);
+    }
+    // Trigger screen shake on first impact frame
+    if(mf===60)screenShake=40;
+  }
+  // Phase 3: CRATER GLOW (frames 80-200)
+  else{
+    var glowP=(mf-80)/120;
+    // Smoldering crater
+    var craterR=25*(1-glowP*0.3);
+    ctx.fillStyle='rgba(40,20,10,'+(0.4-glowP*0.3)+')';ctx.beginPath();ctx.arc(ix,iy,craterR,0,Math.PI*2);ctx.fill();
+    // Inner glow
+    var innerA=0.3*(1-glowP);
+    ctx.fillStyle='rgba(255,100,20,'+innerA+')';ctx.beginPath();ctx.arc(ix,iy,craterR*0.5,0,Math.PI*2);ctx.fill();
+    // Rising smoke wisps
+    for(var wi=0;wi<3;wi++){
+      var wy2=iy-10-glowP*40-wi*15;
+      var wx2=ix+Math.sin(frame*0.03+wi*2)*6;
+      ctx.fillStyle='rgba(80,70,60,'+(0.12-glowP*0.1)+')';
+      ctx.beginPath();ctx.arc(wx2,wy2,4+wi*2,0,Math.PI*2);ctx.fill();
+    }
+  }
+}
+
 ctx.restore();
 
 // 1. VIGNETTE (screen-space)
@@ -5376,6 +5452,15 @@ const cw2=canvasEl.width,ch2=canvasEl.height;
 const vigGrad=ctx.createRadialGradient(cw2/2,ch2/2,Math.min(cw2,ch2)*0.35,cw2/2,ch2/2,Math.max(cw2,ch2)*0.7);
 vigGrad.addColorStop(0,'rgba(0,0,0,0)');vigGrad.addColorStop(1,'rgba(0,0,0,0.3)');
 ctx.fillStyle=vigGrad;ctx.fillRect(0,0,cw2,ch2);
+
+// 1b. METEOR SCREEN FLASH (screen-space overlay)
+for(var mi2=0;mi2<activeMeteors.length;mi2++){
+  var mf2=frame-activeMeteors[mi2].startFrame;
+  if(mf2>=58&&mf2<75){// brief white flash on impact
+    var fA=mf2<63?0.4:0.4*(1-(mf2-63)/12);
+    ctx.fillStyle='rgba(255,240,200,'+Math.max(0,fA)+')';ctx.fillRect(0,0,cw2,ch2);
+  }
+}
 
 // 2. SMOOTH DAY/NIGHT CYCLE (18000 frames = 5 min at 60fps)
 const cycleLen=18000;
@@ -5795,7 +5880,7 @@ function syncServerSettlements(serverSettlements){
 function handleMsg(msg){
 if(msg.type==='pong')return;
 if(msg.type==='world_state'&&msg.data){S.tick=msg.data.tick||0;S.agents=msg.data.agents||[];rebuildAgentMap();S.tiles=msg.data.tiles||[];S.buildings=msg.data.buildings||[];S.events=msg.data.events||[];S.leaderboard=msg.data.leaderboard||[];syncServerBuildings(msg.data.buildings||[]);if(msg.data.settlements)syncServerSettlements(msg.data.settlements);updateAll()}
-if(msg.type==='tick'&&msg.data){S.tick=msg.data.tick||S.tick;if(msg.data.agents){S.agents=msg.data.agents;rebuildAgentMap()}if(msg.data.tiles)S.tiles=msg.data.tiles;if(msg.data.buildings){S.buildings=msg.data.buildings;syncServerBuildings(msg.data.buildings)}if(msg.data.events){for(const ev of msg.data.events){if(ev.type==='raid_started')showDramaBanner(ev.message);else if(ev.type==='raid_success')showDramaBanner(ev.message);else if(ev.type==='building_destroyed')showDramaBanner(ev.message)}S.events=S.events.concat(msg.data.events);if(S.events.length>200)S.events=S.events.slice(-100)}if(msg.data.leaderboard)S.leaderboard=msg.data.leaderboard;if(msg.data.settlements)syncServerSettlements(msg.data.settlements);updateAll()}}
+if(msg.type==='tick'&&msg.data){S.tick=msg.data.tick||S.tick;if(msg.data.agents){S.agents=msg.data.agents;rebuildAgentMap()}if(msg.data.tiles)S.tiles=msg.data.tiles;if(msg.data.buildings){S.buildings=msg.data.buildings;syncServerBuildings(msg.data.buildings)}if(msg.data.events){for(const ev of msg.data.events){if(ev.type==='raid_started')showDramaBanner(ev.message);else if(ev.type==='raid_success')showDramaBanner(ev.message);else if(ev.type==='building_destroyed')showDramaBanner(ev.message);else if(ev.type==='meteor_strike'){showDramaBanner(ev.message);triggerMeteorAnimation(ev.impactX,ev.impactY)}}S.events=S.events.concat(msg.data.events);if(S.events.length>200)S.events=S.events.slice(-100)}if(msg.data.leaderboard)S.leaderboard=msg.data.leaderboard;if(msg.data.settlements)syncServerSettlements(msg.data.settlements);updateAll()}}
 safeInterval(()=>{if(ws&&ws.readyState===1)ws.send('{"type":"ping"}')},30000);
 
 // === Resource system now driven by agent AI state machine ===
@@ -6091,6 +6176,20 @@ function checkMilestones(){
 
 // Screen shake state
 let screenShake=0;
+
+// === METEOR ANIMATION SYSTEM ===
+const activeMeteors=[];// {impactX,impactY,phase,frame,startFrame,maxFrames}
+function triggerMeteorAnimation(ix,iy){
+  // Pan camera toward impact if not already looking there
+  var wx=ix*TS+TS/2,wy=iy*TS+TS/2;
+  panTarget={vpX:canvasEl.width/(2*zoom)-wx,vpY:canvasEl.height/(2*zoom)-wy,zoom:Math.max(zoom,1.2)};
+  panFrames=40;
+  // Create meteor with 3 phases: streak (60f), impact flash (20f), crater glow (120f)
+  activeMeteors.push({impactX:ix,impactY:iy,phase:'streak',frame:0,startFrame:frame,maxFrames:200});
+  // Play a drama banner too
+  screenShake=0;// will be set on impact
+}
+
 // Persistent world objects from events (ruins, craters, merchants)
 const worldObjects=[];// {type:'ruins'|'crater'|'merchant',x,y,life,data}
 
