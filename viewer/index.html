@@ -3568,38 +3568,10 @@ function updateAgentMovement(){
     // in a client-side chopping/mining/building state while the server moves them
     if(S.connected&&(a.mood==='raiding'||a.mood==='celebrating'||a.mood==='returning')){
       st.state=a.mood;st.target=null;st.timer=0;st.taskCooldown=0;
-      // SMOOTH RAIDER WALK: Walk toward _raidTarget (final destination) but never
-      // get more than 3 tiles ahead of the server position. This gives smooth
-      // continuous walking between 3-second tick updates.
-      const sx=a.x/WW,sy=a.y/WH;// current server pos (updates every tick)
-      const rt=a._raidTarget;
-      const hasDest=rt&&(a.mood==='raiding'||a.mood==='returning');
-      // Walk direction: toward destination if we have one, else toward server pos
-      const goalX=hasDest?rt.x/WW:sx;
-      const goalY=hasDest?rt.y/WH:sy;
-      const dgx=goalX-v.x,dgy=goalY-v.y;
-      const goalDist=Math.sqrt(dgx*dgx+dgy*dgy);
-      // How far ahead of server are we?
-      const aheadX=v.x-sx,aheadY=v.y-sy;
-      const aheadDist=Math.sqrt(aheadX*aheadX+aheadY*aheadY);
-      const maxAhead=3/WW;// never more than 3 tiles ahead of server
-      if(goalDist>0.001&&aheadDist<maxAhead){
-        // Walk toward goal at steady pace: ~1 tile per 180 frames (matches server)
-        const walkSpeed=1.0/(WW*140);
-        if(goalDist>walkSpeed){
-          v.x+=dgx/goalDist*walkSpeed;
-          v.y+=dgy/goalDist*walkSpeed;
-        }else{
-          v.x=goalX;v.y=goalY;
-        }
-      }else if(aheadDist>=maxAhead){
-        // Too far ahead — stop and wait for server to catch up (no movement)
-      }else{
-        // At goal or no goal — snap to server
-        v.x=sx;v.y=sy;
-      }
-      v.tx=v.x;v.ty=v.y;
-      continue;
+      // Simple: set target to server position, use normal easing below.
+      // Server moves 1 tile/tick. Normal easing catches up smoothly.
+      v.tx=a.x/WW;v.ty=a.y/WH;
+      // Do NOT continue — fall through to the normal easing at line below
     }
     // When agent was raiding but server says they're done, reset to idle
     if(S.connected&&(st.state==='raiding'||st.state==='celebrating'||st.state==='returning')&&a.mood!=='raiding'&&a.mood!=='celebrating'&&a.mood!=='returning'){
