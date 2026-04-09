@@ -5099,21 +5099,6 @@ for(const item of renderItems){
       ctx.fillStyle='#5a3a18';ctx.fillRect(swordX-3,swordY+2,6,2);// crossguard
       ctx.fillStyle='#6a4a28';ctx.fillRect(swordX-1,swordY+4,2,4);// grip
     }
-    // === RAID DEBUG OVERLAY — visible on screen above raiding agents ===
-    if(ad.a.mood==='raiding'||ad.a.mood==='celebrating'||ad.a.mood==='returning'){
-      const v2=agentVisuals.get(ad.a.id);
-      const dbx=ax-60,dby=ay-80;
-      ctx.fillStyle='rgba(0,0,0,0.85)';ctx.fillRect(dbx,dby,140,65);
-      ctx.font='9px monospace';ctx.textAlign='left';ctx.textBaseline='top';
-      ctx.fillStyle='#ff4';ctx.fillText(`${ad.a.name} [${ad.a.mood}]`,dbx+2,dby+2);
-      ctx.fillStyle='#fff';
-      ctx.fillText(`srv: ${ad.a.x},${ad.a.y}`,dbx+2,dby+13);
-      ctx.fillText(`vis: ${v2?(v2.x*WW).toFixed(1)+','+(v2.y*WH).toFixed(1):'?'}`,dbx+2,dby+23);
-      ctx.fillText(`tx:  ${v2?(v2.tx*WW).toFixed(1)+','+(v2.ty*WH).toFixed(1):'?'}`,dbx+2,dby+33);
-      const rt2=ad.a._raidTarget;
-      ctx.fillText(`tgt: ${rt2?rt2.x+','+rt2.y:'null'}`,dbx+2,dby+43);
-      ctx.fillText(`f:${frame}`,dbx+2,dby+53);
-    }
     // Highlight circle for pan-to-agent
     if(panHighlight&&panHighlight.id===ad.a.id&&panHighlight.timer>0){
       const hAlpha=0.3+0.3*Math.sin(frame*0.15);
