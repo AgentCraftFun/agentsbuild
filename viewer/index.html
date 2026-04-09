@@ -111,6 +111,37 @@ canvas{display:block;image-rendering:pixelated;image-rendering:crisp-edges}
 .deploy-preview{background:#080812;border:1px solid #2a2a4e;border-radius:6px;padding:10px;margin-top:12px}
 .deploy-preview .preview-name{color:#f0c040;font-size:12px;font-weight:bold}
 .deploy-preview .preview-detail{color:#888;font-size:10px;margin-top:2px}
+/* === MOBILE RESPONSIVE (<768px) === */
+@media(max-width:768px){
+  /* Grid: single column, canvas fills screen, sidebar becomes bottom drawer */
+  #app{grid-template-columns:1fr!important;grid-template-rows:32px 1fr 0px!important}
+  #header{grid-column:1!important;padding:0 8px}
+  #header h1{font-size:10px;letter-spacing:1px}
+  #header-stats{gap:8px;font-size:10px}
+  #header-stats span{font-size:9px}
+  /* Canvas fills all available space */
+  #canvas-wrap{grid-column:1;grid-row:2}
+  /* Sidebar: fixed bottom drawer, collapsed by default */
+  #sidebar{position:fixed;bottom:0;left:0;right:0;height:55vh;z-index:100;
+    border-left:none!important;border-top:2px solid var(--border);
+    transform:translateY(100%);transition:transform 0.3s ease;
+    flex-direction:column}
+  #sidebar.mobile-open{transform:translateY(0)}
+  /* Minimap: small thumbnail in drawer header */
+  #minimap-section{padding:4px!important}
+  #minimap-section canvas{max-height:70px}
+  /* Agent section takes more room in drawer */
+  #agent-section{max-height:45%!important}
+  /* Bottom bar hidden on mobile (resources shown in header) */
+  #bottom-bar{display:none!important}
+  /* Mobile sidebar toggle button */
+  #mobile-sidebar-toggle{display:block!important}
+}
+/* Toggle button — hidden on desktop, shown on mobile */
+#mobile-sidebar-toggle{display:none;position:fixed;bottom:10px;right:10px;z-index:101;
+  background:var(--panel);border:1px solid var(--border);border-radius:20px;
+  color:var(--text);font-size:11px;padding:8px 14px;cursor:pointer;
+  font-family:'Courier New',monospace;box-shadow:0 2px 8px rgba(0,0,0,0.5)}
 </style>
 </head>
 <body>
@@ -121,6 +152,7 @@ canvas{display:block;image-rendering:pixelated;image-rendering:crisp-edges}
 setTimeout(function(){var io=document.getElementById('intro-overlay');if(io)io.remove()},4000);
 </script>
 <!-- era-announce removed — using drama banner system -->
+<button id="mobile-sidebar-toggle" onclick="document.getElementById('sidebar').classList.toggle('mobile-open');this.textContent=document.getElementById('sidebar').classList.contains('mobile-open')?'✕ Close':'☰ Agents'">☰ Agents</button>
 <div id="app">
   <div id="header">
     <h1>AgentCraft</h1>
