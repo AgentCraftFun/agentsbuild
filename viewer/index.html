@@ -152,7 +152,6 @@ canvas{display:block;image-rendering:pixelated;image-rendering:crisp-edges}
 setTimeout(function(){var io=document.getElementById('intro-overlay');if(io)io.remove()},4000);
 </script>
 <!-- era-announce removed — using drama banner system -->
-<button id="mobile-sidebar-toggle" onclick="document.getElementById('sidebar').classList.toggle('mobile-open');this.textContent=document.getElementById('sidebar').classList.contains('mobile-open')?'✕ Close':'☰ Agents'">☰ Agents</button>
 <div id="app">
   <div id="header">
     <h1>AgentCraft</h1>
@@ -220,9 +219,8 @@ setTimeout(function(){var io=document.getElementById('intro-overlay');if(io)io.r
     <div id="era-progress" style="display:flex;align-items:center;gap:4px;margin-left:8px"><div id="era-bar" style="width:60px;height:6px;background:#1a1a3e;border-radius:3px;overflow:hidden"><div id="era-fill" style="height:100%;background:#aaffaa;width:0%"></div></div></div>
     <div id="last-event" style="flex:1;text-align:right;color:var(--dim);font-size:11px;overflow:hidden;white-space:nowrap;text-overflow:ellipsis"></div>
   </div>
+  <button id="mobile-sidebar-toggle" onclick="var s=document.getElementById('sidebar');s.classList.toggle('mobile-open');this.textContent=s.classList.contains('mobile-open')?'X Close':'= Agents'">= Agents</button>
 </div>
-
-<!-- DEPLOY AGENT MODAL -->
 <div id="deploy-modal">
   <div class="deploy-box">
     <div class="deploy-header">
@@ -5745,13 +5743,15 @@ function updateAll(){updateMaps();updateAgentList();updateEvents();updateBottom(
 // === WebSocket ===
 let ws=null,reconTimer=null,reconDelay=1000;
 function connectWS(){
-const ov=document.getElementById('conn-overlay');ov.style.display='block';
-try{const p=location.protocol==='https:'?'wss:':'ws:';ws=new WebSocket(`${p}//${location.host}`)}catch(e){schedRecon();return}
-ws.onopen=()=>{S.connected=true;reconDelay=1000;ov.style.display='none';updateHeader()};
-ws.onmessage=e=>{try{handleMsg(JSON.parse(e.data))}catch(ex){console.warn('[WS] Message error:',ex.message,e.data?.slice?.(0,200))}};
-ws.onclose=()=>{S.connected=false;updateHeader();ov.style.display='block';ov.querySelector('h2').textContent='Disconnected';schedRecon()};
-ws.onerror=()=>{}}
-function schedRecon(){if(reconTimer)clearTimeout(reconTimer);reconTimer=setTimeout(()=>{reconDelay=Math.min(reconDelay*1.5,15000);connectWS()},reconDelay)}
+const ov=document.getElementById('conn-overlay');if(ov)ov.style.display='block';
+try{const p=location.protocol==='https:'?'wss:':'ws:';ws=new WebSocket(p+'//'+location.host)}catch(e){schedRecon();return}
+ws.onopen=function(){S.connected=true;reconDelay=1000;if(ov)ov.style.display='none';updateHeader()};
+ws.onmessage=function(e){try{handleMsg(JSON.parse(e.data))}catch(ex){console.warn('[WS] Message error:',ex.message)}};
+ws.onclose=function(){S.connected=false;updateHeader();if(ov){ov.style.display='block';ov.querySelector('h2').textContent='Reconnecting...'}schedRecon()};
+ws.onerror=function(){};
+// Fallback: hide overlay after 8 seconds even if not connected (allows offline viewing)
+setTimeout(function(){if(ov&&ov.style.display!=='none'){ov.style.display='none'}},8000)}
+function schedRecon(){if(reconTimer)clearTimeout(reconTimer);reconTimer=setTimeout(function(){reconDelay=Math.min(reconDelay*1.5,15000);connectWS()},reconDelay)}
 function syncServerBuildings(serverBlds){
   // When connected, server buildings are authoritative (S.buildings used for rendering).
   // Sync progress, burning state, and hp to client buildings.
