@@ -127,9 +127,8 @@ canvas{display:block;image-rendering:pixelated;image-rendering:crisp-edges}
     transform:translateY(100%);transition:transform 0.3s ease;
     flex-direction:column}
   #sidebar.mobile-open{transform:translateY(0)}
-  /* Minimap: small thumbnail in drawer header */
-  #minimap-section{padding:4px!important}
-  #minimap-section canvas{max-height:70px}
+  /* Minimap: hidden on mobile */
+  #minimap-section{display:none!important}
   /* Agent section takes more room in drawer */
   #agent-section{max-height:45%!important}
   /* Bottom bar hidden on mobile (resources shown in header) */
@@ -4162,10 +4161,11 @@ if(panTarget&&panFrames>0){
 if(!dragging&&(Math.abs(panVelX)>0.1||Math.abs(panVelY)>0.1)){
   vpX+=panVelX;vpY+=panVelY;panVelX*=0.92;panVelY*=0.92;
 }
-// Smooth zoom with mouse anchor — faster lerp for buttery feel
+// Smooth zoom with anchor — faster on mobile for responsive pinch
 if(Math.abs(zoom-targetZoom)>0.005){
   const worldBefore=zoomAnchorX/zoom-vpX;const worldBeforeY=zoomAnchorY/zoom-vpY;
-  zoom+=(targetZoom-zoom)*0.15;
+  var _zoomLerp=window.innerWidth<=768?0.35:0.15;
+  zoom+=(targetZoom-zoom)*_zoomLerp;
   vpX=-(worldBefore-zoomAnchorX/zoom);vpY=-(worldBeforeY-zoomAnchorY/zoom);
 }
 // Follow agent mode — smooth lock onto tracked agent
