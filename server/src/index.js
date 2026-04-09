@@ -118,16 +118,7 @@ function loadWorldState() {
 }
 
 // ─── Initialize World State (persistent) ───
-
-// ─── Force fresh start: delete any existing save ───
-// This ensures a clean Day 1 restart on every deploy.
-// Remove this block once the game is stable and you want persistence.
-try {
-  if (fs.existsSync(STATE_FILE)) {
-    console.log(`[CLEANUP] Deleting existing save to start fresh.`);
-    fs.unlinkSync(STATE_FILE);
-  }
-} catch (e) { console.warn('[CLEANUP] Error deleting save:', e.message); }
+// World state persists across deploys — never delete the save file.
 
 const loadedState = loadWorldState();
 let worldState;
