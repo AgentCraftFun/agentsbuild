@@ -608,116 +608,6 @@ function drawPaths(c,buildings,fr){
   c.drawImage(_pathCanvas,0,0);
 }
 
-// === Settlement Fence/Wall Rendering ===
-let _fenceCanvas=null,_fenceBldCount=-1;
-function _isWaterAt(px,py){
-  const tx=Math.floor(px/TS),ty=Math.floor(py/TS);
-  if(tx<0||tx>=WW||ty<0||ty>=WH)return true;
-  const bi=tBiomes[ty*WW+tx];
-  return bi===0||bi===1||bi===10;// deep_water, shallow_water, river
-}
-function _drawFenceSegment(fc,x1,y1,x2,y2,isStone,postSpacing){
-  const dx=x2-x1,dy=y2-y1;
-  const len=Math.sqrt(dx*dx+dy*dy);
-  if(len<2)return;
-  const nx=dx/len,ny=dy/len;
-  const posts=Math.floor(len/postSpacing);
-  for(let p=0;p<=posts;p++){
-    const px=x1+nx*p*postSpacing,py=y1+ny*p*postSpacing;
-    if(_isWaterAt(px,py))continue;// skip water tiles
-    if(isStone){
-      // Stone wall segment
-      fc.fillStyle='#7a7a72';fc.fillRect(px-2,py-2,5,5);
-      fc.fillStyle='#6a6a62';fc.fillRect(px-1,py-1,3,3);
-    }else{
-      // Wooden fence post
-      fc.fillStyle='#5a3a18';fc.fillRect(px-1,py-2,3,7);
-    }
-    // Horizontal rail between posts (if not last post)
-    if(p<posts){
-      const nx2=x1+nx*(p+1)*postSpacing,ny2=y1+ny*(p+1)*postSpacing;
-      if(!_isWaterAt((px+nx2)/2,(py+ny2)/2)){
-        if(isStone){
-          fc.fillStyle='rgba(100,100,92,0.6)';
-          fc.fillRect(Math.min(px,nx2),Math.min(py,ny2)-1,
-            Math.abs(nx2-px)||postSpacing,Math.abs(ny2-py)||3);
-        }else{
-          fc.fillStyle='rgba(90,58,24,0.7)';
-          // Two horizontal rails
-          const rx=Math.min(px,nx2),ry=Math.min(py,ny2);
-          const rw=Math.max(Math.abs(nx2-px),1),rh=Math.max(Math.abs(ny2-py),1);
-          if(Math.abs(dx)>Math.abs(dy)){// horizontal edge
-            fc.fillRect(rx,ry-1,rw,1);fc.fillRect(rx,ry+2,rw,1);
-          }else{// vertical edge
-            fc.fillRect(rx-1,ry,1,rh);fc.fillRect(rx+2,ry,1,rh);
-          }
-        }
-      }
-    }
-  }
-}
-function drawSettlementFences(c,buildings,settlements,fr){
-  if(!settlements||settlements.length===0)return;
-  // Only fence around completed buildings
-  const completed=buildings.filter(b=>b.complete||(b.progress!=null&&b.progress>=0.95));
-  if(completed.length<3)return;
-  const compCount=completed.length;
-  if(_fenceCanvas&&_fenceBldCount===compCount)return void c.drawImage(_fenceCanvas,0,0);
-  _fenceBldCount=compCount;
-  if(!_fenceCanvas){_fenceCanvas=document.createElement('canvas');_fenceCanvas.width=WW*TS;_fenceCanvas.height=WH*TS}
-  const fc=_fenceCanvas.getContext('2d');
-  fc.clearRect(0,0,_fenceCanvas.width,_fenceCanvas.height);
-
-  // Group completed buildings by nearest settlement
-  const settGroups=new Map();
-  for(const s of settlements){settGroups.set(s.name,{s,blds:[]})}
-  for(const b of completed){
-    let best=null,bestD=Infinity;
-    for(const s of settlements){
-      const d=Math.abs((b.x||0)-s.cx)+Math.abs((b.y||0)-s.cy);
-      if(d<bestD){bestD=d;best=s.name}
-    }
-    if(best&&bestD<40){const g=settGroups.get(best);if(g)g.blds.push(b)}
-  }
-
-  for(const[name,{s,blds}] of settGroups){
-    // Only fence tiny perimeter villages (3-5 buildings) — skip anything bigger
-    if(blds.length<3||blds.length>5)continue;
-    const h=tileHash(s.cx,s.cy);
-    const isStone=h%3===0;// ~33% stone walls, rest wood fences
-    const postSpacing=isStone?10:14;
-    const margin=TS*1.5;
-
-    // Compute bounding box
-    let minX=Infinity,minY=Infinity,maxX=-Infinity,maxY=-Infinity;
-    for(const b of blds){
-      const bx=b.x*TS,by=b.y*TS;
-      const bw=(b.width||2)*TS,bh=(b.height||2)*TS;
-      if(bx<minX)minX=bx;if(by<minY)minY=by;
-      if(bx+bw>maxX)maxX=bx+bw;if(by+bh>maxY)maxY=by+bh;
-    }
-    minX-=margin;minY-=margin;maxX+=margin;maxY+=margin;
-
-    // Clamp to map bounds
-    minX=Math.max(0,minX);minY=Math.max(0,minY);
-    maxX=Math.min(WW*TS,maxX);maxY=Math.min(WH*TS,maxY);
-
-    // Draw 4 edges, each segment skips water tiles
-    _drawFenceSegment(fc,minX,minY,maxX,minY,isStone,postSpacing);// top
-    _drawFenceSegment(fc,minX,maxY,maxX,maxY,isStone,postSpacing);// bottom
-    _drawFenceSegment(fc,minX,minY,minX,maxY,isStone,postSpacing);// left
-    _drawFenceSegment(fc,maxX,minY,maxX,maxY,isStone,postSpacing);// right
-
-    // Gate opening (clear a section at bottom center)
-    const gateX=(minX+maxX)/2-12;
-    fc.clearRect(gateX,maxY-6,24,14);
-    // Gate posts
-    fc.fillStyle=isStone?'#6a6a62':'#4a2a10';
-    fc.fillRect(gateX-2,maxY-7,4,12);fc.fillRect(gateX+22,maxY-7,4,12);
-  }
-  c.drawImage(_fenceCanvas,0,0);
-}
-
 // === Vegetation System ===
 function detailHash(x,y){return((x*198491317+y*668265263)^(x*77))>>>0}
 function hash2(x,y){return((x*374761393+y*1274126177)^12345)>>>0}
@@ -4880,9 +4770,6 @@ for(const b of G.clientBuildings){
 
 // Path trails between buildings
 if(!_lowPerf)drawPaths(ctx,S.buildings,frame);
-// Settlement perimeter fences
-if(!_lowPerf&&settlements.length>0)drawSettlementFences(ctx,S.buildings,settlements,frame);
-
 // Water animation — calm and gentle
 // Gentle wave lines every 3-4 rows
 for(let y=sy;y<ey;y++){
