@@ -104,6 +104,16 @@ class GameLoop {
       // 5c. Process meteor events
       this._processMeteors(tick, events);
 
+      // 5d. Building decay — slow for maintained, fast for abandoned (every 10 ticks)
+      if (tick % 10 === 0) {
+        this._processDecay(tick, events);
+      }
+
+      // 5e. Wildfire events (spreading fire) — every 20 ticks
+      if (tick % 20 === 0) {
+        this._processWildfires(tick, events);
+      }
+
       // 6. Generate event feed entries (already collected above, add tick summary)
       if (tick % 10 === 0) {
         const agentCount = this.world.agents.size;
@@ -582,12 +592,9 @@ class GameLoop {
       if (!this.world._dirtyTiles) this.world._dirtyTiles = new Set();
       this.world._dirtyTiles.add(`${bld.x},${bld.y}`);
       if (bld.hp <= 0) {
-        bld.burning = false;
-        const tile = this.world.tiles.get(`${bld.x},${bld.y}`);
-        if (tile) { tile.building = null; this.world._dirtyTiles.add(`${bld.x},${bld.y}`); }
+        // Check displacement BEFORE destroying (owner list gets mutated)
         const owner = this.world.agents.get(bld.owner);
         if (owner) {
-          owner.buildings = (owner.buildings || []).filter(b => b !== bld);
           const remaining = this.world.buildingsList.filter(b2 =>
             b2 !== bld && b2.owner === owner.id && b2.isComplete()
           ).length;
@@ -597,8 +604,7 @@ class GameLoop {
               message: `${owner.name}'s village was destroyed! They must find new land.` });
           }
         }
-        if (this.world._spatialIndex) this.world._spatialIndex.remove(bld);
-        this.world.buildingsList.splice(i, 1);
+        this._destroyBuilding(bld, i);
         events.push({ tick, type: 'building_destroyed', message: `${bld.name} at (${bld.x}, ${bld.y}) burned to the ground!` });
       }
     }
@@ -764,6 +770,151 @@ class GameLoop {
     });
   }
 
+  // ─── BUILDING DECAY & ABANDONMENT ───
+
+  /**
+   * Buildings slowly decay over time. If the owner is active, decay is
+   * negligible (buildings effectively last forever with minimal regen).
+   * If the owner is inactive (hasn't acted in a long time), decay is
+   * MUCH faster — their abandoned villages clean themselves up.
+   *
+   * Tunable constants:
+   *   ABANDONED_THRESHOLD_TICKS — how long before owner counts as inactive
+   *   NORMAL_DECAY_PER_CHECK   — HP lost per check when owner is active
+   *   ABANDONED_DECAY_PER_CHECK — HP lost per check when owner inactive
+   *   MAINT_REGEN_PER_CHECK    — HP regained when owner is present at building
+   */
+  _processDecay(tick, events) {
+    const ABANDONED_THRESHOLD_TICKS = 1200;  // ~1 hour of inactivity before buildings start decaying
+    const NORMAL_DECAY_PER_CHECK = 0;        // maintained buildings don't decay
+    const ABANDONED_DECAY_PER_CHECK = 0.02;  // ~50 checks = 500 ticks = ~25 min to destroy
+    const MAINT_REGEN_PER_CHECK = 0.01;      // small HP regen when owner is nearby
+    const DECAY_HP_THRESHOLD = 0.0001;       // below this → destroy
+
+    let destroyed = 0;
+    let abandonedCount = 0;
+
+    for (let i = this.world.buildingsList.length - 1; i >= 0; i--) {
+      const bld = this.world.buildingsList[i];
+      if (!bld.isComplete()) continue;      // skip under-construction
+      if (bld.burning) continue;            // fire damage handled elsewhere
+      if (bld.workCost === 0) continue;     // skip HQ buildings (town halls, etc.)
+
+      const owner = this.world.agents.get(bld.owner);
+      // Owner doesn't exist in agent map (e.g., 'settlement_0' HQ owner) → skip
+      if (!owner) continue;
+
+      const ticksSinceActive = tick - (owner.last_action_tick || 0);
+      const isAbandoned = ticksSinceActive > ABANDONED_THRESHOLD_TICKS;
+
+      if (isAbandoned) {
+        bld.hp = (bld.hp || 1.0) - ABANDONED_DECAY_PER_CHECK;
+        abandonedCount++;
+        if (bld.hp <= DECAY_HP_THRESHOLD) {
+          // Free the tile ownership so new settlers can claim it
+          const tileId = `${bld.x},${bld.y}`;
+          const tile = this.world.tiles.get(tileId);
+          if (tile && tile.owner === owner.id) {
+            tile.owner = null;
+            if (owner.owned_tiles && Array.isArray(owner.owned_tiles)) {
+              owner.owned_tiles = owner.owned_tiles.filter(t => t !== tileId);
+            }
+          }
+          this._destroyBuilding(bld, i);
+          destroyed++;
+          events.push({ tick, type: 'building_decayed',
+            message: `An abandoned ${bld.name} crumbled to ruins.` });
+        } else {
+          if (!this.world._dirtyTiles) this.world._dirtyTiles = new Set();
+          this.world._dirtyTiles.add(`${bld.x},${bld.y}`);
+        }
+      } else {
+        // Owner is active — small maintenance regen if they're nearby
+        if (NORMAL_DECAY_PER_CHECK > 0) {
+          bld.hp = Math.max(0, (bld.hp || 1.0) - NORMAL_DECAY_PER_CHECK);
+        }
+        if (MAINT_REGEN_PER_CHECK > 0 && bld.hp < 1.0) {
+          const dx = Math.abs(owner.x - bld.x);
+          const dy = Math.abs(owner.y - bld.y);
+          if (dx + dy < 5) {
+            bld.hp = Math.min(1.0, (bld.hp || 1.0) + MAINT_REGEN_PER_CHECK);
+          }
+        }
+      }
+    }
+
+    if (destroyed > 0) {
+      console.log(`[Decay] tick=${tick} destroyed=${destroyed} abandoned_buildings=${abandonedCount}`);
+    }
+  }
+
+  // ─── WILDFIRE (spreading fire disaster) ───
+
+  /**
+   * Occasionally ignite wildfires: a starter building catches fire, then
+   * fire spreads from burning buildings to adjacent ones each check.
+   *
+   * This is cosmetic drama — it uses the existing `burning` system so no
+   * new data structures, and _processWarfare's burn loop handles HP/destroy.
+   */
+  _processWildfires(tick, events) {
+    if (!this.world._wildfireState) {
+      this.world._wildfireState = { lastIgnitionTick: 0 };
+    }
+    const ws = this.world._wildfireState;
+    const buildings = this.world.buildingsList;
+    const completed = buildings.filter(b => b.isComplete() && b.workCost > 0);
+    if (completed.length < 20) return;  // need a populated world
+
+    // ── 1. Spread existing wildfires: each burning building has a small
+    //      chance to ignite a nearby non-burning building.
+    const burning = completed.filter(b => b.burning);
+    const SPREAD_CHANCE = 0.15;          // 15% per burning building per check
+    const SPREAD_RADIUS = 4;             // tiles
+    let spreadCount = 0;
+    for (const b of burning) {
+      if (Math.random() > SPREAD_CHANCE) continue;
+      let candidates = [];
+      if (this.world._spatialIndex) {
+        candidates = this.world._spatialIndex.query(b.x, b.y, SPREAD_RADIUS)
+          .filter(c => c !== b && c.isComplete() && !c.burning && c.workCost > 0);
+      } else {
+        for (const c of completed) {
+          if (c === b || c.burning) continue;
+          if (Math.abs(c.x - b.x) + Math.abs(c.y - b.y) < SPREAD_RADIUS) candidates.push(c);
+        }
+      }
+      if (candidates.length === 0) continue;
+      const target = candidates[Math.floor(Math.random() * candidates.length)];
+      target.burning = true;
+      target.hp = target.hp || 1.0;
+      if (!this.world._dirtyTiles) this.world._dirtyTiles = new Set();
+      this.world._dirtyTiles.add(`${target.x},${target.y}`);
+      spreadCount++;
+    }
+    if (spreadCount > 0) {
+      events.push({ tick, type: 'wildfire_spread',
+        message: `Wildfire spreads! ${spreadCount} more building${spreadCount > 1 ? 's' : ''} caught fire.` });
+    }
+
+    // ── 2. Random ignition: rare lightning strike starts a new wildfire.
+    const IGNITION_COOLDOWN = 400;       // min ticks between new ignitions
+    if (tick - ws.lastIgnitionTick < IGNITION_COOLDOWN) return;
+    if (Math.random() > 0.04) return;    // 4% chance per check
+
+    const starter = completed[Math.floor(Math.random() * completed.length)];
+    if (!starter || starter.burning) return;
+    starter.burning = true;
+    starter.hp = starter.hp || 1.0;
+    if (!this.world._dirtyTiles) this.world._dirtyTiles = new Set();
+    this.world._dirtyTiles.add(`${starter.x},${starter.y}`);
+    ws.lastIgnitionTick = tick;
+
+    events.push({ tick, type: 'wildfire_started',
+      message: `A wildfire ignites at the ${starter.name}!` });
+    console.log(`[Wildfire] Ignited ${starter.name} at (${starter.x},${starter.y}) tick=${tick}`);
+  }
+
   // ─── METEOR EVENTS ───
 
   _processMeteors(tick, events) {
@@ -843,6 +994,45 @@ class GameLoop {
     });
 
     console.log(`[Meteor] Strike at (${impactX},${impactY}) ${locationName} — ${targets.length} buildings burning`);
+  }
+
+  /**
+   * Destroy a building cleanly: unlink from tile, remove from owner's list,
+   * remove from buildingsList, remove from spatial index.
+   * Used by: burning death, decay, wildfire, manual cleanup.
+   *
+   * Caller is responsible for pushing events. This just does the bookkeeping.
+   *
+   * @param {Building} bld the building to destroy
+   * @param {number} listIdx optional pre-computed index in buildingsList
+   * @returns {boolean} true if destroyed, false if not found
+   */
+  _destroyBuilding(bld, listIdx) {
+    if (!bld) return false;
+    // Unlink from tile
+    const tile = this.world.tiles.get(`${bld.x},${bld.y}`);
+    if (tile && tile.building === bld) {
+      tile.building = null;
+      if (!this.world._dirtyTiles) this.world._dirtyTiles = new Set();
+      this.world._dirtyTiles.add(`${bld.x},${bld.y}`);
+    }
+    // Remove from owner's buildings list
+    const owner = this.world.agents.get(bld.owner);
+    if (owner) {
+      owner.buildings = (owner.buildings || []).filter(b => b !== bld);
+    }
+    // Remove from spatial index
+    if (this.world._spatialIndex) this.world._spatialIndex.remove(bld);
+    // Remove from buildingsList
+    if (listIdx != null && this.world.buildingsList[listIdx] === bld) {
+      this.world.buildingsList.splice(listIdx, 1);
+    } else {
+      const idx = this.world.buildingsList.indexOf(bld);
+      if (idx >= 0) this.world.buildingsList.splice(idx, 1);
+    }
+    // Clear burning state (in case it was burning)
+    bld.burning = false;
+    return true;
   }
 
   _buildDiff(events) {
