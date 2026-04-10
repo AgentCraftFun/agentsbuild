@@ -160,9 +160,10 @@ actionRegistry.load();
 console.log(`[Server] Action registry: ${actionRegistry.getStats().totalRecorded} recorded`);
 
 // Register paid chaos actions (Phase 2).
-// Start with lightning only, add others after end-to-end testing in prod.
-// To add more: edit the list below and redeploy.
-const enabledPaidActions = (process.env.ENABLED_PAID_ACTIONS || 'lightning').split(',').map(s => s.trim()).filter(Boolean);
+// All 7 actions are enabled by default. To restrict, set ENABLED_PAID_ACTIONS
+// env var to a comma-separated subset (e.g. "lightning,meteor").
+const ALL_PAID_ACTIONS = 'lightning,wildfire,earthquake,tornado,meteor,plague,volcano';
+const enabledPaidActions = (process.env.ENABLED_PAID_ACTIONS || ALL_PAID_ACTIONS).split(',').map(s => s.trim()).filter(Boolean);
 const registered = PaidActions.register(ActionCatalog, enabledPaidActions);
 console.log(`[Server] Paid actions enabled: ${registered.join(', ')}`);
 

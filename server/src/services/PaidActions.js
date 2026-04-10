@@ -97,91 +97,125 @@ function dispatchChaos(chaosType, emoji) {
 }
 
 /**
- * Special dispatch for the paid Lightning Storm action. Unlike the passive
- * single-strike lightning, this fires a dedicated storm method that strikes
- * 15 buildings at once in a dense area. Emits ONE "lightning_storm" event
- * containing all impact points so the viewer can play a massive animation.
+ * Generic dispatch factory for paid chaos actions.
+ * Each paid action calls a dedicated method on GameLoop (e.g.
+ * _chaosLightningStorm, _chaosWildfireStorm) which:
+ *   - Accepts an `opts` object
+ *   - Returns { ok, event, impacts, epicenter }
+ *
+ * The dispatch queues the event for broadcast, pushes the credit banner,
+ * and returns a structured result for the API response.
+ *
+ * @param {string} methodName - GameLoop method to call (e.g. '_chaosLightningStorm')
+ * @param {object} opts       - Options passed to the method
+ * @param {string} chaosType  - Short name used in the credit banner (e.g. 'lightning')
+ * @param {string} emoji      - Emoji for banners
+ * @param {string} label      - Display label for banner (e.g. 'Lightning Storm')
  */
-function dispatchLightningStorm(ctx, params) {
-  if (!ctx.gameLoop || typeof ctx.gameLoop._chaosLightningStorm !== 'function') {
-    throw new Error('gameLoop unavailable');
-  }
-  const result = ctx.gameLoop._chaosLightningStorm({ strikes: 15, radius: 20 });
-  if (!result.ok) {
-    throw new Error(result.reason || 'Failed to fire lightning storm');
-  }
+function makePaidChaosDispatch(methodName, opts, chaosType, emoji, label) {
+  return function dispatch(ctx, params) {
+    if (!ctx.gameLoop || typeof ctx.gameLoop[methodName] !== 'function') {
+      throw new Error(`gameLoop.${methodName} unavailable`);
+    }
+    const result = ctx.gameLoop[methodName](opts || {});
+    if (!result.ok) {
+      throw new Error(result.reason || `Failed to fire ${chaosType}`);
+    }
 
-  // Queue the storm event for broadcast + history so viewers animate it
-  pushBroadcastEvent(ctx.worldState, result.event);
+    // Queue the main storm/disaster event for broadcast
+    pushBroadcastEvent(ctx.worldState, result.event);
 
-  // Also push the credit banner
-  const bannerMsg = pushCreditBanner(ctx, 'lightning', '⚡', 'Lightning Storm');
+    // Push the credit banner crediting the payer
+    const bannerMsg = pushCreditBanner(ctx, chaosType, emoji, label);
 
-  return {
-    chaosType: 'lightning_storm',
-    buildingsStruck: result.impacts,
-    epicenter: result.epicenter,
-    event: {
-      type: result.event.type,
-      impactX: result.event.impactX,
-      impactY: result.event.impactY,
-      strikes: result.event.strikes,
-      message: result.event.message,
-    },
-    message: bannerMsg,
+    return {
+      chaosType: result.event.type,
+      impacts: result.impacts || 0,
+      epicenter: result.epicenter,
+      event: result.event,
+      message: bannerMsg,
+    };
   };
 }
 
+// Lightning Storm — retained as a named export for clarity
+const dispatchLightningStorm = makePaidChaosDispatch(
+  '_chaosLightningStorm',
+  { strikes: 15, radius: 20 },
+  'lightning', '⚡', 'Lightning Storm'
+);
+
 // ─── Action definitions ─────────────────────────────────────────────
+// Every action fires a dedicated "paid" GameLoop method that emits ONE
+// event with all impact points. The viewer plays a unified massive
+// animation for each event type.
 const ACTIONS = {
   lightning: {
     price: PRICES.LIGHTNING,
     label: 'Lightning Storm',
     emoji: '⚡',
-    description: '15 bolts of lightning strike a dense settlement area simultaneously, igniting every building they hit.',
+    description: '15 bolts of lightning strike a dense area simultaneously, igniting every building they hit.',
     dispatch: dispatchLightningStorm,
   },
   wildfire: {
     price: PRICES.WILDFIRE,
-    label: 'Wildfire',
+    label: 'Wildfire Inferno',
     emoji: '🔥',
-    description: 'Ignite a wildfire that will spread to nearby buildings over time.',
-    dispatch: dispatchChaos('wildfire', '🔥'),
+    description: '8 fires erupt across the land at once. The blazes spread and chain-react into an unstoppable inferno.',
+    dispatch: makePaidChaosDispatch(
+      '_chaosWildfireStorm', { ignitions: 8 },
+      'wildfire', '🔥', 'Wildfire Inferno'
+    ),
   },
   earthquake: {
     price: PRICES.EARTHQUAKE,
-    label: 'Earthquake',
+    label: 'Mega Earthquake',
     emoji: '💥',
-    description: 'A radial tremor collapses buildings in a 10-tile zone.',
-    dispatch: dispatchChaos('earthquake', '💥'),
+    description: 'A massive 15-tile tremor collapses up to 20 buildings at once. Nothing in the inner ring survives.',
+    dispatch: makePaidChaosDispatch(
+      '_chaosMegaEarthquake', { radius: 15, maxCollapse: 20 },
+      'earthquake', '💥', 'Mega Earthquake'
+    ),
   },
   tornado: {
     price: PRICES.TORNADO,
-    label: 'Tornado',
+    label: 'Tornado Swarm',
     emoji: '🌪️',
-    description: 'A funnel cloud tears a linear path across the map, destroying everything it touches.',
-    dispatch: dispatchChaos('tornado', '🌪️'),
+    description: '3 tornadoes spawn from different edges and converge through the map, destroying up to 45 buildings.',
+    dispatch: makePaidChaosDispatch(
+      '_chaosTornadoSwarm', { count: 3 },
+      'tornado', '🌪️', 'Tornado Swarm'
+    ),
   },
   meteor: {
     price: PRICES.METEOR,
-    label: 'Meteor Strike',
+    label: 'Meteor Shower',
     emoji: '☄️',
-    description: 'A fireball from the sky ignites up to 6 buildings in a blast zone.',
-    dispatch: dispatchChaos('meteor', '☄️'),
+    description: '5 meteors rain from the sky in a 25-tile area, igniting dozens of buildings across multiple blast zones.',
+    dispatch: makePaidChaosDispatch(
+      '_chaosMeteorShower', { count: 5, radius: 25 },
+      'meteor', '☄️', 'Meteor Shower'
+    ),
   },
   plague: {
     price: PRICES.PLAGUE,
-    label: 'Plague',
+    label: 'Plague Wave',
     emoji: '☠️',
-    description: 'Infect an entire settlement — 25% of its buildings rot away.',
-    dispatch: dispatchChaos('plague', '☠️'),
+    description: 'A devastating plague strikes the 3 largest settlements simultaneously. 50% of buildings in each rot away.',
+    dispatch: makePaidChaosDispatch(
+      '_chaosPlagueWave', { targetCount: 3 },
+      'plague', '☠️', 'Plague Wave'
+    ),
   },
   volcano: {
     price: PRICES.VOLCANO,
     label: 'Volcanic Eruption',
     emoji: '🌋',
-    description: 'Massive destruction. Instantly destroys the inner blast zone and ignites a wide outer ring.',
-    dispatch: dispatchChaos('volcano', '🌋'),
+    description: 'CATACLYSMIC. A volcano erupts in the densest settlement. 25-tile radius: inner zone vaporized, outer ring engulfed in lava.',
+    dispatch: makePaidChaosDispatch(
+      '_chaosVolcanicEruption', { radius: 25 },
+      'volcano', '🌋', 'Volcanic Eruption'
+    ),
   },
 };
 

@@ -1068,6 +1068,435 @@ class GameLoop {
     };
   }
 
+  // ─── WILDFIRE STORM (paid: ignites multiple clusters for an inferno) ──
+  // Spawns 8 simultaneous fires spread across the map so the natural
+  // wildfire spread logic can turn it into a chain reaction.
+  _chaosWildfireStorm(opts) {
+    opts = opts || {};
+    const tick = this.world.tick || 0;
+    const NUM_IGNITIONS = opts.ignitions || 8;
+
+    const completed = this.world.buildingsList.filter(b => b.isComplete() && b.workCost > 0 && !b.burning);
+    if (completed.length === 0) return { ok: false, reason: 'No buildings to ignite' };
+
+    // Pick NUM_IGNITIONS random buildings, spread out so fires aren't all in the same spot
+    const candidates = completed.slice().sort(() => Math.random() - 0.5);
+    const ignited = [];
+    const MIN_SPACING = 8;  // min tiles between ignition points
+    for (const b of candidates) {
+      if (ignited.length >= NUM_IGNITIONS) break;
+      // Don't ignite too close to an existing ignition
+      const tooClose = ignited.some(i => Math.abs(i.x - b.x) + Math.abs(i.y - b.y) < MIN_SPACING);
+      if (tooClose) continue;
+      b.burning = true; b.hp = b.hp || 1.0;
+      if (!this.world._dirtyTiles) this.world._dirtyTiles = new Set();
+      this.world._dirtyTiles.add(`${b.x},${b.y}`);
+      ignited.push({ x: b.x, y: b.y, name: b.name });
+    }
+    // If too spread-out to place enough, fall back to any remaining
+    while (ignited.length < NUM_IGNITIONS && ignited.length < candidates.length) {
+      const b = candidates[ignited.length];
+      if (!b || ignited.find(i => i.x === b.x && i.y === b.y)) break;
+      b.burning = true; b.hp = b.hp || 1.0;
+      if (!this.world._dirtyTiles) this.world._dirtyTiles = new Set();
+      this.world._dirtyTiles.add(`${b.x},${b.y}`);
+      ignited.push({ x: b.x, y: b.y, name: b.name });
+    }
+
+    // Compute rough "center of mass" for camera pan
+    let cx = 0, cy = 0;
+    for (const i of ignited) { cx += i.x; cy += i.y; }
+    cx = ignited.length > 0 ? Math.floor(cx / ignited.length) : 0;
+    cy = ignited.length > 0 ? Math.floor(cy / ignited.length) : 0;
+
+    // Panic everyone within wide radius
+    this._makeAgentsFlee(cx, cy, 30, 40);
+
+    const stormEvent = {
+      tick,
+      type: 'wildfire_storm',
+      impactX: cx, impactY: cy,
+      ignitions: ignited,
+      ignitionCount: ignited.length,
+      message: `A massive wildfire erupts! ${ignited.length} buildings ablaze across the land!`,
+    };
+
+    console.log(`[Chaos] WILDFIRE STORM at (${cx},${cy}) ignitions=${ignited.length}`);
+    return { ok: true, event: stormEvent, impacts: ignited.length, epicenter: { x: cx, y: cy } };
+  }
+
+  // ─── MEGA EARTHQUAKE (paid: larger radius, guaranteed collapse) ──────
+  _chaosMegaEarthquake(opts) {
+    opts = opts || {};
+    const tick = this.world.tick || 0;
+    const RADIUS = opts.radius || 15;
+    const COLLAPSE_CAP = opts.maxCollapse || 20;
+
+    const center = this._randomCompletedBuilding();
+    if (!center) return { ok: false, reason: 'No buildings to shake' };
+
+    const nearby = this.world._spatialIndex
+      ? this.world._spatialIndex.query(center.x, center.y, RADIUS).filter(b => b.isComplete() && b.workCost > 0)
+      : this.world.buildingsList.filter(b => b.isComplete() && b.workCost > 0 && Math.abs(b.x - center.x) + Math.abs(b.y - center.y) < RADIUS);
+
+    // Sort by distance from epicenter — closest collapses first
+    nearby.sort((a, b) =>
+      (Math.abs(a.x - center.x) + Math.abs(a.y - center.y)) -
+      (Math.abs(b.x - center.x) + Math.abs(b.y - center.y))
+    );
+
+    // Collapse the closest buildings (up to cap)
+    const collapsed = [];
+    for (const bld of nearby) {
+      if (collapsed.length >= COLLAPSE_CAP) break;
+      // 80% chance for inner ring, 40% for outer
+      const dist = Math.abs(bld.x - center.x) + Math.abs(bld.y - center.y);
+      const collapseChance = dist < RADIUS / 2 ? 0.85 : 0.45;
+      if (Math.random() < collapseChance) collapsed.push(bld);
+    }
+
+    const collapsedCoords = collapsed.map(b => ({ x: b.x, y: b.y, name: b.name }));
+
+    for (const bld of collapsed) {
+      const tile = this.world.tiles.get(`${bld.x},${bld.y}`);
+      const owner = this.world.agents.get(bld.owner);
+      if (tile) {
+        if (owner) {
+          if (tile.owner === owner.id) tile.owner = null;
+          if (owner.owned_tiles) owner.owned_tiles = owner.owned_tiles.filter(t => t !== `${bld.x},${bld.y}`);
+        } else {
+          tile.owner = null;
+        }
+      }
+      this._destroyBuilding(bld);
+    }
+
+    this._makeAgentsFlee(center.x, center.y, RADIUS + 5, 40);
+
+    const locName = this._nearestSettlementName(center.x, center.y);
+    const event = {
+      tick, type: 'mega_earthquake',
+      impactX: center.x, impactY: center.y,
+      radius: RADIUS,
+      collapsed: collapsedCoords,
+      destroyedCount: collapsed.length,
+      message: `A MASSIVE earthquake ${locName ? `devastates ${locName}` : 'rocks the land'}! ${collapsed.length} buildings collapsed!`,
+    };
+
+    console.log(`[Chaos] MEGA EARTHQUAKE at (${center.x},${center.y}) collapsed=${collapsed.length}`);
+    return { ok: true, event, impacts: collapsed.length, epicenter: { x: center.x, y: center.y } };
+  }
+
+  // ─── TORNADO SWARM (paid: 3 tornadoes simultaneously) ────────────────
+  _chaosTornadoSwarm(opts) {
+    opts = opts || {};
+    const tick = this.world.tick || 0;
+    const NUM_TORNADOES = opts.count || 3;
+    const PATH_WIDTH = 4;
+
+    const tornadoes = [];
+    const allDestroyed = new Set();
+
+    // Find buildings-dense area to center the swarm (most drama)
+    const completed = this.world.buildingsList.filter(b => b.isComplete() && b.workCost > 0);
+    if (completed.length === 0) return { ok: false, reason: 'No buildings to sweep' };
+
+    let swarmCenterX = 0, swarmCenterY = 0;
+    if (this.world._spatialIndex) {
+      // Find a dense point
+      let bestScore = 0;
+      for (let i = 0; i < 15; i++) {
+        const sample = completed[Math.floor(Math.random() * completed.length)];
+        const score = this.world._spatialIndex.query(sample.x, sample.y, 25).length;
+        if (score > bestScore) {
+          bestScore = score;
+          swarmCenterX = sample.x; swarmCenterY = sample.y;
+        }
+      }
+    } else {
+      swarmCenterX = Math.floor(this.world.width / 2);
+      swarmCenterY = Math.floor(this.world.height / 2);
+    }
+
+    for (let t = 0; t < NUM_TORNADOES; t++) {
+      // Spawn from random edges, aim through the swarm center
+      const side = Math.floor(Math.random() * 4);
+      let startX, startY, dirX, dirY;
+      if (side === 0) { startX = swarmCenterX + (Math.random() - 0.5) * 40; startY = 0; dirX = 0; dirY = 1; }
+      else if (side === 1) { startX = this.world.width - 1; startY = swarmCenterY + (Math.random() - 0.5) * 40; dirX = -1; dirY = 0; }
+      else if (side === 2) { startX = swarmCenterX + (Math.random() - 0.5) * 40; startY = this.world.height - 1; dirX = 0; dirY = -1; }
+      else { startX = 0; startY = swarmCenterY + (Math.random() - 0.5) * 40; dirX = 1; dirY = 0; }
+      startX = Math.max(0, Math.min(this.world.width - 1, Math.floor(startX)));
+      startY = Math.max(0, Math.min(this.world.height - 1, Math.floor(startY)));
+
+      const len = Math.floor(Math.max(this.world.width, this.world.height) * 0.7);
+      const destroyedThisPath = [];
+      const perTornadoCap = 15;
+
+      for (let step = 0; step < len; step++) {
+        const px = startX + dirX * step + Math.floor(Math.sin(step * 0.3 + t) * 2);
+        const py = startY + dirY * step + Math.floor(Math.cos(step * 0.3 + t) * 2);
+        if (px < 0 || px >= this.world.width || py < 0 || py >= this.world.height) continue;
+        const nearby = this.world._spatialIndex
+          ? this.world._spatialIndex.query(px, py, PATH_WIDTH).filter(b => b.isComplete() && b.workCost > 0 && !allDestroyed.has(b))
+          : [];
+        for (const b of nearby) {
+          if (destroyedThisPath.includes(b)) continue;
+          destroyedThisPath.push(b);
+          allDestroyed.add(b);
+        }
+        if (destroyedThisPath.length >= perTornadoCap) break;
+      }
+
+      tornadoes.push({
+        startX, startY, dirX, dirY, length: len,
+        destroyedCount: destroyedThisPath.length,
+      });
+
+      for (const bld of destroyedThisPath) {
+        const tile = this.world.tiles.get(`${bld.x},${bld.y}`);
+        const owner = this.world.agents.get(bld.owner);
+        if (tile) {
+          if (owner) {
+            if (tile.owner === owner.id) tile.owner = null;
+            if (owner.owned_tiles) owner.owned_tiles = owner.owned_tiles.filter(tx => tx !== `${bld.x},${bld.y}`);
+          } else {
+            tile.owner = null;
+          }
+        }
+        this._destroyBuilding(bld);
+      }
+    }
+
+    // Panic everyone in the swarm area
+    this._makeAgentsFlee(swarmCenterX, swarmCenterY, 40, 60);
+
+    const event = {
+      tick, type: 'tornado_swarm',
+      impactX: swarmCenterX, impactY: swarmCenterY,
+      tornadoes,
+      totalDestroyed: allDestroyed.size,
+      message: `A SWARM of ${tornadoes.length} tornadoes tears across the land! ${allDestroyed.size} buildings obliterated!`,
+    };
+
+    console.log(`[Chaos] TORNADO SWARM count=${tornadoes.length} destroyed=${allDestroyed.size}`);
+    return { ok: true, event, impacts: allDestroyed.size, epicenter: { x: swarmCenterX, y: swarmCenterY } };
+  }
+
+  // ─── METEOR SHOWER (paid: 5 meteors rain in sequence) ────────────────
+  _chaosMeteorShower(opts) {
+    opts = opts || {};
+    const tick = this.world.tick || 0;
+    const NUM_METEORS = opts.count || 5;
+    const SHOWER_RADIUS = opts.radius || 25;
+    const BLAST_PER_METEOR = 8;
+
+    const centerBuilding = this._randomCompletedBuilding();
+    if (!centerBuilding) return { ok: false, reason: 'No buildings to target' };
+
+    const centerX = centerBuilding.x;
+    const centerY = centerBuilding.y;
+    const meteors = [];
+    const allIgnited = new Set();
+    let totalBurning = 0;
+
+    for (let m = 0; m < NUM_METEORS; m++) {
+      // Random impact within SHOWER_RADIUS of center
+      const angle = Math.random() * Math.PI * 2;
+      const dist = Math.random() * SHOWER_RADIUS;
+      const impactX = Math.max(5, Math.min(this.world.width - 5, Math.floor(centerX + Math.cos(angle) * dist)));
+      const impactY = Math.max(5, Math.min(this.world.height - 5, Math.floor(centerY + Math.sin(angle) * dist)));
+
+      const nearby = this.world._spatialIndex
+        ? this.world._spatialIndex.query(impactX, impactY, BLAST_PER_METEOR).filter(b => b.isComplete() && !b.burning && b.workCost > 0 && !allIgnited.has(b))
+        : [];
+      const burnCount = Math.min(nearby.length, 8);
+      const targets = nearby.slice(0, burnCount);
+      for (const t of targets) {
+        t.burning = true; t.hp = t.hp || 1.0;
+        allIgnited.add(t);
+        if (!this.world._dirtyTiles) this.world._dirtyTiles = new Set();
+        this.world._dirtyTiles.add(`${t.x},${t.y}`);
+        totalBurning++;
+      }
+      meteors.push({ impactX, impactY, burnCount: targets.length });
+    }
+
+    this._makeAgentsFlee(centerX, centerY, SHOWER_RADIUS + 10, 50);
+
+    const locName = this._nearestSettlementName(centerX, centerY, 50);
+    const event = {
+      tick, type: 'meteor_shower',
+      impactX: centerX, impactY: centerY,
+      radius: SHOWER_RADIUS,
+      meteors,
+      totalIgnited: totalBurning,
+      message: `METEOR SHOWER! ${NUM_METEORS} fireballs rain down${locName ? ` near ${locName}` : ''}! ${totalBurning} buildings ignited!`,
+    };
+
+    console.log(`[Chaos] METEOR SHOWER count=${NUM_METEORS} ignited=${totalBurning}`);
+    return { ok: true, event, impacts: totalBurning, epicenter: { x: centerX, y: centerY } };
+  }
+
+  // ─── PLAGUE WAVE (paid: hits 3 largest settlements at once) ──────────
+  _chaosPlagueWave(opts) {
+    opts = opts || {};
+    const tick = this.world.tick || 0;
+    const NUM_TARGETS = opts.targetCount || 3;
+    const RADIUS = 18;
+    const AFFLICTION_RATE = 0.50;  // 50% of buildings in each target
+
+    const settlements = this.world.settlements || [];
+    if (settlements.length === 0) return { ok: false, reason: 'No settlements to afflict' };
+
+    // Score settlements by building count, pick top N
+    const settlementScores = settlements.map(s => {
+      const count = this.world._spatialIndex
+        ? this.world._spatialIndex.query(s.cx, s.cy, RADIUS).filter(b => b.isComplete() && b.workCost > 0).length
+        : this.world.buildingsList.filter(b =>
+            b.isComplete() && b.workCost > 0 &&
+            Math.abs(b.x - s.cx) + Math.abs(b.y - s.cy) < RADIUS
+          ).length;
+      return { settlement: s, count };
+    });
+    settlementScores.sort((a, b) => b.count - a.count);
+    const targets = settlementScores.slice(0, NUM_TARGETS).filter(t => t.count > 0);
+
+    if (targets.length === 0) return { ok: false, reason: 'No populated settlements' };
+
+    const afflictions = [];  // [{settlementName, cx, cy, buildings: [{x,y}]}]
+    let totalAfflicted = 0;
+
+    for (const { settlement } of targets) {
+      const nearby = this.world._spatialIndex
+        ? this.world._spatialIndex.query(settlement.cx, settlement.cy, RADIUS).filter(b => b.isComplete() && b.workCost > 0 && !b.burning)
+        : [];
+      const afflictedInThis = [];
+      const maxAfflict = Math.ceil(nearby.length * AFFLICTION_RATE);
+      const shuffled = nearby.slice().sort(() => Math.random() - 0.5);
+      for (let i = 0; i < Math.min(maxAfflict, shuffled.length); i++) {
+        const bld = shuffled[i];
+        bld.burning = true; bld.hp = bld.hp || 1.0;
+        if (!this.world._dirtyTiles) this.world._dirtyTiles = new Set();
+        this.world._dirtyTiles.add(`${bld.x},${bld.y}`);
+        afflictedInThis.push({ x: bld.x, y: bld.y });
+        totalAfflicted++;
+      }
+      afflictions.push({
+        settlementName: settlement.name,
+        cx: settlement.cx,
+        cy: settlement.cy,
+        buildings: afflictedInThis,
+      });
+    }
+
+    // Panic everyone near any affected settlement
+    for (const a of afflictions) {
+      this._makeAgentsFlee(a.cx, a.cy, RADIUS + 5, 80);
+    }
+
+    // Pick the first settlement as event center for camera pan
+    const centerX = afflictions[0].cx;
+    const centerY = afflictions[0].cy;
+    const names = afflictions.map(a => a.settlementName).join(', ');
+
+    const event = {
+      tick, type: 'plague_wave',
+      impactX: centerX, impactY: centerY,
+      afflictions,
+      totalAfflicted,
+      message: `A DEVASTATING plague sweeps across ${names}! ${totalAfflicted} buildings rotting away!`,
+    };
+
+    console.log(`[Chaos] PLAGUE WAVE settlements=${afflictions.length} afflicted=${totalAfflicted}`);
+    return { ok: true, event, impacts: totalAfflicted, epicenter: { x: centerX, y: centerY } };
+  }
+
+  // ─── VOLCANIC ERUPTION (paid: massive 25-tile radius) ────────────────
+  _chaosVolcanicEruption(opts) {
+    opts = opts || {};
+    const tick = this.world.tick || 0;
+    const RADIUS = opts.radius || 25;
+    const INNER_RADIUS = 12;
+    const DESTROY_CAP = 30;
+    const IGNITE_CAP = 40;
+
+    // Find the densest cluster as the eruption center
+    const completed = this.world.buildingsList.filter(b => b.isComplete() && b.workCost > 0);
+    if (completed.length === 0) return { ok: false, reason: 'No buildings in the world' };
+
+    let epicenter = null;
+    let bestScore = -1;
+    for (let i = 0; i < 20; i++) {
+      const cand = completed[Math.floor(Math.random() * completed.length)];
+      const n = this.world._spatialIndex
+        ? this.world._spatialIndex.query(cand.x, cand.y, RADIUS).length
+        : 0;
+      if (n > bestScore) { bestScore = n; epicenter = cand; }
+    }
+    if (!epicenter) epicenter = completed[Math.floor(Math.random() * completed.length)];
+
+    const nearby = this.world._spatialIndex
+      ? this.world._spatialIndex.query(epicenter.x, epicenter.y, RADIUS).filter(b => b.isComplete() && b.workCost > 0)
+      : [];
+
+    const destroyed = [];
+    const ignited = [];
+    // Sort by distance so closest get destroyed first
+    nearby.sort((a, b) =>
+      (Math.abs(a.x - epicenter.x) + Math.abs(a.y - epicenter.y)) -
+      (Math.abs(b.x - epicenter.x) + Math.abs(b.y - epicenter.y))
+    );
+
+    for (const bld of nearby) {
+      const d = Math.abs(bld.x - epicenter.x) + Math.abs(bld.y - epicenter.y);
+      if (d < INNER_RADIUS && destroyed.length < DESTROY_CAP) {
+        destroyed.push(bld);
+      } else if (!bld.burning && ignited.length < IGNITE_CAP) {
+        ignited.push(bld);
+      }
+    }
+
+    const destroyedCoords = destroyed.map(b => ({ x: b.x, y: b.y }));
+    const ignitedCoords = ignited.map(b => ({ x: b.x, y: b.y }));
+
+    for (const bld of destroyed) {
+      const tile = this.world.tiles.get(`${bld.x},${bld.y}`);
+      const owner = this.world.agents.get(bld.owner);
+      if (tile) {
+        if (owner) {
+          if (tile.owner === owner.id) tile.owner = null;
+          if (owner.owned_tiles) owner.owned_tiles = owner.owned_tiles.filter(t => t !== `${bld.x},${bld.y}`);
+        } else {
+          tile.owner = null;
+        }
+      }
+      this._destroyBuilding(bld);
+    }
+    for (const bld of ignited) {
+      bld.burning = true; bld.hp = bld.hp || 1.0;
+      if (!this.world._dirtyTiles) this.world._dirtyTiles = new Set();
+      this.world._dirtyTiles.add(`${bld.x},${bld.y}`);
+    }
+
+    this._makeAgentsFlee(epicenter.x, epicenter.y, RADIUS + 10, 100);
+
+    const event = {
+      tick, type: 'volcanic_eruption',
+      impactX: epicenter.x, impactY: epicenter.y,
+      radius: RADIUS,
+      innerRadius: INNER_RADIUS,
+      destroyed: destroyedCoords,
+      ignited: ignitedCoords,
+      destroyedCount: destroyed.length,
+      ignitedCount: ignited.length,
+      message: `CATACLYSMIC VOLCANIC ERUPTION! ${destroyed.length} buildings vaporized, ${ignited.length} more engulfed in flames!`,
+    };
+
+    console.log(`[Chaos] VOLCANIC ERUPTION at (${epicenter.x},${epicenter.y}) dest=${destroyed.length} ign=${ignited.length}`);
+    return { ok: true, event, impacts: destroyed.length + ignited.length, epicenter: { x: epicenter.x, y: epicenter.y } };
+  }
+
   // ─── TORNADO (linear sweep destroys everything in path) ─────────────
   _chaosTornado(tick, events, cs, mult) {
     if (!this._chaosReady(tick, 'lastTornado', cs, 350, 0.10, mult)) return;

@@ -5426,6 +5426,7 @@ for(let i=bubbles.length-1;i>=0;i--){
 for(var mi=activeMeteors.length-1;mi>=0;mi--){
   var m=activeMeteors[mi];
   var mf=frame-m.startFrame;// frames since meteor started
+  if(mf<0)continue;// staggered shower meteor, not yet
   var ix=m.impactX*ts+ts/2,iy=m.impactY*ts+ts/2;// impact point in pixels
   if(mf>m.maxFrames){activeMeteors.splice(mi,1);continue}
 
@@ -5619,6 +5620,7 @@ for(var li=activeLightning.length-1;li>=0;li--){
 for(var ti=activeTornadoes.length-1;ti>=0;ti--){
   var tn=activeTornadoes[ti];
   var tf=frame-tn.startFrame;
+  if(tf<0)continue;// staggered swarm tornado, not yet
   if(tf>tn.maxFrames){activeTornadoes.splice(ti,1);continue}
   // Tornado travels along its path over the animation duration
   var travelP=Math.min(1,tf/tn.maxFrames);
@@ -5653,29 +5655,46 @@ for(var ti=activeTornadoes.length-1;ti>=0;ti--){
 for(var ei=activeEarthquakes.length-1;ei>=0;ei--){
   var eq=activeEarthquakes[ei];
   var ef=frame-eq.startFrame;
+  if(ef<0)continue;
   if(ef>eq.maxFrames){activeEarthquakes.splice(ei,1);continue}
   var eqx=eq.impactX*ts+ts/2,eqy=eq.impactY*ts+ts/2;
   var eqR=eq.radius*ts;
-  // Shockwave rings
-  for(var ri=0;ri<3;ri++){
-    var ringF=ef-ri*15;
-    if(ringF<0||ringF>60)continue;
-    var ringP=ringF/60;
-    var ringR=eqR*ringP;
-    var ringA=0.6*(1-ringP);
+  var eqMega=!!eq.isMega;
+  var ringCount=eqMega?6:3;
+  var dustCount=eqMega?20:10;
+  var dustDuration=eqMega?160:80;
+  // Shockwave rings (more + bigger for mega)
+  for(var ri=0;ri<ringCount;ri++){
+    var ringF=ef-ri*(eqMega?12:15);
+    if(ringF<0||ringF>(eqMega?100:60))continue;
+    var ringP=ringF/(eqMega?100:60);
+    var ringR=eqR*ringP*(eqMega?1.4:1.0);
+    var ringA=(eqMega?0.85:0.6)*(1-ringP);
     ctx.strokeStyle='rgba(120,100,70,'+ringA+')';
-    ctx.lineWidth=3;
+    ctx.lineWidth=eqMega?5:3;
     ctx.beginPath();ctx.arc(eqx,eqy,ringR,0,Math.PI*2);ctx.stroke();
   }
   // Dust clouds rising
-  if(ef<80){
-    for(var eci=0;eci<10;eci++){
-      var eca=eci/10*Math.PI*2+ef*0.05;
-      var ecd=eqR*0.4+Math.sin(ef*0.1+eci)*10;
+  if(ef<dustDuration){
+    for(var eci=0;eci<dustCount;eci++){
+      var eca=eci/dustCount*Math.PI*2+ef*0.05;
+      var ecd=eqR*0.4+Math.sin(ef*0.1+eci)*(eqMega?20:10);
       var cpx=eqx+Math.cos(eca)*ecd;
       var cpy=eqy+Math.sin(eca)*ecd-ef*0.5;
-      ctx.fillStyle='rgba(150,130,100,'+(0.4-ef/200)+')';
-      ctx.beginPath();ctx.arc(cpx,cpy,6+ef*0.1,0,Math.PI*2);ctx.fill();
+      ctx.fillStyle='rgba(150,130,100,'+((eqMega?0.6:0.4)-ef/(eqMega?400:200))+')';
+      ctx.beginPath();ctx.arc(cpx,cpy,(eqMega?10:6)+ef*0.1,0,Math.PI*2);ctx.fill();
+    }
+  }
+  // Persistent crack lines for mega earthquakes
+  if(eqMega&&ef>20){
+    ctx.strokeStyle='rgba(40,30,20,'+Math.max(0,0.6-ef/300)+')';
+    ctx.lineWidth=3;
+    for(var ck=0;ck<5;ck++){
+      var ca2=ck/5*Math.PI*2;
+      ctx.beginPath();
+      ctx.moveTo(eqx,eqy);
+      ctx.lineTo(eqx+Math.cos(ca2)*eqR*0.7,eqy+Math.sin(ca2)*eqR*0.7);
+      ctx.stroke();
     }
   }
   ctx.lineWidth=1;
@@ -5685,6 +5704,7 @@ for(var ei=activeEarthquakes.length-1;ei>=0;ei--){
 for(var wi=activeWildfireIgnitions.length-1;wi>=0;wi--){
   var wf=activeWildfireIgnitions[wi];
   var wfF=frame-wf.startFrame;
+  if(wfF<0)continue;// staggered storm ignition, not yet
   if(wfF>wf.maxFrames){activeWildfireIgnitions.splice(wi,1);continue}
   var wfx=wf.impactX*ts+ts/2,wfy=wf.impactY*ts+ts/2;
   // Flash at ignition point
@@ -5707,37 +5727,56 @@ for(var wi=activeWildfireIgnitions.length-1;wi>=0;wi--){
 for(var vi=activeVolcanoes.length-1;vi>=0;vi--){
   var vc=activeVolcanoes[vi];
   var vf=frame-vc.startFrame;
+  if(vf<0)continue;
   if(vf>vc.maxFrames){activeVolcanoes.splice(vi,1);continue}
   var vcx=vc.impactX*ts+ts/2,vcy=vc.impactY*ts+ts/2;
   var vcR=vc.radius*ts;
-  // Initial eruption flash (0-30f)
+  var vMega=!!vc.isCataclysmic;
+  var plumeCount=vMega?28:15;
+  var smokeCount=vMega?16:8;
+  var plumeDuration=vMega?350:200;
+
+  // Initial eruption flash (0-30f, bigger for cataclysmic)
   if(vf<30){
     var eP=vf/30;
-    ctx.fillStyle='rgba(255,100,20,'+(0.8*(1-eP))+')';
-    ctx.beginPath();ctx.arc(vcx,vcy,vcR*(0.3+eP*0.7),0,Math.PI*2);ctx.fill();
-    ctx.fillStyle='rgba(255,220,100,'+(0.9*(1-eP))+')';
-    ctx.beginPath();ctx.arc(vcx,vcy,vcR*(0.15+eP*0.4),0,Math.PI*2);ctx.fill();
+    ctx.fillStyle='rgba(255,100,20,'+((vMega?1.0:0.8)*(1-eP))+')';
+    ctx.beginPath();ctx.arc(vcx,vcy,vcR*(vMega?(0.5+eP):(0.3+eP*0.7)),0,Math.PI*2);ctx.fill();
+    ctx.fillStyle='rgba(255,220,100,'+((vMega?1.0:0.9)*(1-eP))+')';
+    ctx.beginPath();ctx.arc(vcx,vcy,vcR*(vMega?(0.3+eP*0.6):(0.15+eP*0.4)),0,Math.PI*2);ctx.fill();
+    if(vMega){
+      // White-hot core flash
+      ctx.fillStyle='rgba(255,255,240,'+(0.9*(1-eP))+')';
+      ctx.beginPath();ctx.arc(vcx,vcy,vcR*(0.15+eP*0.3),0,Math.PI*2);ctx.fill();
+    }
   }
   // Lava plume rising column
-  if(vf<200){
-    for(var pi=0;pi<15;pi++){
+  if(vf<plumeDuration){
+    for(var pi=0;pi<plumeCount;pi++){
       var ph=((vf*3+pi*18)%180);
-      var pa=(pi/15)*Math.PI*2+vf*0.03;
-      var pr=20+Math.sin(pi)*10;
+      var pa=(pi/plumeCount)*Math.PI*2+vf*0.03;
+      var pr=(vMega?40:20)+Math.sin(pi)*10;
       var ppx=vcx+Math.cos(pa)*pr;
-      var ppy=vcy-ph*0.8;
+      var ppy=vcy-ph*(vMega?1.2:0.8);
       var alpha=Math.max(0,1-ph/180);
-      ctx.fillStyle='rgba(255,'+(80+pi*8)+',20,'+(alpha*0.7)+')';
-      ctx.beginPath();ctx.arc(ppx,ppy,4+pi*0.3,0,Math.PI*2);ctx.fill();
+      ctx.fillStyle='rgba(255,'+(80+pi*5)+',20,'+(alpha*0.7)+')';
+      ctx.beginPath();ctx.arc(ppx,ppy,(vMega?6:4)+pi*0.3,0,Math.PI*2);ctx.fill();
     }
   }
   // Dark smoke column
-  for(var di=0;di<8;di++){
+  for(var di=0;di<smokeCount;di++){
     var sh=((vf*2+di*25)%200);
-    var spx=vcx+Math.sin(vf*0.02+di*2)*15;
-    var spy=vcy-sh-60;
+    var spx=vcx+Math.sin(vf*0.02+di*2)*(vMega?25:15);
+    var spy=vcy-sh-(vMega?100:60);
     ctx.fillStyle='rgba(50,40,40,'+Math.max(0,(0.5-sh/250))+')';
-    ctx.beginPath();ctx.arc(spx,spy,8+sh*0.1,0,Math.PI*2);ctx.fill();
+    ctx.beginPath();ctx.arc(spx,spy,(vMega?12:8)+sh*0.1,0,Math.PI*2);ctx.fill();
+  }
+  // Persistent lava pool ring (cataclysmic only)
+  if(vMega&&vf>30){
+    var lavaR=vc.innerRadius*ts;
+    ctx.fillStyle='rgba(255,80,20,0.25)';
+    ctx.beginPath();ctx.arc(vcx,vcy,lavaR,0,Math.PI*2);ctx.fill();
+    ctx.fillStyle='rgba(255,180,40,0.15)';
+    ctx.beginPath();ctx.arc(vcx,vcy,lavaR*0.6,0,Math.PI*2);ctx.fill();
   }
 }
 
@@ -5745,6 +5784,7 @@ for(var vi=activeVolcanoes.length-1;vi>=0;vi--){
 for(var pgi=activePlagues.length-1;pgi>=0;pgi--){
   var pg=activePlagues[pgi];
   var pgf=frame-pg.startFrame;
+  if(pgf<0)continue;// staggered wave plague, not yet
   if(pgf>pg.maxFrames){activePlagues.splice(pgi,1);continue}
   var pgx=pg.impactX*ts+ts/2,pgy=pg.impactY*ts+ts/2;
   // Green miasma cloud
@@ -6251,6 +6291,25 @@ function handleChaosEvent(ev){
       showDramaBanner('🌋 '+ev.message); triggerVolcanoAnimation(ev.impactX,ev.impactY,ev.radius); break;
     case 'plague':
       showDramaBanner('☠️ '+ev.message); triggerPlagueAnimation(ev.impactX,ev.impactY); break;
+    // ── PAID CHAOS EVENTS (dramatic upgraded versions) ──
+    case 'wildfire_storm':
+      showDramaBanner('🔥🔥🔥 '+ev.message+' 🔥🔥🔥');
+      triggerWildfireStorm(ev.ignitions||[], ev.impactX, ev.impactY); break;
+    case 'mega_earthquake':
+      showDramaBanner('💥💥💥 '+ev.message+' 💥💥💥');
+      triggerMegaEarthquake(ev.impactX, ev.impactY, ev.radius, ev.collapsed||[]); break;
+    case 'tornado_swarm':
+      showDramaBanner('🌪️🌪️🌪️ '+ev.message+' 🌪️🌪️🌪️');
+      triggerTornadoSwarm(ev.tornadoes||[], ev.impactX, ev.impactY); break;
+    case 'meteor_shower':
+      showDramaBanner('☄️☄️☄️ '+ev.message+' ☄️☄️☄️');
+      triggerMeteorShower(ev.meteors||[], ev.impactX, ev.impactY); break;
+    case 'plague_wave':
+      showDramaBanner('☠️☠️☠️ '+ev.message+' ☠️☠️☠️');
+      triggerPlagueWave(ev.afflictions||[], ev.impactX, ev.impactY); break;
+    case 'volcanic_eruption':
+      showDramaBanner('🌋🌋🌋 '+ev.message+' 🌋🌋🌋');
+      triggerVolcanicEruption(ev.impactX, ev.impactY, ev.radius, ev.innerRadius); break;
     case 'paid_action':
       // The underlying effect event (lightning_storm, meteor_strike, etc.)
       // already fires its own animation. paid_action is just the banner
@@ -6642,6 +6701,135 @@ function triggerVolcanoAnimation(ix,iy,radius){
 const activePlagues=[];
 function triggerPlagueAnimation(ix,iy){
   activePlagues.push({impactX:ix,impactY:iy,startFrame:frame,maxFrames:240});
+}
+
+// ══════════════════════════════════════════════════════════════════
+//              PAID CHAOS STORM ANIMATIONS
+// ══════════════════════════════════════════════════════════════════
+// These are the big, dramatic upgraded versions triggered when a
+// player pays $AGENTCRAFT. Each one stacks multiple base animations
+// + extra-heavy screen effects for maximum "wow" impact.
+
+// --- Wildfire Inferno (8 simultaneous ignitions) ---
+function triggerWildfireStorm(ignitions,centerX,centerY){
+  // Spawn a wildfire animation at each ignition point staggered slightly
+  for(var i=0;i<ignitions.length;i++){
+    var ig=ignitions[i];
+    activeWildfireIgnitions.push({
+      impactX:ig.x,impactY:ig.y,
+      startFrame:frame+i*5, // stagger 5 frames each
+      maxFrames:90+i*5,
+      isStorm:true,
+    });
+  }
+  screenShake=Math.max(screenShake,40);
+  _lightningStormFlashUntil=frame+45; // brief orange flash (reuses the storm flash var)
+  // Pan camera to the center of mass
+  if(typeof centerX==='number'&&typeof centerY==='number'){
+    var wx=centerX*TS+TS/2,wy=centerY*TS+TS/2;
+    panTarget={vpX:canvasEl.width/(2*zoom)-wx,vpY:canvasEl.height/(2*zoom)-wy,zoom:Math.max(zoom,1.1)};
+    panFrames=60;
+  }
+}
+
+// --- Mega Earthquake (large radius, persistent shockwaves) ---
+function triggerMegaEarthquake(ix,iy,radius,collapsed){
+  // Use the existing earthquake animation but with a bigger radius and longer duration
+  activeEarthquakes.push({
+    impactX:ix,impactY:iy,
+    radius:radius||15,
+    startFrame:frame,
+    maxFrames:240,     // longer than normal (was 120)
+    isMega:true,
+  });
+  // MASSIVE screen shake
+  screenShake=Math.max(screenShake,90);
+  // Strong pan to epicenter
+  if(typeof ix==='number'&&typeof iy==='number'){
+    var wx=ix*TS+TS/2,wy=iy*TS+TS/2;
+    panTarget={vpX:canvasEl.width/(2*zoom)-wx,vpY:canvasEl.height/(2*zoom)-wy,zoom:Math.max(zoom,1.3)};
+    panFrames=80;
+  }
+}
+
+// --- Tornado Swarm (3 tornadoes simultaneously) ---
+function triggerTornadoSwarm(tornadoes,centerX,centerY){
+  for(var i=0;i<tornadoes.length;i++){
+    var t=tornadoes[i];
+    activeTornadoes.push({
+      startX:t.startX,startY:t.startY,
+      dirX:t.dirX,dirY:t.dirY,
+      length:t.length,
+      startFrame:frame+i*20, // stagger each tornado slightly
+      maxFrames:220+i*20,
+      isStorm:true,
+    });
+  }
+  screenShake=Math.max(screenShake,60);
+  if(typeof centerX==='number'&&typeof centerY==='number'){
+    var wx=centerX*TS+TS/2,wy=centerY*TS+TS/2;
+    panTarget={vpX:canvasEl.width/(2*zoom)-wx,vpY:canvasEl.height/(2*zoom)-wy,zoom:Math.max(zoom,1.0)};
+    panFrames=100;
+  }
+}
+
+// --- Meteor Shower (5 meteors raining down) ---
+function triggerMeteorShower(meteors,centerX,centerY){
+  for(var i=0;i<meteors.length;i++){
+    var m=meteors[i];
+    activeMeteors.push({
+      impactX:m.impactX,impactY:m.impactY,
+      startFrame:frame+i*25, // stagger 25 frames each = 0.4s apart
+      maxFrames:200+i*25,
+      isShower:true,
+    });
+  }
+  screenShake=Math.max(screenShake,70);
+  _lightningStormFlashUntil=frame+30;
+  if(typeof centerX==='number'&&typeof centerY==='number'){
+    var wx=centerX*TS+TS/2,wy=centerY*TS+TS/2;
+    panTarget={vpX:canvasEl.width/(2*zoom)-wx,vpY:canvasEl.height/(2*zoom)-wy,zoom:Math.max(zoom,1.1)};
+    panFrames=120;
+  }
+}
+
+// --- Plague Wave (3 settlements simultaneously) ---
+function triggerPlagueWave(afflictions,centerX,centerY){
+  for(var i=0;i<afflictions.length;i++){
+    var a=afflictions[i];
+    activePlagues.push({
+      impactX:a.cx,impactY:a.cy,
+      startFrame:frame+i*10,
+      maxFrames:360+i*10, // longer lingering than free plague
+      isWave:true,
+    });
+  }
+  screenShake=Math.max(screenShake,25);
+  if(typeof centerX==='number'&&typeof centerY==='number'){
+    var wx=centerX*TS+TS/2,wy=centerY*TS+TS/2;
+    panTarget={vpX:canvasEl.width/(2*zoom)-wx,vpY:canvasEl.height/(2*zoom)-wy,zoom:Math.max(zoom,1.1)};
+    panFrames=80;
+  }
+}
+
+// --- Volcanic Eruption (massive radius, persistent lava) ---
+function triggerVolcanicEruption(ix,iy,radius,innerRadius){
+  activeVolcanoes.push({
+    impactX:ix,impactY:iy,
+    radius:radius||25,
+    innerRadius:innerRadius||12,
+    startFrame:frame,
+    maxFrames:400, // long-lasting
+    isCataclysmic:true,
+  });
+  // MAXIMUM screen shake
+  screenShake=Math.max(screenShake,100);
+  _lightningStormFlashUntil=frame+60; // big red/white flash
+  if(typeof ix==='number'&&typeof iy==='number'){
+    var wx=ix*TS+TS/2,wy=iy*TS+TS/2;
+    panTarget={vpX:canvasEl.width/(2*zoom)-wx,vpY:canvasEl.height/(2*zoom)-wy,zoom:Math.max(zoom,1.0)};
+    panFrames=120;
+  }
 }
 
 // Persistent world objects from events (ruins, craters, merchants)
