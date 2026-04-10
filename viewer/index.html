@@ -5498,47 +5498,119 @@ for(var mi=activeMeteors.length-1;mi>=0;mi--){
 }
 
 // === LIGHTNING ANIMATION (world-space) ===
+// Each bolt has 4 layers drawn as jagged paths: outer glow, wide blue,
+// narrow cyan, bright white core. Looks like a thick electric arc.
+// Storm strikes (isStorm=true) are bigger and drop impact shockwaves.
 for(var li=activeLightning.length-1;li>=0;li--){
   var ln=activeLightning[li];
   var lf=frame-ln.startFrame;
+  if(lf<0)continue;// not yet (staggered storm strike waiting to fire)
   if(lf>ln.maxFrames){activeLightning.splice(li,1);continue}
   var lx=ln.impactX*ts+ts/2,ly=ln.impactY*ts+ts/2;
-  // Phase 1 (0-15f): Bolt strikes down from above
-  if(lf<15){
-    var bolt=lf/15;
-    ctx.strokeStyle='rgba(200,220,255,'+(1-bolt*0.5)+')';
-    ctx.lineWidth=3;
-    ctx.beginPath();
-    var segs=8;
+  var isStorm=!!ln.isStorm;
+
+  // ── Phase 1: The BOLT (frames 0-18 for storm, 0-15 for regular) ──
+  var boltDuration=isStorm?18:15;
+  if(lf<boltDuration){
+    var boltAge=lf/boltDuration;
+    var boltAlpha=1-boltAge*0.4;
+    var segs=isStorm?12:8;
+    var boltLen=isStorm?420:300;
+
+    // Generate the jagged path once per frame so each redraw matches.
+    // Use the impact position + frame as a seed so it stays stable within a strike.
+    var pts=[];
     for(var si=0;si<segs;si++){
-      var py=ly-300+(300*(si/segs));
-      var px=lx+Math.sin(si*3.1+lf*0.5)*(15-si);
-      if(si===0)ctx.moveTo(px,py);
-      else ctx.lineTo(px,py);
+      var t=si/segs;
+      var py=ly-boltLen+boltLen*t;
+      // Larger horizontal jitter for a more chaotic bolt
+      var jx=Math.sin(si*3.1+ln.startFrame*0.7)*(isStorm?28:15);
+      var jx2=Math.cos(si*2.4+ln.startFrame*0.3)*(isStorm?10:5);
+      var px=lx+jx+jx2;
+      pts.push([px,py]);
     }
-    ctx.stroke();
-    // Core white flash along the bolt
-    ctx.strokeStyle='rgba(255,255,255,'+(0.9-bolt*0.5)+')';
-    ctx.lineWidth=1;
+
+    // Layer 1: outer blue glow (widest, softest)
+    ctx.strokeStyle='rgba(100,160,255,'+(boltAlpha*0.35)+')';
+    ctx.lineWidth=isStorm?14:6;
+    ctx.lineCap='round';
     ctx.beginPath();
-    for(var si=0;si<segs;si++){
-      var py=ly-300+(300*(si/segs));
-      var px=lx+Math.sin(si*3.1+lf*0.5)*(15-si);
-      if(si===0)ctx.moveTo(px,py);
-      else ctx.lineTo(px,py);
-    }
+    for(var si=0;si<pts.length;si++){si===0?ctx.moveTo(pts[si][0],pts[si][1]):ctx.lineTo(pts[si][0],pts[si][1])}
     ctx.stroke();
+
+    // Layer 2: wide blue
+    ctx.strokeStyle='rgba(150,200,255,'+(boltAlpha*0.7)+')';
+    ctx.lineWidth=isStorm?7:4;
+    ctx.beginPath();
+    for(var si=0;si<pts.length;si++){si===0?ctx.moveTo(pts[si][0],pts[si][1]):ctx.lineTo(pts[si][0],pts[si][1])}
+    ctx.stroke();
+
+    // Layer 3: narrow cyan
+    ctx.strokeStyle='rgba(210,230,255,'+boltAlpha+')';
+    ctx.lineWidth=isStorm?4:2;
+    ctx.beginPath();
+    for(var si=0;si<pts.length;si++){si===0?ctx.moveTo(pts[si][0],pts[si][1]):ctx.lineTo(pts[si][0],pts[si][1])}
+    ctx.stroke();
+
+    // Layer 4: bright white core
+    ctx.strokeStyle='rgba(255,255,255,'+boltAlpha+')';
+    ctx.lineWidth=isStorm?2:1;
+    ctx.beginPath();
+    for(var si=0;si<pts.length;si++){si===0?ctx.moveTo(pts[si][0],pts[si][1]):ctx.lineTo(pts[si][0],pts[si][1])}
+    ctx.stroke();
+    ctx.lineWidth=1;ctx.lineCap='butt';
+
+    // Branch forks off the main bolt — only for storm strikes
+    if(isStorm){
+      ctx.strokeStyle='rgba(180,210,255,'+(boltAlpha*0.6)+')';
+      ctx.lineWidth=2;
+      for(var br=0;br<3;br++){
+        var branchStart=2+br*2;// segment where branch starts
+        if(branchStart>=pts.length-1)break;
+        var bp=pts[branchStart];
+        var bDir=(ln.startFrame%2===0?-1:1)*(br%2===0?1:-1);
+        var bLen=30+br*10;
+        ctx.beginPath();
+        ctx.moveTo(bp[0],bp[1]);
+        ctx.lineTo(bp[0]+bDir*bLen*0.5,bp[1]+bLen*0.3);
+        ctx.lineTo(bp[0]+bDir*bLen,bp[1]+bLen*0.8);
+        ctx.stroke();
+      }
+      ctx.lineWidth=1;
+    }
+
+    // Impact glow halo at ground (grows with strike)
+    var haloR=(isStorm?50:25)*boltAge;
+    var grd=ctx.createRadialGradient(lx,ly,0,lx,ly,haloR);
+    grd.addColorStop(0,'rgba(255,255,255,'+(boltAlpha*0.9)+')');
+    grd.addColorStop(0.3,'rgba(180,210,255,'+(boltAlpha*0.5)+')');
+    grd.addColorStop(1,'rgba(100,140,255,0)');
+    ctx.fillStyle=grd;
+    ctx.fillRect(lx-haloR,ly-haloR,haloR*2,haloR*2);
+  }
+
+  // ── Phase 2: Impact shockwave (storm only) ──
+  if(isStorm&&lf>=12&&lf<35){
+    var swP=(lf-12)/23;
+    var swR=(isStorm?60:30)*swP;
+    ctx.strokeStyle='rgba(200,220,255,'+(0.5*(1-swP))+')';
+    ctx.lineWidth=2;
+    ctx.beginPath();ctx.arc(lx,ly,swR,0,Math.PI*2);ctx.stroke();
     ctx.lineWidth=1;
   }
-  // Phase 2 (15-45f): Electric sparks radiating at impact
-  if(lf>=10&&lf<45){
-    var sparkP=(lf-10)/35;
-    for(var sp=0;sp<8;sp++){
-      var sa=sp/8*Math.PI*2+lf*0.1;
-      var sd=20+sparkP*40;
+
+  // ── Phase 3: Electric sparks radiating (all strikes) ──
+  var sparkStart=isStorm?15:10;
+  var sparkEnd=isStorm?45:40;
+  if(lf>=sparkStart&&lf<sparkEnd){
+    var sparkP=(lf-sparkStart)/(sparkEnd-sparkStart);
+    var numSparks=isStorm?14:8;
+    for(var sp=0;sp<numSparks;sp++){
+      var sa=sp/numSparks*Math.PI*2+lf*0.1;
+      var sd=(isStorm?30:20)+sparkP*(isStorm?70:40);
       var spx=lx+Math.cos(sa)*sd,spy=ly+Math.sin(sa)*sd;
-      ctx.fillStyle='rgba(180,200,255,'+(0.8*(1-sparkP))+')';
-      ctx.fillRect(spx-1,spy-1,2,3);
+      ctx.fillStyle='rgba(180,220,255,'+(0.9*(1-sparkP))+')';
+      ctx.fillRect(spx-1,spy-1,isStorm?3:2,isStorm?4:3);
     }
   }
 }
@@ -5714,6 +5786,25 @@ for(var mi2=0;mi2<activeMeteors.length;mi2++){
     var fA=mf2<63?0.4:0.4*(1-(mf2-63)/12);
     ctx.fillStyle='rgba(255,240,200,'+Math.max(0,fA)+')';ctx.fillRect(0,0,cw2,ch2);
   }
+}
+
+// 1c. LIGHTNING STORM SCREEN FLASH — strobe + electric blue tint
+// While the storm is active (_lightningStormFlashUntil > frame), flash
+// the whole screen in sync with individual bolts. The strobe looks
+// chaotic and drives home that something BIG is happening.
+if(frame<_lightningStormFlashUntil){
+  var stormAge=_lightningStormFlashUntil-frame;// frames remaining
+  // Big initial white flash (first 10 frames)
+  if(stormAge>80){
+    ctx.fillStyle='rgba(255,255,255,0.65)';ctx.fillRect(0,0,cw2,ch2);
+  }
+  // Rapid strobe between blue-white flashes on odd frames
+  else if(frame%6<2){
+    ctx.fillStyle='rgba(180,200,255,0.35)';ctx.fillRect(0,0,cw2,ch2);
+  }
+  // Persistent blue-tinted overlay for the duration of the storm
+  var stormAlpha=Math.min(0.15,stormAge/90*0.15);
+  ctx.fillStyle='rgba(100,140,255,'+stormAlpha+')';ctx.fillRect(0,0,cw2,ch2);
 }
 
 // 2. SMOOTH DAY/NIGHT CYCLE (18000 frames = 5 min at 60fps)
@@ -6149,6 +6240,9 @@ function handleChaosEvent(ev){
       /* no banner for spread spam — too noisy */ break;
     case 'lightning_strike':
       showDramaBanner('⚡ '+ev.message); triggerLightningAnimation(ev.impactX,ev.impactY); break;
+    case 'lightning_storm':
+      showDramaBanner('⚡⚡⚡ '+ev.message+' ⚡⚡⚡');
+      triggerLightningStorm(ev.strikes||[], ev.impactX, ev.impactY); break;
     case 'tornado':
       showDramaBanner('🌪️ '+ev.message); triggerTornadoAnimation(ev.startX,ev.startY,ev.dirX,ev.dirY,ev.length); break;
     case 'earthquake':
@@ -6157,6 +6251,11 @@ function handleChaosEvent(ev){
       showDramaBanner('🌋 '+ev.message); triggerVolcanoAnimation(ev.impactX,ev.impactY,ev.radius); break;
     case 'plague':
       showDramaBanner('☠️ '+ev.message); triggerPlagueAnimation(ev.impactX,ev.impactY); break;
+    case 'paid_action':
+      // The underlying effect event (lightning_storm, meteor_strike, etc.)
+      // already fires its own animation. paid_action is just the banner
+      // crediting the payer, shown with a prominent style.
+      showDramaBanner('💰 '+ev.message); break;
   }
 }
 safeInterval(()=>{if(ws&&ws.readyState===1)ws.send('{"type":"ping"}')},30000);
@@ -6473,6 +6572,34 @@ const activeLightning=[];
 function triggerLightningAnimation(ix,iy){
   activeLightning.push({impactX:ix,impactY:iy,startFrame:frame,maxFrames:45});
   screenShake=Math.max(screenShake,8);
+}
+
+// --- Lightning STORM (paid action: 15+ strikes, massive visual) ---
+// State for the full-screen flash overlay (separate from per-strike animation)
+var _lightningStormFlashUntil=0;
+function triggerLightningStorm(strikes,epicenterX,epicenterY){
+  // Stagger each strike by a few frames so they cascade rather than stacking
+  // on the same frame (looks more like a real storm rolling in).
+  for(var i=0;i<strikes.length;i++){
+    var s=strikes[i];
+    var delay=i*4;// 4 frames between strikes = ~240ms stagger at 60fps
+    activeLightning.push({
+      impactX:s.x,impactY:s.y,
+      startFrame:frame+delay,
+      maxFrames:45+delay,
+      isStorm:true,
+    });
+  }
+  // Massive screen shake (caps at 60 in the render loop)
+  screenShake=Math.max(screenShake,60);
+  // Screen-wide flash overlay lasts ~1.5s total
+  _lightningStormFlashUntil=frame+90;
+  // Pan camera to the storm epicenter so viewer sees the action
+  if(typeof epicenterX==='number'&&typeof epicenterY==='number'){
+    var wx=epicenterX*TS+TS/2,wy=epicenterY*TS+TS/2;
+    panTarget={vpX:canvasEl.width/(2*zoom)-wx,vpY:canvasEl.height/(2*zoom)-wy,zoom:Math.max(zoom,1.2)};
+    panFrames=60;
+  }
 }
 
 // --- Tornadoes (funnel cloud sweeping across map) ---

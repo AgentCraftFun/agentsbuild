@@ -963,6 +963,111 @@ class GameLoop {
     console.log(`[Chaos] LIGHTNING ${target.name} (${target.x},${target.y}) mult=${mult.toFixed(2)}`);
   }
 
+  // ─── LIGHTNING STORM (paid action: massive multi-strike event) ──────
+  // Unlike the passive single-strike chaos, this is triggered by a player
+  // paying $AGENTCRAFT. It needs to be visible and dramatic — 12+ strikes
+  // on buildings in a local area, each igniting the target and dealing HP
+  // damage. Emits ONE lightning_storm event with an array of impact points
+  // so the viewer can play a cohesive massive animation.
+  //
+  // Called directly by PaidActions (bypasses the _chaosReady cooldown gate
+  // because the player already paid for it).
+  _chaosLightningStorm(opts) {
+    opts = opts || {};
+    const tick = this.world.tick || 0;
+    const STRIKE_COUNT = opts.strikes || 15;
+    const STORM_RADIUS = opts.radius || 20;
+
+    // Pick a storm epicenter — biased toward a dense cluster of buildings
+    // so the strikes actually hit things. Find the building with the most
+    // neighbors within STORM_RADIUS.
+    const completed = this.world.buildingsList.filter(b => b.isComplete() && b.workCost > 0);
+    if (completed.length === 0) {
+      return { ok: false, reason: 'No buildings to strike' };
+    }
+
+    // Pick epicenter: try a few random buildings and score by neighbor count
+    let epicenter = null;
+    let bestScore = -1;
+    const sampleSize = Math.min(20, completed.length);
+    for (let i = 0; i < sampleSize; i++) {
+      const candidate = completed[Math.floor(Math.random() * completed.length)];
+      let neighbors;
+      if (this.world._spatialIndex) {
+        neighbors = this.world._spatialIndex.query(candidate.x, candidate.y, STORM_RADIUS)
+          .filter(b => b.isComplete() && b.workCost > 0).length;
+      } else {
+        neighbors = completed.filter(b =>
+          Math.abs(b.x - candidate.x) + Math.abs(b.y - candidate.y) < STORM_RADIUS
+        ).length;
+      }
+      if (neighbors > bestScore) {
+        bestScore = neighbors;
+        epicenter = candidate;
+      }
+    }
+    if (!epicenter) epicenter = completed[Math.floor(Math.random() * completed.length)];
+
+    // Find all buildings in the storm area
+    let nearbyBuildings;
+    if (this.world._spatialIndex) {
+      nearbyBuildings = this.world._spatialIndex.query(epicenter.x, epicenter.y, STORM_RADIUS)
+        .filter(b => b.isComplete() && b.workCost > 0 && !b.burning);
+    } else {
+      nearbyBuildings = completed.filter(b =>
+        !b.burning && Math.abs(b.x - epicenter.x) + Math.abs(b.y - epicenter.y) < STORM_RADIUS
+      );
+    }
+
+    // If not enough buildings in the area, expand to random ones across the map
+    if (nearbyBuildings.length < STRIKE_COUNT) {
+      const extras = completed.filter(b => !b.burning && !nearbyBuildings.includes(b));
+      extras.sort(() => Math.random() - 0.5);
+      nearbyBuildings = nearbyBuildings.concat(extras.slice(0, STRIKE_COUNT - nearbyBuildings.length));
+    }
+
+    // Shuffle and pick STRIKE_COUNT victims
+    const shuffled = nearbyBuildings.slice().sort(() => Math.random() - 0.5);
+    const strikes = shuffled.slice(0, Math.min(STRIKE_COUNT, shuffled.length));
+
+    // Strike each one: ignite + take heavy HP damage
+    const impacts = [];
+    for (const b of strikes) {
+      b.burning = true;
+      b.hp = Math.max(0.2, (b.hp || 1.0) - 0.5);  // more damage than free lightning
+      if (!this.world._dirtyTiles) this.world._dirtyTiles = new Set();
+      this.world._dirtyTiles.add(`${b.x},${b.y}`);
+      impacts.push({ x: b.x, y: b.y, name: b.name });
+    }
+
+    // Panic agents in the storm zone
+    this._makeAgentsFlee(epicenter.x, epicenter.y, STORM_RADIUS + 5, 30);
+
+    const locName = this._nearestSettlementName(epicenter.x, epicenter.y, 50);
+    const locDesc = locName ? ` over ${locName}` : '';
+
+    // Build a single storm event for the viewer to animate all strikes together
+    const stormEvent = {
+      tick,
+      type: 'lightning_storm',
+      impactX: epicenter.x,
+      impactY: epicenter.y,
+      radius: STORM_RADIUS,
+      strikes: impacts,        // array of {x, y, name}
+      strikeCount: impacts.length,
+      message: `A massive lightning storm${locDesc}! ${impacts.length} buildings struck!`,
+    };
+
+    console.log(`[Chaos] LIGHTNING STORM at (${epicenter.x},${epicenter.y}) strikes=${impacts.length}`);
+
+    return {
+      ok: true,
+      event: stormEvent,
+      impacts: impacts.length,
+      epicenter: { x: epicenter.x, y: epicenter.y },
+    };
+  }
+
   // ─── TORNADO (linear sweep destroys everything in path) ─────────────
   _chaosTornado(tick, events, cs, mult) {
     if (!this._chaosReady(tick, 'lastTornado', cs, 350, 0.10, mult)) return;

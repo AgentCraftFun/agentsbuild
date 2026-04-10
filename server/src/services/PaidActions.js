@@ -38,10 +38,30 @@ const PRICES = {
 };
 
 /**
- * Shared dispatch helper for all chaos-based actions.
- * Calls gameLoop.triggerChaosAction and formats the result.
- * Also pushes a "paid_action" event into worldState.events so the viewer
- * can display a drama banner crediting the payer.
+ * Helper: push a "paid_action" credit banner event to the world feed.
+ * This is what every viewer sees when someone pays for a chaos action.
+ */
+function pushCreditBanner(ctx, chaosType, emoji, extraLabel) {
+  const shortAddr = ctx.from ? `${ctx.from.slice(0, 6)}...${ctx.from.slice(-4)}` : 'anonymous';
+  const label = extraLabel || chaosType;
+  const bannerMsg = `${emoji} ${shortAddr} paid ${ctx.amount} $AGENTCRAFT for a ${label}!`;
+  if (ctx.worldState && Array.isArray(ctx.worldState.events)) {
+    ctx.worldState.events.push({
+      tick: ctx.tick,
+      type: 'paid_action',
+      actionType: chaosType,
+      from: ctx.from,
+      amount: ctx.amount,
+      emoji,
+      message: bannerMsg,
+    });
+  }
+  return bannerMsg;
+}
+
+/**
+ * Shared dispatch helper for ambient-style chaos actions (tornado, meteor,
+ * earthquake, etc). Fires one instance of the event via triggerChaosAction.
  */
 function dispatchChaos(chaosType, emoji) {
   return function (ctx, params) {
@@ -50,26 +70,9 @@ function dispatchChaos(chaosType, emoji) {
     }
     const result = ctx.gameLoop.triggerChaosAction(chaosType);
     if (!result.ok) {
-      // triggerChaosAction returns { ok: false, reason } — propagate as error
-      // so the /api/action handler releases the claim and returns 500.
       throw new Error(result.reason || `Failed to fire ${chaosType}`);
     }
-
-    // Credit the payer in the world event feed (shown in sidebar + banner)
-    const shortAddr = ctx.from ? `${ctx.from.slice(0, 6)}...${ctx.from.slice(-4)}` : 'anonymous';
-    const bannerMsg = `${emoji} ${shortAddr} paid ${ctx.amount} $AGENTCRAFT for a ${chaosType}!`;
-    if (ctx.worldState && Array.isArray(ctx.worldState.events)) {
-      ctx.worldState.events.push({
-        tick: ctx.tick,
-        type: 'paid_action',
-        actionType: chaosType,
-        from: ctx.from,
-        amount: ctx.amount,
-        emoji,
-        message: bannerMsg,
-      });
-    }
-
+    const bannerMsg = pushCreditBanner(ctx, chaosType, emoji);
     return {
       chaosType,
       buildingsDestroyed: result.buildingsDestroyed || 0,
@@ -81,14 +84,52 @@ function dispatchChaos(chaosType, emoji) {
   };
 }
 
+/**
+ * Special dispatch for the paid Lightning Storm action. Unlike the passive
+ * single-strike lightning, this fires a dedicated storm method that strikes
+ * 15 buildings at once in a dense area. Emits ONE "lightning_storm" event
+ * containing all impact points so the viewer can play a massive animation.
+ */
+function dispatchLightningStorm(ctx, params) {
+  if (!ctx.gameLoop || typeof ctx.gameLoop._chaosLightningStorm !== 'function') {
+    throw new Error('gameLoop unavailable');
+  }
+  const result = ctx.gameLoop._chaosLightningStorm({ strikes: 15, radius: 20 });
+  if (!result.ok) {
+    throw new Error(result.reason || 'Failed to fire lightning storm');
+  }
+
+  // Push the storm event so the viewer can animate all strikes at once
+  if (ctx.worldState && Array.isArray(ctx.worldState.events)) {
+    ctx.worldState.events.push(result.event);
+  }
+
+  // Also push the credit banner
+  const bannerMsg = pushCreditBanner(ctx, 'lightning', '⚡', 'Lightning Storm');
+
+  return {
+    chaosType: 'lightning_storm',
+    buildingsStruck: result.impacts,
+    epicenter: result.epicenter,
+    event: {
+      type: result.event.type,
+      impactX: result.event.impactX,
+      impactY: result.event.impactY,
+      strikes: result.event.strikes,
+      message: result.event.message,
+    },
+    message: bannerMsg,
+  };
+}
+
 // ─── Action definitions ─────────────────────────────────────────────
 const ACTIONS = {
   lightning: {
     price: PRICES.LIGHTNING,
-    label: 'Lightning Strike',
+    label: 'Lightning Storm',
     emoji: '⚡',
-    description: 'Strike a random building with a bolt of lightning. Instant fire damage.',
-    dispatch: dispatchChaos('lightning', '⚡'),
+    description: '15 bolts of lightning strike a dense settlement area simultaneously, igniting every building they hit.',
+    dispatch: dispatchLightningStorm,
   },
   wildfire: {
     price: PRICES.WILDFIRE,
