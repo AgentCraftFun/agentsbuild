@@ -246,20 +246,43 @@ app.post('/api/agents/deploy', (req, res) => {
       }
     }
 
-    // Find spawn location on buildable, unowned land
+    // Find spawn location on buildable, unowned land.
+    // Strategy: random tries first (fast path), then systematic grid scan
+    // (guaranteed to find ANY unowned buildable tile if one exists).
+    const WATER_BIOMES = new Set(['deep_water', 'shallow_water', 'river']);
+    function isSpawnable(tile) {
+      return tile && !tile.owner && !WATER_BIOMES.has(tile.biome);
+    }
     let startX = Math.floor(worldState.width / 2);
     let startY = Math.floor(worldState.height / 2);
     let foundSpawn = false;
+    // Fast path: 500 random tries
     for (let i = 0; i < 500; i++) {
       const tx = Math.floor(Math.random() * worldState.width);
       const ty = Math.floor(Math.random() * worldState.height);
       const tile = worldState.tiles.get(`${tx},${ty}`);
-      if (tile && !tile.owner && !['deep_water', 'shallow_water', 'river'].includes(tile.biome)) {
+      if (isSpawnable(tile)) {
         startX = tx; startY = ty; foundSpawn = true; break;
       }
     }
+    // Systematic fallback: scan entire map from a random offset so different
+    // requests find different tiles. Guarantees we find any free buildable tile.
     if (!foundSpawn) {
-      return res.status(503).json({ error: 'No available spawn location found. World may be full.' });
+      const offX = Math.floor(Math.random() * worldState.width);
+      const offY = Math.floor(Math.random() * worldState.height);
+      outer: for (let dy = 0; dy < worldState.height; dy++) {
+        for (let dx = 0; dx < worldState.width; dx++) {
+          const tx = (dx + offX) % worldState.width;
+          const ty = (dy + offY) % worldState.height;
+          const tile = worldState.tiles.get(`${tx},${ty}`);
+          if (isSpawnable(tile)) {
+            startX = tx; startY = ty; foundSpawn = true; break outer;
+          }
+        }
+      }
+    }
+    if (!foundSpawn) {
+      return res.status(503).json({ error: 'No available spawn location found. World is completely full.' });
     }
 
     const chosenPersonality = personality || 'analyst';
@@ -376,6 +399,92 @@ app.post('/api/meteor', (req, res) => {
 
   console.log(`[Meteor] MANUAL strike at (${impactX},${impactY}) ${loc} — ${targets.length} buildings burning`);
   res.json({ success: true, impactX, impactY, buildingsBurning: targets.length, message: event.message });
+});
+
+// ─── Emergency Cleanup Endpoint ───
+// Destroys buildings owned by agents who haven't acted in N ticks.
+// Protected by ADMIN_TOKEN env var to prevent abuse.
+// Usage: POST /api/cleanup?threshold=1000  (body: {token: "..."})
+app.post('/api/cleanup', (req, res) => {
+  const adminToken = process.env.ADMIN_TOKEN;
+  const providedToken = (req.body && req.body.token) || req.query.token;
+  if (adminToken && providedToken !== adminToken) {
+    return res.status(403).json({ error: 'Forbidden: invalid admin token' });
+  }
+
+  // Default: remove buildings of agents inactive for 1000+ ticks
+  const threshold = parseInt(req.query.threshold || (req.body && req.body.threshold) || 1000, 10);
+  const dryRun = (req.query.dryRun === 'true') || (req.body && req.body.dryRun === true);
+  const tick = worldState.tick || 0;
+
+  // Find inactive agents
+  const inactiveAgentIds = new Set();
+  const inactiveInfo = [];
+  for (const agent of worldState.agents.values()) {
+    const ticksSinceActive = tick - (agent.last_action_tick || 0);
+    if (ticksSinceActive >= threshold) {
+      inactiveAgentIds.add(agent.id);
+      inactiveInfo.push({ name: agent.name, id: agent.id, inactive_for: ticksSinceActive });
+    }
+  }
+
+  // Find buildings to destroy
+  const toDestroy = worldState.buildingsList.filter(b =>
+    b.isComplete() && b.workCost > 0 && inactiveAgentIds.has(b.owner)
+  );
+
+  if (dryRun) {
+    return res.json({
+      dryRun: true,
+      tick,
+      threshold,
+      inactiveAgentCount: inactiveAgentIds.size,
+      buildingsWouldDestroy: toDestroy.length,
+      totalBuildingsBefore: worldState.buildingsList.length,
+      sampleAgents: inactiveInfo.slice(0, 10),
+    });
+  }
+
+  // Actually destroy them
+  let destroyed = 0;
+  for (const bld of toDestroy) {
+    // Free the tile ownership
+    const tileId = `${bld.x},${bld.y}`;
+    const tile = worldState.tiles.get(tileId);
+    const owner = worldState.agents.get(bld.owner);
+    if (tile && owner && tile.owner === owner.id) {
+      tile.owner = null;
+      if (owner.owned_tiles && Array.isArray(owner.owned_tiles)) {
+        owner.owned_tiles = owner.owned_tiles.filter(t => t !== tileId);
+      }
+    }
+    if (gameLoop && typeof gameLoop._destroyBuilding === 'function') {
+      gameLoop._destroyBuilding(bld);
+    } else {
+      // Fallback if gameLoop unavailable
+      if (tile && tile.building === bld) tile.building = null;
+      if (worldState._spatialIndex) worldState._spatialIndex.remove(bld);
+      const idx = worldState.buildingsList.indexOf(bld);
+      if (idx >= 0) worldState.buildingsList.splice(idx, 1);
+      if (owner) owner.buildings = (owner.buildings || []).filter(b => b !== bld);
+    }
+    destroyed++;
+  }
+
+  const message = `[Cleanup] Destroyed ${destroyed} buildings from ${inactiveAgentIds.size} inactive agents (threshold=${threshold})`;
+  console.log(message);
+  worldState.events = worldState.events || [];
+  worldState.events.push({ tick, type: 'cleanup', message });
+
+  res.json({
+    success: true,
+    tick,
+    threshold,
+    inactiveAgentCount: inactiveAgentIds.size,
+    buildingsDestroyed: destroyed,
+    totalBuildingsAfter: worldState.buildingsList.length,
+    message,
+  });
 });
 
 // ─── AI Building Generation Endpoint ───
