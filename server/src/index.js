@@ -143,6 +143,13 @@ if (loadedState) {
   seedAgents(worldState);
 }
 
+// ─── Spatial Index (performance: O(1) building proximity checks) ───
+const SpatialIndex = require('./services/SpatialIndex');
+worldState._spatialIndex = new SpatialIndex();
+worldState._spatialIndex.rebuild(worldState.buildingsList);
+console.log(`[Server] Spatial index built: ${worldState._spatialIndex.size()} buildings`);
+
+
 // ─── Express App ───
 
 const app = express();

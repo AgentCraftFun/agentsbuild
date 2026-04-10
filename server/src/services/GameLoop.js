@@ -357,16 +357,24 @@ class GameLoop {
       return;
     }
 
-    // 2. MINIMUM SPACING: 3 tiles from any existing building center (denser villages)
+    // 2. MINIMUM SPACING: 3 tiles from any existing building center (spatial index O(1))
     const MIN_DIST = 3;
     if (!resume) {
       let tooClose = false;
-      for (const b of this.world.buildingsList) {
-        const dx = Math.abs(b.x - x);
-        const dy = Math.abs(b.y - y);
-        if (dx + dy < MIN_DIST && !(b.x === x && b.y === y)) {
-          tooClose = true;
-          break;
+      if (this.world._spatialIndex) {
+        // Query returns candidates including possibly this exact tile — filter that out
+        const nearby = this.world._spatialIndex.query(x, y, MIN_DIST);
+        for (const b of nearby) {
+          if (!(b.x === x && b.y === y)) { tooClose = true; break; }
+        }
+      } else {
+        for (const b of this.world.buildingsList) {
+          const dx = Math.abs(b.x - x);
+          const dy = Math.abs(b.y - y);
+          if (dx + dy < MIN_DIST && !(b.x === x && b.y === y)) {
+            tooClose = true;
+            break;
+          }
         }
       }
       if (tooClose) {
@@ -425,6 +433,7 @@ class GameLoop {
     tile.building = building;
     agent.buildings.push(building);
     this.world.buildingsList.push(building);
+    if (this.world._spatialIndex) this.world._spatialIndex.add(building);
     if (!this.world._dirtyTiles) this.world._dirtyTiles = new Set();
     this.world._dirtyTiles.add(tileId);
 
@@ -588,6 +597,7 @@ class GameLoop {
               message: `${owner.name}'s village was destroyed! They must find new land.` });
           }
         }
+        if (this.world._spatialIndex) this.world._spatialIndex.remove(bld);
         this.world.buildingsList.splice(i, 1);
         events.push({ tick, type: 'building_destroyed', message: `${bld.name} at (${bld.x}, ${bld.y}) burned to the ground!` });
       }

@@ -399,10 +399,14 @@ class AgentBrain {
         }
         if (neighborsBad) continue;
 
-        // Check minimum spacing from ALL buildings
+        // Check minimum spacing — use spatial index for O(1) query (fallback to linear scan)
         let tooClose = false;
-        for (const b of buildingsList) {
-          if (Math.abs(b.x - rx) + Math.abs(b.y - ry) < MIN_DIST) { tooClose = true; break; }
+        if (this.world._spatialIndex) {
+          tooClose = this.world._spatialIndex.anyWithin(rx, ry, MIN_DIST);
+        } else {
+          for (const b of buildingsList) {
+            if (Math.abs(b.x - rx) + Math.abs(b.y - ry) < MIN_DIST) { tooClose = true; break; }
+          }
         }
         if (tooClose) continue;
 
@@ -461,10 +465,14 @@ class AgentBrain {
       }
       if (areaBad) continue;
 
-      // Check min spacing from existing buildings
+      // Check min spacing from existing buildings (spatial index O(1))
       let tooClose = false;
-      for (const b of buildingsList) {
-        if (Math.abs(b.x - rx) + Math.abs(b.y - ry) < MIN_BUILD_DIST) { tooClose = true; break; }
+      if (this.world._spatialIndex) {
+        tooClose = this.world._spatialIndex.anyWithin(rx, ry, MIN_BUILD_DIST);
+      } else {
+        for (const b of buildingsList) {
+          if (Math.abs(b.x - rx) + Math.abs(b.y - ry) < MIN_BUILD_DIST) { tooClose = true; break; }
+        }
       }
       if (tooClose) continue;
 

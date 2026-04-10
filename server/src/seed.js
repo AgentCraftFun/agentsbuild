@@ -87,6 +87,7 @@ function seedAgents(worldState) {
       });
       hqTile.building = hqBuilding;
       worldState.buildingsList.push(hqBuilding);
+      if (worldState._spatialIndex) worldState._spatialIndex.add(hqBuilding);
     }
 
     console.log(`[Seed] Settlement "${s.name}" center at (${pos.x}, ${pos.y})`);
