@@ -1323,10 +1323,14 @@ class GameLoop {
       e.type && !e.type.endsWith('_spread')
     ) || collectedEvents[0];
 
-    // Push events into worldState.events so they're broadcast to the viewer
+    // Push events into the pending broadcast queue so they're included in
+    // the next tick's diff broadcast. Also push to world.events so they
+    // show up in the event history.
     if (!this.world.events) this.world.events = [];
+    if (!this.world._pendingBroadcastEvents) this.world._pendingBroadcastEvents = [];
     for (const ev of collectedEvents) {
       this.world.events.push(ev);
+      this.world._pendingBroadcastEvents.push(ev);
     }
 
     const buildingsAfter = this.world.buildingsList.length;
@@ -1407,12 +1411,21 @@ class GameLoop {
       this.world._dirtyTiles.clear();
     }
 
+    // Drain any events pushed from outside the tick loop (e.g. paid actions
+    // from POST /api/action, or /api/chaos/:type). These need to be included
+    // in the broadcast so connected viewers play the animations.
+    let allEvents = events;
+    if (this.world._pendingBroadcastEvents && this.world._pendingBroadcastEvents.length > 0) {
+      allEvents = events.concat(this.world._pendingBroadcastEvents);
+      this.world._pendingBroadcastEvents.length = 0;
+    }
+
     return {
       tick: this.world.tick,
       agents,
       tiles: changedTiles,
       buildings: this.world.buildingsList.map(b => b.toJSON()),
-      events,
+      events: allEvents,
       leaderboard: this.world.leaderboard || [],
       settlements: this.world.settlements || [],
     };

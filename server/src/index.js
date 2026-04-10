@@ -536,6 +536,9 @@ app.post('/api/meteor', (req, res) => {
   };
   worldState.events = worldState.events || [];
   worldState.events.push(event);
+  // Also queue for broadcast so the viewer animates it immediately
+  if (!worldState._pendingBroadcastEvents) worldState._pendingBroadcastEvents = [];
+  worldState._pendingBroadcastEvents.push(event);
 
   console.log(`[Meteor] MANUAL strike at (${impactX},${impactY}) ${loc} — ${targets.length} buildings burning`);
   res.json({ success: true, impactX, impactY, buildingsBurning: targets.length, message: event.message });

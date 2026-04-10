@@ -38,6 +38,20 @@ const PRICES = {
 };
 
 /**
+ * Helper: push an event to BOTH the permanent world.events history AND
+ * the pending broadcast queue so it goes out in the next tick's diff.
+ * HTTP-triggered events (like paid actions) don't run inside the tick
+ * loop, so they must be explicitly queued to be broadcast.
+ */
+function pushBroadcastEvent(worldState, ev) {
+  if (!worldState) return;
+  if (!Array.isArray(worldState.events)) worldState.events = [];
+  if (!Array.isArray(worldState._pendingBroadcastEvents)) worldState._pendingBroadcastEvents = [];
+  worldState.events.push(ev);
+  worldState._pendingBroadcastEvents.push(ev);
+}
+
+/**
  * Helper: push a "paid_action" credit banner event to the world feed.
  * This is what every viewer sees when someone pays for a chaos action.
  */
@@ -45,17 +59,15 @@ function pushCreditBanner(ctx, chaosType, emoji, extraLabel) {
   const shortAddr = ctx.from ? `${ctx.from.slice(0, 6)}...${ctx.from.slice(-4)}` : 'anonymous';
   const label = extraLabel || chaosType;
   const bannerMsg = `${emoji} ${shortAddr} paid ${ctx.amount} $AGENTCRAFT for a ${label}!`;
-  if (ctx.worldState && Array.isArray(ctx.worldState.events)) {
-    ctx.worldState.events.push({
-      tick: ctx.tick,
-      type: 'paid_action',
-      actionType: chaosType,
-      from: ctx.from,
-      amount: ctx.amount,
-      emoji,
-      message: bannerMsg,
-    });
-  }
+  pushBroadcastEvent(ctx.worldState, {
+    tick: ctx.tick,
+    type: 'paid_action',
+    actionType: chaosType,
+    from: ctx.from,
+    amount: ctx.amount,
+    emoji,
+    message: bannerMsg,
+  });
   return bannerMsg;
 }
 
@@ -99,10 +111,8 @@ function dispatchLightningStorm(ctx, params) {
     throw new Error(result.reason || 'Failed to fire lightning storm');
   }
 
-  // Push the storm event so the viewer can animate all strikes at once
-  if (ctx.worldState && Array.isArray(ctx.worldState.events)) {
-    ctx.worldState.events.push(result.event);
-  }
+  // Queue the storm event for broadcast + history so viewers animate it
+  pushBroadcastEvent(ctx.worldState, result.event);
 
   // Also push the credit banner
   const bannerMsg = pushCreditBanner(ctx, 'lightning', '⚡', 'Lightning Storm');
