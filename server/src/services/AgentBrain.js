@@ -24,8 +24,30 @@ class AgentBrain {
   }
 
   decide() {
+    // ── FLEE CHECK: if this agent is running from a disaster, move away from it
+    const tick = this.world.tick || 0;
+    if (this.agent._fleeFrom && this.agent._fleeFrom.until > tick) {
+      const f = this.agent._fleeFrom;
+      const dx = Math.sign(this.agent.x - f.x) || (Math.random() > 0.5 ? 1 : -1);
+      const dy = Math.sign(this.agent.y - f.y) || (Math.random() > 0.5 ? 1 : -1);
+      return {
+        type: 'move',
+        payload: { dx, dy },
+        message: AgentBrain._pick([
+          'RUN!!! GET AWAY!',
+          'The ground is shaking!',
+          'We need to get out of here!',
+          'FLEE!!!',
+          'This place is cursed!',
+          '*sprints for dear life*',
+        ]),
+      };
+    } else if (this.agent._fleeFrom) {
+      this.agent._fleeFrom = null;  // clear expired flee state
+    }
+
     // Per-agent build cooldown: 20 ticks between builds
-    const ticksSinceLastBuild = (this.world.tick || 0) - (this.agent._lastBuildTick || 0);
+    const ticksSinceLastBuild = tick - (this.agent._lastBuildTick || 0);
     this._canBuild = ticksSinceLastBuild >= 20;
 
     // 50% of ticks, agents explore/move instead of building

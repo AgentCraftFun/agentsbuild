@@ -101,18 +101,10 @@ class GameLoop {
       // 5b. Process burning buildings and inter-settlement wars
       this._processWarfare(tick, events);
 
-      // 5c. Process meteor events
-      this._processMeteors(tick, events);
-
-      // 5d. Building decay — slow for maintained, fast for abandoned (every 10 ticks)
-      if (tick % 10 === 0) {
-        this._processDecay(tick, events);
-      }
-
-      // 5e. Wildfire events (spreading fire) — every 20 ticks
-      if (tick % 20 === 0) {
-        this._processWildfires(tick, events);
-      }
+      // 5c. CHAOS — world disasters that scale with building count.
+      // Every event self-scales: more buildings = more chaos. Keeps the
+      // world dynamically balanced without hard caps.
+      this._processChaos(tick, events);
 
       // 6. Generate event feed entries (already collected above, add tick summary)
       if (tick % 10 === 0) {
@@ -770,241 +762,393 @@ class GameLoop {
     });
   }
 
-  // ─── BUILDING DECAY & ABANDONMENT ───
+  // ═══════════════════════════════════════════════════════════════════
+  //                         CHAOS ENGINE
+  // ═══════════════════════════════════════════════════════════════════
+  //
+  // The world has no hard building cap. Instead, destruction events fire
+  // at a rate proportional to how full the world is. At the target count
+  // (1500 buildings) chaos multiplier = 1x. Above that, it ramps up:
+  //   1500 → 1x   (baseline)
+  //   2000 → 2x
+  //   3000 → 4x
+  //   4000 → 6x
+  //   5000 → 8x
+  //
+  // Every event type (meteor, wildfire, lightning, tornado, earthquake,
+  // volcano, plague) scales its cooldown and trigger chance with this.
+  //
+  // Events are broadcast with type + data so the viewer can play animations.
+  // Agents in danger zones are marked _fleeFrom so they flee in AgentBrain.
 
   /**
-   * Buildings slowly decay over time. If the owner is active, decay is
-   * negligible (buildings effectively last forever with minimal regen).
-   * If the owner is inactive (hasn't acted in a long time), decay is
-   * MUCH faster — their abandoned villages clean themselves up.
-   *
-   * Tunable constants:
-   *   ABANDONED_THRESHOLD_TICKS — how long before owner counts as inactive
-   *   NORMAL_DECAY_PER_CHECK   — HP lost per check when owner is active
-   *   ABANDONED_DECAY_PER_CHECK — HP lost per check when owner inactive
-   *   MAINT_REGEN_PER_CHECK    — HP regained when owner is present at building
+   * Compute the chaos multiplier from current building count.
+   * Returns 1.0 at or below TARGET_COUNT, growing linearly above.
    */
-  _processDecay(tick, events) {
-    const ABANDONED_THRESHOLD_TICKS = 1200;  // ~1 hour of inactivity before buildings start decaying
-    const NORMAL_DECAY_PER_CHECK = 0;        // maintained buildings don't decay
-    const ABANDONED_DECAY_PER_CHECK = 0.02;  // ~50 checks = 500 ticks = ~25 min to destroy
-    const MAINT_REGEN_PER_CHECK = 0.01;      // small HP regen when owner is nearby
-    const DECAY_HP_THRESHOLD = 0.0001;       // below this → destroy
+  _chaosMultiplier() {
+    const TARGET_COUNT = 1500;
+    const SCALE = 500;  // every +500 buildings adds 1x multiplier
+    const MAX_MULT = 6; // cap so the world doesn't implode
+    const count = this.world.buildingsList.filter(b => b.isComplete()).length;
+    if (count <= TARGET_COUNT) return 1.0;
+    return Math.min(MAX_MULT, 1.0 + (count - TARGET_COUNT) / SCALE);
+  }
 
-    let destroyed = 0;
-    let abandonedCount = 0;
-
-    for (let i = this.world.buildingsList.length - 1; i >= 0; i--) {
-      const bld = this.world.buildingsList[i];
-      if (!bld.isComplete()) continue;      // skip under-construction
-      if (bld.burning) continue;            // fire damage handled elsewhere
-      if (bld.workCost === 0) continue;     // skip HQ buildings (town halls, etc.)
-
-      const owner = this.world.agents.get(bld.owner);
-      // Orphaned: owner no longer exists in the agent map (dead/deleted agents).
-      // These are the real zombies clogging the world. Skip settlement HQ owners
-      // (string IDs like "settlement_0") since workCost=0 already filtered them out.
-      const isOrphaned = !owner && typeof bld.owner === 'string' && !bld.owner.startsWith('settlement_');
-      const ticksSinceActive = owner ? (tick - (owner.last_action_tick || 0)) : Infinity;
-      const isAbandoned = isOrphaned || ticksSinceActive > ABANDONED_THRESHOLD_TICKS;
-
-      // Settlement-owned HQs were already filtered by workCost check; if owner is missing
-      // and we're NOT treating it as orphaned, skip to avoid touching intentional nulls.
-      if (!owner && !isOrphaned) continue;
-
-      if (isAbandoned) {
-        bld.hp = (bld.hp || 1.0) - ABANDONED_DECAY_PER_CHECK;
-        abandonedCount++;
-        if (bld.hp <= DECAY_HP_THRESHOLD) {
-          // Free the tile ownership so new settlers can claim it.
-          // For orphaned buildings, owner is null — just clear the tile owner directly.
-          const tileId = `${bld.x},${bld.y}`;
-          const tile = this.world.tiles.get(tileId);
-          if (tile) {
-            if (owner) {
-              if (tile.owner === owner.id) tile.owner = null;
-              if (owner.owned_tiles && Array.isArray(owner.owned_tiles)) {
-                owner.owned_tiles = owner.owned_tiles.filter(t => t !== tileId);
-              }
-            } else {
-              // Orphaned: just null out the tile owner regardless
-              tile.owner = null;
-            }
-          }
-          this._destroyBuilding(bld, i);
-          destroyed++;
-          events.push({ tick, type: 'building_decayed',
-            message: `An abandoned ${bld.name} crumbled to ruins.` });
-        } else {
-          if (!this.world._dirtyTiles) this.world._dirtyTiles = new Set();
-          this.world._dirtyTiles.add(`${bld.x},${bld.y}`);
-        }
-      } else {
-        // Owner is active — small maintenance regen if they're nearby
-        if (NORMAL_DECAY_PER_CHECK > 0) {
-          bld.hp = Math.max(0, (bld.hp || 1.0) - NORMAL_DECAY_PER_CHECK);
-        }
-        if (MAINT_REGEN_PER_CHECK > 0 && bld.hp < 1.0) {
-          const dx = Math.abs(owner.x - bld.x);
-          const dy = Math.abs(owner.y - bld.y);
-          if (dx + dy < 5) {
-            bld.hp = Math.min(1.0, (bld.hp || 1.0) + MAINT_REGEN_PER_CHECK);
-          }
-        }
-      }
+  /**
+   * Main chaos tick — runs every tick. Dispatches to individual events.
+   * Each event self-gates on cooldown + probability, scaled by multiplier.
+   */
+  _processChaos(tick, events) {
+    if (!this.world._chaosState) {
+      this.world._chaosState = {
+        lastMeteor: 0,
+        lastWildfire: 0,
+        lastLightning: 0,
+        lastTornado: 0,
+        lastEarthquake: 0,
+        lastVolcano: 0,
+        lastPlague: 0,
+      };
     }
+    const cs = this.world._chaosState;
+    const mult = this._chaosMultiplier();
 
-    if (destroyed > 0) {
-      console.log(`[Decay] tick=${tick} destroyed=${destroyed} abandoned_buildings=${abandonedCount}`);
+    // Don't run events until the world is populated enough to have drama
+    const totalComplete = this.world.buildingsList.filter(b => b.isComplete() && b.workCost > 0).length;
+    if (totalComplete < 15) return;
+
+    // Each event scales independently. Higher mult = shorter cooldown + higher chance.
+    this._chaosMeteor(tick, events, cs, mult);
+    this._chaosWildfire(tick, events, cs, mult);
+    this._chaosLightning(tick, events, cs, mult);
+    this._chaosTornado(tick, events, cs, mult);
+    this._chaosEarthquake(tick, events, cs, mult);
+    this._chaosVolcano(tick, events, cs, mult);
+    this._chaosPlague(tick, events, cs, mult);
+  }
+
+  /** Helper: apply chaos mult to a cooldown and chance. */
+  _chaosReady(tick, lastKey, cs, baseCooldown, baseChance, mult) {
+    const effectiveCooldown = Math.max(20, Math.floor(baseCooldown / mult));
+    const effectiveChance = Math.min(0.9, baseChance * mult);
+    if (tick - (cs[lastKey] || 0) < effectiveCooldown) return false;
+    if (Math.random() > effectiveChance) return false;
+    cs[lastKey] = tick;
+    return true;
+  }
+
+  /** Helper: mark all agents within radius as fleeing from a point. */
+  _makeAgentsFlee(x, y, radius, durationTicks) {
+    const tick = this.world.tick || 0;
+    for (const agent of this.world.agents.values()) {
+      const dx = Math.abs(agent.x - x);
+      const dy = Math.abs(agent.y - y);
+      if (dx + dy < radius) {
+        agent._fleeFrom = { x, y, until: tick + durationTicks };
+      }
     }
   }
 
-  // ─── WILDFIRE (spreading fire disaster) ───
-
-  /**
-   * Occasionally ignite wildfires: a starter building catches fire, then
-   * fire spreads from burning buildings to adjacent ones each check.
-   *
-   * This is cosmetic drama — it uses the existing `burning` system so no
-   * new data structures, and _processWarfare's burn loop handles HP/destroy.
-   */
-  _processWildfires(tick, events) {
-    if (!this.world._wildfireState) {
-      this.world._wildfireState = { lastIgnitionTick: 0 };
-    }
-    const ws = this.world._wildfireState;
-    const buildings = this.world.buildingsList;
-    const completed = buildings.filter(b => b.isComplete() && b.workCost > 0);
-    if (completed.length < 20) return;  // need a populated world
-
-    // ── 1. Spread existing wildfires: each burning building has a small
-    //      chance to ignite a nearby non-burning building.
-    const burning = completed.filter(b => b.burning);
-    const SPREAD_CHANCE = 0.15;          // 15% per burning building per check
-    const SPREAD_RADIUS = 4;             // tiles
-    let spreadCount = 0;
-    for (const b of burning) {
-      if (Math.random() > SPREAD_CHANCE) continue;
-      let candidates = [];
-      if (this.world._spatialIndex) {
-        candidates = this.world._spatialIndex.query(b.x, b.y, SPREAD_RADIUS)
-          .filter(c => c !== b && c.isComplete() && !c.burning && c.workCost > 0);
-      } else {
-        for (const c of completed) {
-          if (c === b || c.burning) continue;
-          if (Math.abs(c.x - b.x) + Math.abs(c.y - b.y) < SPREAD_RADIUS) candidates.push(c);
-        }
-      }
-      if (candidates.length === 0) continue;
-      const target = candidates[Math.floor(Math.random() * candidates.length)];
-      target.burning = true;
-      target.hp = target.hp || 1.0;
-      if (!this.world._dirtyTiles) this.world._dirtyTiles = new Set();
-      this.world._dirtyTiles.add(`${target.x},${target.y}`);
-      spreadCount++;
-    }
-    if (spreadCount > 0) {
-      events.push({ tick, type: 'wildfire_spread',
-        message: `Wildfire spreads! ${spreadCount} more building${spreadCount > 1 ? 's' : ''} caught fire.` });
-    }
-
-    // ── 2. Random ignition: rare lightning strike starts a new wildfire.
-    const IGNITION_COOLDOWN = 400;       // min ticks between new ignitions
-    if (tick - ws.lastIgnitionTick < IGNITION_COOLDOWN) return;
-    if (Math.random() > 0.04) return;    // 4% chance per check
-
-    const starter = completed[Math.floor(Math.random() * completed.length)];
-    if (!starter || starter.burning) return;
-    starter.burning = true;
-    starter.hp = starter.hp || 1.0;
-    if (!this.world._dirtyTiles) this.world._dirtyTiles = new Set();
-    this.world._dirtyTiles.add(`${starter.x},${starter.y}`);
-    ws.lastIgnitionTick = tick;
-
-    events.push({ tick, type: 'wildfire_started',
-      message: `A wildfire ignites at the ${starter.name}!` });
-    console.log(`[Wildfire] Ignited ${starter.name} at (${starter.x},${starter.y}) tick=${tick}`);
+  /** Helper: pick a random completed non-HQ building (with fallback). */
+  _randomCompletedBuilding() {
+    const pool = this.world.buildingsList.filter(b => b.isComplete() && b.workCost > 0);
+    if (pool.length === 0) return null;
+    return pool[Math.floor(Math.random() * pool.length)];
   }
 
-  // ─── METEOR EVENTS ───
-
-  _processMeteors(tick, events) {
-    // Initialize meteor state
-    if (!this.world._meteorState) {
-      this.world._meteorState = { lastMeteorTick: 0 };
+  /** Helper: nearest settlement name to a point (for flavor text). */
+  _nearestSettlementName(x, y, maxDist = 30) {
+    let best = null, bestD = Infinity;
+    for (const s of (this.world.settlements || [])) {
+      const d = Math.abs(s.cx - x) + Math.abs(s.cy - y);
+      if (d < bestD) { bestD = d; best = s; }
     }
-    const ms = this.world._meteorState;
+    return best && bestD < maxDist ? best.name : null;
+  }
 
-    const totalBuildings = this.world.buildingsList.filter(b => b.isComplete()).length;
-    // Don't send meteors until there are enough buildings to make it interesting
-    if (totalBuildings < 15) return;
+  // ─── METEOR ─────────────────────────────────────────────────────────
+  _chaosMeteor(tick, events, cs, mult) {
+    if (!this._chaosReady(tick, 'lastMeteor', cs, 300, 0.05, mult)) return;
+    const target = this._randomCompletedBuilding();
+    if (!target) return;
+    const impactX = Math.max(5, Math.min(this.world.width - 5, target.x + Math.floor(Math.random() * 10) - 5));
+    const impactY = Math.max(5, Math.min(this.world.height - 5, target.y + Math.floor(Math.random() * 10) - 5));
 
-    // Meteor frequency: one every 300-600 ticks (~15-30 minutes with 3s ticks)
-    const cooldown = 300 + Math.floor(Math.random() * 300);
-    if (tick - ms.lastMeteorTick < 200) return; // hard minimum cooldown
-
-    // 3% chance per tick after minimum cooldown
-    if (Math.random() > 0.03) return;
-
-    ms.lastMeteorTick = tick;
-
-    // Pick impact location: random spot on the map, biased toward areas with buildings
-    let impactX, impactY;
-    if (Math.random() < 0.7 && this.world.buildingsList.length > 0) {
-      // 70% chance: target near an existing settlement for drama
-      const targetBld = this.world.buildingsList[Math.floor(Math.random() * this.world.buildingsList.length)];
-      impactX = targetBld.x + Math.floor(Math.random() * 10) - 5;
-      impactY = targetBld.y + Math.floor(Math.random() * 10) - 5;
-    } else {
-      // 30% chance: random wilderness location
-      impactX = 10 + Math.floor(Math.random() * (this.world.width - 20));
-      impactY = 10 + Math.floor(Math.random() * (this.world.height - 20));
-    }
-    // Clamp to map bounds
-    impactX = Math.max(5, Math.min(this.world.width - 5, impactX));
-    impactY = Math.max(5, Math.min(this.world.height - 5, impactY));
-
-    // Find buildings within blast radius (8 tiles)
-    const BLAST_RADIUS = 8;
-    const hitBuildings = this.world.buildingsList.filter(b =>
-      b.isComplete() && !b.burning &&
-      Math.abs(b.x - impactX) + Math.abs(b.y - impactY) < BLAST_RADIUS
-    );
-
-    // Set them on fire
-    const burnCount = Math.min(hitBuildings.length, 4); // max 4 buildings per meteor
-    const targets = hitBuildings.sort(() => Math.random() - 0.5).slice(0, burnCount);
+    // Buildings in blast radius catch fire (existing burn system handles HP)
+    const BLAST = 8;
+    const nearby = this.world._spatialIndex
+      ? this.world._spatialIndex.query(impactX, impactY, BLAST).filter(b => b.isComplete() && !b.burning && b.workCost > 0)
+      : this.world.buildingsList.filter(b => b.isComplete() && !b.burning && b.workCost > 0 && Math.abs(b.x - impactX) + Math.abs(b.y - impactY) < BLAST);
+    const burnCount = Math.min(nearby.length, 6);
+    const targets = nearby.sort(() => Math.random() - 0.5).slice(0, burnCount);
     for (const t of targets) {
-      t.burning = true;
-      t.hp = t.hp || 1.0;
+      t.burning = true; t.hp = t.hp || 1.0;
       if (!this.world._dirtyTiles) this.world._dirtyTiles = new Set();
       this.world._dirtyTiles.add(`${t.x},${t.y}`);
     }
 
-    // Find nearest settlement name for the event message
-    let nearestSettlement = null;
-    let nearestDist = Infinity;
-    for (const s of (this.world.settlements || [])) {
-      const d = Math.abs(s.cx - impactX) + Math.abs(s.cy - impactY);
-      if (d < nearestDist) { nearestDist = d; nearestSettlement = s; }
+    // Nearby agents flee for 20 ticks
+    this._makeAgentsFlee(impactX, impactY, 15, 20);
+
+    const locName = this._nearestSettlementName(impactX, impactY);
+    const loc = locName ? `near ${locName}` : `at (${impactX}, ${impactY})`;
+    events.push({
+      tick, type: 'meteor_strike',
+      impactX, impactY, burnCount: targets.length,
+      message: targets.length > 0
+        ? `A meteor crashed ${loc}, setting ${targets.length} building${targets.length > 1 ? 's' : ''} ablaze!`
+        : `A meteor crashed ${loc}! No buildings were hit.`,
+    });
+    console.log(`[Chaos] METEOR at (${impactX},${impactY}) mult=${mult.toFixed(2)} burn=${targets.length}`);
+  }
+
+  // ─── WILDFIRE (ignition + spread) ───────────────────────────────────
+  // Spread does NOT scale with chaos multiplier — that would cause exponential
+  // chain reactions. Only ignition frequency scales. Spread runs every 5 ticks.
+  _chaosWildfire(tick, events, cs, mult) {
+    // Fire spread (throttled to every 5 ticks to prevent chain-reaction apocalypse)
+    if (tick % 5 === 0) {
+      const burning = this.world.buildingsList.filter(b => b.isComplete() && b.burning && b.workCost > 0);
+      const SPREAD_CHANCE = 0.10;          // fixed — does not scale with mult
+      const SPREAD_RADIUS = 4;
+      const MAX_SPREADS_PER_CHECK = 8;     // hard cap to prevent runaway fires
+      let spreadCount = 0;
+      for (const b of burning) {
+        if (spreadCount >= MAX_SPREADS_PER_CHECK) break;
+        if (Math.random() > SPREAD_CHANCE) continue;
+        const candidates = this.world._spatialIndex
+          ? this.world._spatialIndex.query(b.x, b.y, SPREAD_RADIUS).filter(c => c !== b && c.isComplete() && !c.burning && c.workCost > 0)
+          : [];
+        if (candidates.length === 0) continue;
+        const target = candidates[Math.floor(Math.random() * candidates.length)];
+        target.burning = true; target.hp = target.hp || 1.0;
+        if (!this.world._dirtyTiles) this.world._dirtyTiles = new Set();
+        this.world._dirtyTiles.add(`${target.x},${target.y}`);
+        spreadCount++;
+      }
+      if (spreadCount > 0) {
+        events.push({ tick, type: 'wildfire_spread',
+          message: `Wildfire spreads! ${spreadCount} more building${spreadCount > 1 ? 's' : ''} caught fire.` });
+      }
     }
 
-    const locationName = nearestSettlement && nearestDist < 30
-      ? `near ${nearestSettlement.name}` : `at (${impactX}, ${impactY})`;
+    // Fresh wildfire ignition (rate-gated by multiplier)
+    if (!this._chaosReady(tick, 'lastWildfire', cs, 400, 0.08, mult)) return;
+    const starter = this._randomCompletedBuilding();
+    if (!starter || starter.burning) return;
+    starter.burning = true; starter.hp = starter.hp || 1.0;
+    if (!this.world._dirtyTiles) this.world._dirtyTiles = new Set();
+    this.world._dirtyTiles.add(`${starter.x},${starter.y}`);
+    events.push({ tick, type: 'wildfire_started',
+      impactX: starter.x, impactY: starter.y,
+      message: `A wildfire ignites at the ${starter.name}!` });
+    console.log(`[Chaos] WILDFIRE start at ${starter.name} (${starter.x},${starter.y}) mult=${mult.toFixed(2)}`);
+  }
 
-    // Broadcast the meteor event (viewer uses this to play the animation)
+  // ─── LIGHTNING STRIKE (single building instant ignite) ──────────────
+  _chaosLightning(tick, events, cs, mult) {
+    if (!this._chaosReady(tick, 'lastLightning', cs, 100, 0.20, mult)) return;
+    const target = this._randomCompletedBuilding();
+    if (!target || target.burning) return;
+    target.burning = true;
+    target.hp = Math.max(0.3, (target.hp || 1.0) - 0.4);  // lightning does instant damage
+    if (!this.world._dirtyTiles) this.world._dirtyTiles = new Set();
+    this.world._dirtyTiles.add(`${target.x},${target.y}`);
+    const locName = this._nearestSettlementName(target.x, target.y);
     events.push({
-      tick,
-      type: 'meteor_strike',
-      impactX,
-      impactY,
-      burnCount: targets.length,
-      message: targets.length > 0
-        ? `A meteor crashed ${locationName}, setting ${targets.length} building${targets.length > 1 ? 's' : ''} ablaze!`
-        : `A meteor crashed ${locationName}! No buildings were hit.`,
+      tick, type: 'lightning_strike',
+      impactX: target.x, impactY: target.y,
+      message: `Lightning strikes the ${target.name}${locName ? ` in ${locName}` : ''}!`,
     });
+    console.log(`[Chaos] LIGHTNING ${target.name} (${target.x},${target.y}) mult=${mult.toFixed(2)}`);
+  }
 
-    console.log(`[Meteor] Strike at (${impactX},${impactY}) ${locationName} — ${targets.length} buildings burning`);
+  // ─── TORNADO (linear sweep destroys everything in path) ─────────────
+  _chaosTornado(tick, events, cs, mult) {
+    if (!this._chaosReady(tick, 'lastTornado', cs, 350, 0.10, mult)) return;
+
+    // Pick a random edge to spawn on, and a random direction across the map
+    const side = Math.floor(Math.random() * 4);  // 0=N, 1=E, 2=S, 3=W
+    let startX, startY, dirX, dirY;
+    const len = Math.floor(Math.max(this.world.width, this.world.height) * 0.7);
+    if (side === 0) { startX = Math.floor(Math.random() * this.world.width); startY = 0; dirX = 0; dirY = 1; }
+    else if (side === 1) { startX = this.world.width - 1; startY = Math.floor(Math.random() * this.world.height); dirX = -1; dirY = 0; }
+    else if (side === 2) { startX = Math.floor(Math.random() * this.world.width); startY = this.world.height - 1; dirX = 0; dirY = -1; }
+    else { startX = 0; startY = Math.floor(Math.random() * this.world.height); dirX = 1; dirY = 0; }
+
+    // Walk the tornado path, destroying buildings within 3 tiles of the line
+    const PATH_WIDTH = 3;
+    const destroyed = [];
+    for (let step = 0; step < len; step++) {
+      const px = startX + dirX * step + Math.floor(Math.sin(step * 0.3) * 2);  // wiggle
+      const py = startY + dirY * step + Math.floor(Math.cos(step * 0.3) * 2);
+      if (px < 0 || px >= this.world.width || py < 0 || py >= this.world.height) continue;
+      const nearby = this.world._spatialIndex
+        ? this.world._spatialIndex.query(px, py, PATH_WIDTH).filter(b => b.isComplete() && b.workCost > 0)
+        : [];
+      for (const b of nearby) {
+        if (destroyed.includes(b)) continue;
+        destroyed.push(b);
+      }
+      // Cap damage per tornado — scales slightly with chaos mult (8–15)
+      if (destroyed.length >= Math.floor(8 + mult)) break;
+    }
+
+    // Outright destroy buildings in the path (no fire)
+    for (const bld of destroyed) {
+      // Free tile ownership
+      const tile = this.world.tiles.get(`${bld.x},${bld.y}`);
+      const owner = this.world.agents.get(bld.owner);
+      if (tile) {
+        if (owner) {
+          if (tile.owner === owner.id) tile.owner = null;
+          if (owner.owned_tiles) owner.owned_tiles = owner.owned_tiles.filter(t => t !== `${bld.x},${bld.y}`);
+        } else {
+          tile.owner = null;
+        }
+      }
+      this._destroyBuilding(bld);
+    }
+
+    // Agents along the path flee
+    const midX = startX + dirX * Math.floor(len / 2);
+    const midY = startY + dirY * Math.floor(len / 2);
+    this._makeAgentsFlee(midX, midY, 20, 40);
+
+    events.push({
+      tick, type: 'tornado',
+      startX, startY, dirX, dirY, length: len, destroyedCount: destroyed.length,
+      message: `A tornado tears through the land! ${destroyed.length} building${destroyed.length !== 1 ? 's' : ''} destroyed!`,
+    });
+    console.log(`[Chaos] TORNADO from (${startX},${startY}) dir=(${dirX},${dirY}) destroyed=${destroyed.length} mult=${mult.toFixed(2)}`);
+  }
+
+  // ─── EARTHQUAKE (radius collapse) ───────────────────────────────────
+  _chaosEarthquake(tick, events, cs, mult) {
+    if (!this._chaosReady(tick, 'lastEarthquake', cs, 350, 0.10, mult)) return;
+
+    // Centered near a random building to maximize drama
+    const center = this._randomCompletedBuilding();
+    if (!center) return;
+    const RADIUS = 10;
+    const nearby = this.world._spatialIndex
+      ? this.world._spatialIndex.query(center.x, center.y, RADIUS).filter(b => b.isComplete() && b.workCost > 0)
+      : [];
+
+    // Each building has a 20% chance to collapse (cap scales with chaos mult: 8–14)
+    const maxCollapse = Math.floor(8 + mult);
+    const collapsed = [];
+    for (const bld of nearby) {
+      if (collapsed.length >= maxCollapse) break;
+      if (Math.random() < 0.20) collapsed.push(bld);
+    }
+
+    for (const bld of collapsed) {
+      const tile = this.world.tiles.get(`${bld.x},${bld.y}`);
+      const owner = this.world.agents.get(bld.owner);
+      if (tile) {
+        if (owner) {
+          if (tile.owner === owner.id) tile.owner = null;
+          if (owner.owned_tiles) owner.owned_tiles = owner.owned_tiles.filter(t => t !== `${bld.x},${bld.y}`);
+        } else {
+          tile.owner = null;
+        }
+      }
+      this._destroyBuilding(bld);
+    }
+
+    this._makeAgentsFlee(center.x, center.y, RADIUS + 3, 15);
+
+    const locName = this._nearestSettlementName(center.x, center.y);
+    events.push({
+      tick, type: 'earthquake',
+      impactX: center.x, impactY: center.y, radius: RADIUS, destroyedCount: collapsed.length,
+      message: `Earthquake ${locName ? `shakes ${locName}` : 'rocks the region'}! ${collapsed.length} building${collapsed.length !== 1 ? 's' : ''} collapsed!`,
+    });
+    console.log(`[Chaos] EARTHQUAKE at (${center.x},${center.y}) collapsed=${collapsed.length} mult=${mult.toFixed(2)}`);
+  }
+
+  // ─── VOLCANO (rare massive destruction) ─────────────────────────────
+  _chaosVolcano(tick, events, cs, mult) {
+    if (!this._chaosReady(tick, 'lastVolcano', cs, 2000, 0.04, mult)) return;
+
+    const center = this._randomCompletedBuilding();
+    if (!center) return;
+    const RADIUS = 18;
+    const nearby = this.world._spatialIndex
+      ? this.world._spatialIndex.query(center.x, center.y, RADIUS).filter(b => b.isComplete() && b.workCost > 0)
+      : [];
+
+    // Inner radius (6): instant destruction (cap 10). Outer ring: catch fire (cap 15).
+    const destroyed = [];
+    const ignited = [];
+    for (const bld of nearby) {
+      const d = Math.abs(bld.x - center.x) + Math.abs(bld.y - center.y);
+      if (d < 6 && destroyed.length < 10) destroyed.push(bld);
+      else if (!bld.burning && ignited.length < 15) ignited.push(bld);
+    }
+
+    for (const bld of destroyed) {
+      const tile = this.world.tiles.get(`${bld.x},${bld.y}`);
+      const owner = this.world.agents.get(bld.owner);
+      if (tile) {
+        if (owner) {
+          if (tile.owner === owner.id) tile.owner = null;
+          if (owner.owned_tiles) owner.owned_tiles = owner.owned_tiles.filter(t => t !== `${bld.x},${bld.y}`);
+        } else {
+          tile.owner = null;
+        }
+      }
+      this._destroyBuilding(bld);
+    }
+    for (const bld of ignited) {
+      bld.burning = true; bld.hp = bld.hp || 1.0;
+      if (!this.world._dirtyTiles) this.world._dirtyTiles = new Set();
+      this.world._dirtyTiles.add(`${bld.x},${bld.y}`);
+    }
+
+    this._makeAgentsFlee(center.x, center.y, RADIUS + 5, 60);
+
+    events.push({
+      tick, type: 'volcano',
+      impactX: center.x, impactY: center.y, radius: RADIUS,
+      destroyedCount: destroyed.length, ignitedCount: ignited.length,
+      message: `VOLCANIC ERUPTION! ${destroyed.length} buildings vaporized, ${ignited.length} more ablaze!`,
+    });
+    console.log(`[Chaos] VOLCANO at (${center.x},${center.y}) dest=${destroyed.length} ign=${ignited.length} mult=${mult.toFixed(2)}`);
+  }
+
+  // ─── PLAGUE (settlement-wide decay over time) ───────────────────────
+  _chaosPlague(tick, events, cs, mult) {
+    if (!this._chaosReady(tick, 'lastPlague', cs, 1200, 0.05, mult)) return;
+
+    const settlements = this.world.settlements || [];
+    if (settlements.length === 0) return;
+    const target = settlements[Math.floor(Math.random() * settlements.length)];
+    const RADIUS = 15;
+    const nearby = this.world._spatialIndex
+      ? this.world._spatialIndex.query(target.cx, target.cy, RADIUS).filter(b => b.isComplete() && b.workCost > 0)
+      : [];
+
+    // 25% of buildings in the settlement catch fire (cap 10 per plague)
+    const afflicted = [];
+    for (const bld of nearby) {
+      if (afflicted.length >= 10) break;
+      if (Math.random() < 0.25 && !bld.burning) afflicted.push(bld);
+    }
+    for (const bld of afflicted) {
+      bld.burning = true; bld.hp = bld.hp || 1.0;
+      if (!this.world._dirtyTiles) this.world._dirtyTiles = new Set();
+      this.world._dirtyTiles.add(`${bld.x},${bld.y}`);
+    }
+
+    events.push({
+      tick, type: 'plague',
+      impactX: target.cx, impactY: target.cy, settlementName: target.name,
+      afflictedCount: afflicted.length,
+      message: `A plague ravages ${target.name}! ${afflicted.length} buildings are rotting away.`,
+    });
+    console.log(`[Chaos] PLAGUE in ${target.name} afflicted=${afflicted.length} mult=${mult.toFixed(2)}`);
   }
 
   /**

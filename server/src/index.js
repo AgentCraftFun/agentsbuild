@@ -401,6 +401,72 @@ app.post('/api/meteor', (req, res) => {
   res.json({ success: true, impactX, impactY, buildingsBurning: targets.length, message: event.message });
 });
 
+// ─── Manual Chaos Trigger ───
+// Force any chaos event to fire immediately (bypasses cooldowns).
+// Usage: POST /api/chaos/:type  where type is one of:
+//   meteor, wildfire, lightning, tornado, earthquake, volcano, plague
+app.post('/api/chaos/:type', (req, res) => {
+  const type = (req.params.type || '').toLowerCase();
+  if (!gameLoop) return res.status(503).json({ error: 'Game loop not ready' });
+
+  // Initialize chaos state if needed
+  if (!worldState._chaosState) {
+    worldState._chaosState = { lastMeteor:0, lastWildfire:0, lastLightning:0, lastTornado:0, lastEarthquake:0, lastVolcano:0, lastPlague:0 };
+  }
+  const cs = worldState._chaosState;
+  const tick = worldState.tick || 0;
+  const events = worldState.events || [];
+
+  // Reset the cooldown for this event type so it fires immediately.
+  // Use a very negative value and force mult to a huge number to bypass the chance roll.
+  const lastKey = {
+    meteor:'lastMeteor', wildfire:'lastWildfire', lightning:'lastLightning',
+    tornado:'lastTornado', earthquake:'lastEarthquake', volcano:'lastVolcano', plague:'lastPlague',
+  }[type];
+  if (!lastKey) {
+    return res.status(400).json({ error: `Unknown chaos type '${type}'. Valid: meteor, wildfire, lightning, tornado, earthquake, volcano, plague` });
+  }
+
+  const buildingsBefore = worldState.buildingsList.length;
+  const eventsBefore = events.length;
+  cs[lastKey] = -999999; // reset cooldown
+
+  // Force-fire by using a huge multiplier (ensures chance roll passes) and catching
+  // the exact number of events generated so we can report accurately.
+  const FORCE_MULT = 999;
+  const fireFn = {
+    meteor: '_chaosMeteor',
+    wildfire: '_chaosWildfire',
+    lightning: '_chaosLightning',
+    tornado: '_chaosTornado',
+    earthquake: '_chaosEarthquake',
+    volcano: '_chaosVolcano',
+    plague: '_chaosPlague',
+  }[type];
+
+  // Retry up to 10 times in case of bad RNG (event early-returns)
+  let fired = false;
+  for (let attempt = 0; attempt < 10; attempt++) {
+    const eventsLenBefore = events.length;
+    cs[lastKey] = -999999;
+    gameLoop[fireFn](tick, events, cs, FORCE_MULT);
+    if (events.length > eventsLenBefore) { fired = true; break; }
+  }
+
+  const buildingsAfter = worldState.buildingsList.length;
+  const newEvents = events.slice(eventsBefore);
+
+  res.json({
+    success: fired,
+    type,
+    tick,
+    buildingsBefore,
+    buildingsAfter,
+    buildingsDestroyed: buildingsBefore - buildingsAfter,
+    newEvents: newEvents.map(e => ({ type: e.type, message: e.message })),
+  });
+});
+
 // ─── Emergency Cleanup Endpoint ───
 // Destroys buildings owned by:
 //   (a) agents who haven't acted in N ticks, OR
