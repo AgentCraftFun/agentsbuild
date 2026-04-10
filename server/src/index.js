@@ -149,6 +149,15 @@ worldState._spatialIndex = new SpatialIndex();
 worldState._spatialIndex.rebuild(worldState.buildingsList);
 console.log(`[Server] Spatial index built: ${worldState._spatialIndex.size()} buildings`);
 
+// ─── Payment Infrastructure (Phase 1) ───
+const ActionRegistry = require('./services/ActionRegistry');
+const ActionCatalog = require('./services/ActionCatalog');
+const TxVerifier = require('./services/TxVerifier');
+const ACTIONS_FILE = path.join(VOLUME_PATH, 'actions.json');
+const actionRegistry = new ActionRegistry({ filePath: ACTIONS_FILE });
+actionRegistry.load();
+console.log(`[Server] Action registry: ${actionRegistry.getStats().totalRecorded} recorded`);
+
 
 // ─── Express App ───
 
@@ -343,6 +352,125 @@ app.post('/api/agents/deploy', (req, res) => {
  */
 app.get('/api/agents/llm-status', (req, res) => {
   res.json({ agents: llmBrain.getRegisteredAgents() });
+});
+
+// ─── Paid Actions ($AGENTCRAFT utility) ───
+//
+// POST /api/action with body: { txHash, action, params? }
+//
+// Flow:
+//   1. Validate body + action exists in catalog
+//   2. Atomically claim txHash in the registry (prevents double-spend)
+//   3. Verify on-chain payment via TxVerifier (checks Base RPC)
+//   4. On failure → release claim + return error
+//   5. On success → dispatch action, record in registry, return result
+//
+// The client NEVER calls Base RPC — only this server-side path does.
+app.post('/api/action', async (req, res) => {
+  const body = req.body || {};
+  const txHash = typeof body.txHash === 'string' ? body.txHash.trim() : '';
+  const actionName = typeof body.action === 'string' ? body.action.toLowerCase().trim() : '';
+  const params = body.params && typeof body.params === 'object' ? body.params : {};
+
+  // ── 1. Basic validation ──
+  if (!txHash || !actionName) {
+    return res.status(400).json({ ok: false, error: 'txHash and action are required' });
+  }
+  if (!TxVerifier.isValidTxHash(txHash)) {
+    return res.status(400).json({ ok: false, error: 'Invalid transaction hash format' });
+  }
+
+  // ── 2. Look up the action ──
+  const actionDef = ActionCatalog.get(actionName);
+  if (!actionDef) {
+    return res.status(400).json({ ok: false, error: `Unknown action: ${actionName}` });
+  }
+
+  // ── 3. Atomic claim (prevents double-spend across concurrent requests) ──
+  if (!actionRegistry.claim(txHash)) {
+    // Could be pending verification by another request OR already permanently recorded.
+    const prior = actionRegistry.getEntry(txHash);
+    if (prior) {
+      return res.status(409).json({
+        ok: false,
+        error: 'Transaction already used',
+        previousAction: prior.action,
+        previousAt: prior.appliedAt,
+      });
+    }
+    return res.status(409).json({ ok: false, error: 'Transaction is being processed by another request' });
+  }
+
+  // ── 4. Verify payment on-chain ──
+  let verification;
+  try {
+    verification = await TxVerifier.verifyPayment(txHash, actionDef.price);
+  } catch (err) {
+    actionRegistry.release(txHash);
+    console.error('[API /action] verifier error:', err.message);
+    return res.status(502).json({ ok: false, error: `Verification error: ${err.message}` });
+  }
+  if (!verification.ok) {
+    actionRegistry.release(txHash);
+    return res.status(402).json({
+      ok: false,
+      error: verification.reason,
+      required: actionDef.price,
+      paid: verification.amount || null,
+    });
+  }
+
+  // ── 5. Dispatch the action ──
+  let dispatchResult;
+  try {
+    const ctx = {
+      worldState,
+      gameLoop,
+      from: verification.from,
+      txHash: verification.txHash,
+      amount: verification.amount,
+      tick: worldState.tick || 0,
+    };
+    dispatchResult = await actionDef.dispatch(ctx, params);
+  } catch (err) {
+    actionRegistry.release(txHash);
+    console.error(`[API /action] dispatch error for ${actionName}:`, err.stack || err.message);
+    return res.status(500).json({ ok: false, error: `Dispatch failed: ${err.message}` });
+  }
+
+  // ── 6. Record permanent entry ──
+  actionRegistry.record({
+    txHash: verification.txHash,
+    action: actionName,
+    amount: verification.amount,
+    from: verification.from,
+    appliedAt: Date.now(),
+    tick: worldState.tick || 0,
+    result: dispatchResult,
+    params,
+  });
+
+  console.log(`[API /action] ${actionName} by ${verification.from} tx=${verification.txHash} amount=${verification.amount}`);
+
+  return res.json({
+    ok: true,
+    action: actionName,
+    txHash: verification.txHash,
+    from: verification.from,
+    amount: verification.amount,
+    tick: worldState.tick || 0,
+    result: dispatchResult,
+  });
+});
+
+// GET /api/action — list available actions and prices
+app.get('/api/action', (req, res) => {
+  res.json({
+    actions: ActionCatalog.list(),
+    treasury: TxVerifier._internals.TREASURY_ADDRESS,
+    token: TxVerifier._internals.AGENTCRAFT_TOKEN,
+    stats: actionRegistry.getStats(),
+  });
 });
 
 // ─── Manual Meteor Trigger ───
@@ -933,6 +1061,7 @@ function shutdown(signal) {
   console.log(`\n[Server] ${signal} received. Saving state and shutting down...`);
   clearInterval(_saveInterval);
   saveWorldState(worldState);
+  try { actionRegistry.flushSync(); } catch (e) { console.error('[Shutdown] action registry flush failed:', e.message); }
   gameLoop.stop();
   wss.clients.forEach(ws => ws.close());
   wss.close();
