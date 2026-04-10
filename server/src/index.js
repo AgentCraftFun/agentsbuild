@@ -153,10 +153,18 @@ console.log(`[Server] Spatial index built: ${worldState._spatialIndex.size()} bu
 const ActionRegistry = require('./services/ActionRegistry');
 const ActionCatalog = require('./services/ActionCatalog');
 const TxVerifier = require('./services/TxVerifier');
+const PaidActions = require('./services/PaidActions');
 const ACTIONS_FILE = path.join(VOLUME_PATH, 'actions.json');
 const actionRegistry = new ActionRegistry({ filePath: ACTIONS_FILE });
 actionRegistry.load();
 console.log(`[Server] Action registry: ${actionRegistry.getStats().totalRecorded} recorded`);
+
+// Register paid chaos actions (Phase 2).
+// Start with lightning only, add others after end-to-end testing in prod.
+// To add more: edit the list below and redeploy.
+const enabledPaidActions = (process.env.ENABLED_PAID_ACTIONS || 'lightning').split(',').map(s => s.trim()).filter(Boolean);
+const registered = PaidActions.register(ActionCatalog, enabledPaidActions);
+console.log(`[Server] Paid actions enabled: ${registered.join(', ')}`);
 
 
 // ─── Express App ───
@@ -412,11 +420,15 @@ app.post('/api/action', async (req, res) => {
   }
   if (!verification.ok) {
     actionRegistry.release(txHash);
-    return res.status(402).json({
+    // Transient errors (RPC down, timeout) → 502 so client shows "try again"
+    // All other failures (not found, insufficient, wrong token) → 402
+    const statusCode = verification.transient ? 502 : 402;
+    return res.status(statusCode).json({
       ok: false,
       error: verification.reason,
       required: actionDef.price,
       paid: verification.amount || null,
+      transient: !!verification.transient,
     });
   }
 

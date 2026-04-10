@@ -135,12 +135,16 @@ async function verifyPayment(txHash, requiredAmount) {
   try {
     receipt = await getClient().getTransactionReceipt({ hash: txHash });
   } catch (err) {
-    // viem throws TransactionReceiptNotFoundError if tx doesn't exist / unconfirmed
+    // viem throws TransactionReceiptNotFoundError if tx doesn't exist / unconfirmed.
+    // Everything else (HTTP errors, timeouts, 5xx, DNS) is a transient RPC failure
+    // and should be retryable by the user — we mark it with `transient: true` so
+    // the endpoint returns 502 instead of 402.
     const msg = err.shortMessage || err.message || String(err);
-    if (msg.toLowerCase().includes('not found') || msg.toLowerCase().includes('could not be found')) {
+    const lower = msg.toLowerCase();
+    if (lower.includes('not found') || lower.includes('could not be found')) {
       return { ok: false, reason: 'Transaction not found or not yet confirmed' };
     }
-    return { ok: false, reason: `RPC error: ${msg}` };
+    return { ok: false, transient: true, reason: `RPC error: ${msg}` };
   }
 
   if (!receipt) {

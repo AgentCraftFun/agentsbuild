@@ -1151,6 +1151,96 @@ class GameLoop {
     console.log(`[Chaos] PLAGUE in ${target.name} afflicted=${afflicted.length} mult=${mult.toFixed(2)}`);
   }
 
+  // ─── FORCED CHAOS TRIGGER (for admin + paid actions) ────────────────
+  //
+  // Force-fire a specific chaos event, bypassing cooldowns and probability.
+  // Used by:
+  //   - POST /api/chaos/:type  (admin test endpoint)
+  //   - POST /api/action       (paid $AGENTCRAFT actions — Phase 2)
+  //
+  // Works by:
+  //   1. Resetting the per-type cooldown to way in the past
+  //   2. Using a FORCE_MULT = 999 so the effective chance hits the 0.9 cap
+  //   3. Retrying up to 10 times in case of the remaining 10% RNG miss
+  //      or an early-return (e.g. no target found)
+  //
+  // Returns a result object describing what the event did:
+  //   { ok, type, event, buildingsDestroyed, attemptedEvents, tick }
+  // or { ok: false, reason } on total failure.
+  triggerChaosAction(type) {
+    if (!this.world._chaosState) {
+      this.world._chaosState = {
+        lastMeteor: 0, lastWildfire: 0, lastLightning: 0, lastTornado: 0,
+        lastEarthquake: 0, lastVolcano: 0, lastPlague: 0,
+      };
+    }
+    const cs = this.world._chaosState;
+    const tick = this.world.tick || 0;
+
+    const fireMap = {
+      meteor:     { fn: '_chaosMeteor',     key: 'lastMeteor' },
+      wildfire:   { fn: '_chaosWildfire',   key: 'lastWildfire' },
+      lightning:  { fn: '_chaosLightning',  key: 'lastLightning' },
+      tornado:    { fn: '_chaosTornado',    key: 'lastTornado' },
+      earthquake: { fn: '_chaosEarthquake', key: 'lastEarthquake' },
+      volcano:    { fn: '_chaosVolcano',    key: 'lastVolcano' },
+      plague:     { fn: '_chaosPlague',     key: 'lastPlague' },
+    };
+    const spec = fireMap[String(type || '').toLowerCase()];
+    if (!spec) {
+      return { ok: false, reason: `Unknown chaos type: ${type}` };
+    }
+
+    const buildingsBefore = this.world.buildingsList.length;
+    const collectedEvents = [];
+    const FORCE_MULT = 999;
+
+    // Retry up to 10 times in case of RNG miss or early return (no target etc.)
+    let fired = false;
+    for (let attempt = 0; attempt < 10; attempt++) {
+      const before = collectedEvents.length;
+      cs[spec.key] = -999999;  // reset cooldown
+      try {
+        this[spec.fn](tick, collectedEvents, cs, FORCE_MULT);
+      } catch (err) {
+        console.error(`[triggerChaosAction] ${type} threw:`, err.stack || err.message);
+        return { ok: false, reason: `Chaos dispatch failed: ${err.message}` };
+      }
+      if (collectedEvents.length > before) { fired = true; break; }
+    }
+
+    if (!fired) {
+      return { ok: false, reason: `Could not fire ${type} — no valid target or RNG miss` };
+    }
+
+    // The primary event is the first one generated (wildfire_spread is secondary)
+    const primaryEvent = collectedEvents.find(e =>
+      e.type && !e.type.endsWith('_spread')
+    ) || collectedEvents[0];
+
+    // Push events into worldState.events so they're broadcast to the viewer
+    if (!this.world.events) this.world.events = [];
+    for (const ev of collectedEvents) {
+      this.world.events.push(ev);
+    }
+
+    const buildingsAfter = this.world.buildingsList.length;
+
+    return {
+      ok: true,
+      type,
+      event: primaryEvent,
+      allEvents: collectedEvents.map(e => ({
+        type: e.type,
+        message: e.message,
+        impactX: e.impactX,
+        impactY: e.impactY,
+      })),
+      buildingsDestroyed: buildingsBefore - buildingsAfter,
+      tick,
+    };
+  }
+
   /**
    * Destroy a building cleanly: unlink from tile, remove from owner's list,
    * remove from buildingsList, remove from spatial index.

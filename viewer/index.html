@@ -214,8 +214,9 @@ setTimeout(function(){var io=document.getElementById('intro-overlay');if(io)io.r
       <div id="odds-yes-pct" style="display:none"></div>
       <div id="odds-no-pct" style="display:none"></div>
     </div>
-    <div id="deploy-section" style="border-top:1px solid var(--border);padding:8px 12px">
+    <div id="deploy-section" style="border-top:1px solid var(--border);padding:8px 12px;display:flex;flex-direction:column;gap:6px">
       <button id="deploy-btn" style="width:100%;padding:8px;background:linear-gradient(135deg,#f0c040,#dd8833);color:#0a0a14;font-family:'Courier New',monospace;font-weight:bold;font-size:11px;border:none;border-radius:4px;cursor:pointer;letter-spacing:1px;text-transform:uppercase">🚀 Deploy Agent</button>
+      <button id="influence-btn" style="width:100%;padding:8px;background:linear-gradient(135deg,#aa44cc,#4488ff);color:#fff;font-family:'Courier New',monospace;font-weight:bold;font-size:11px;border:none;border-radius:4px;cursor:pointer;letter-spacing:1px;text-transform:uppercase">⚡ Influence World</button>
     </div>
   </div>
   <div id="bottom-bar">
@@ -324,6 +325,56 @@ setTimeout(function(){var io=document.getElementById('intro-overlay');if(io)io.r
       </div>
       <button class="deploy-submit" onclick="deployImportAgent()">Connect & Deploy</button>
       <div id="import-status" class="deploy-status"></div>
+    </div>
+  </div>
+</div>
+
+<!-- INFLUENCE WORLD MODAL (paid chaos actions) -->
+<div id="influence-modal" style="display:none;position:fixed;top:0;left:0;right:0;bottom:0;z-index:900;background:rgba(5,5,20,0.85);align-items:center;justify-content:center">
+  <div class="deploy-box" style="border-color:#aa44cc;box-shadow:0 0 60px rgba(170,68,204,0.2)">
+    <div class="deploy-header" style="border-bottom-color:#3a1a4e">
+      <h2 style="color:#d088ff">⚡ INFLUENCE WORLD</h2>
+      <button class="deploy-close" onclick="closeInfluenceModal()">&times;</button>
+    </div>
+    <div id="influence-list-view" style="padding:16px 20px">
+      <div style="font-size:11px;color:#aaa;margin-bottom:14px;line-height:1.5">
+        Pay $AGENTCRAFT to unleash chaos on the world. Each action fires a real disaster that destroys buildings and creates drama for every viewer.
+      </div>
+      <div id="influence-actions-list" style="display:flex;flex-direction:column;gap:8px"></div>
+      <div id="influence-list-status" style="font-size:10px;color:#666;text-align:center;margin-top:10px">Loading available actions...</div>
+    </div>
+
+    <!-- Payment view (shown after clicking an action) -->
+    <div id="influence-pay-view" style="display:none;padding:16px 20px">
+      <button onclick="showInfluenceList()" style="background:none;border:none;color:#888;font-size:10px;cursor:pointer;margin-bottom:12px;font-family:'Courier New',monospace">← back to list</button>
+      <div style="background:#080812;border:1px solid #2a2a4e;border-radius:6px;padding:14px;margin-bottom:14px">
+        <div id="influence-pay-icon" style="font-size:28px;text-align:center;margin-bottom:6px"></div>
+        <div id="influence-pay-label" style="color:#d088ff;font-size:14px;font-weight:bold;text-align:center;margin-bottom:4px"></div>
+        <div id="influence-pay-desc" style="font-size:11px;color:#aaa;text-align:center;line-height:1.5"></div>
+      </div>
+
+      <div class="deploy-field">
+        <label>Step 1 — Send this amount</label>
+        <div style="background:#080812;border:1px solid #2a2a4e;border-radius:4px;padding:10px;font-size:16px;color:#f0c040;text-align:center"><span id="influence-pay-price"></span> $AGENTCRAFT</div>
+      </div>
+
+      <div class="deploy-field">
+        <label>Step 2 — Send to this address on Base</label>
+        <div style="display:flex;gap:4px">
+          <input id="influence-treasury-addr" type="text" readonly style="flex:1;font-size:10px;color:#d088ff">
+          <button id="influence-copy-btn" onclick="copyInfluenceTreasury()" style="padding:8px 12px;background:#2a2a4e;border:1px solid #4a4a6e;color:#c8c8d8;font-family:'Courier New',monospace;font-size:10px;border-radius:4px;cursor:pointer">COPY</button>
+        </div>
+        <div class="hint">Open your wallet (MetaMask, Coinbase, Rabby) and send the exact amount above.</div>
+      </div>
+
+      <div class="deploy-field">
+        <label>Step 3 — Paste the transaction hash</label>
+        <input id="influence-tx-input" type="text" placeholder="0x..." autocomplete="off" spellcheck="false" style="font-size:11px">
+        <div class="hint">Copy the hash from Basescan after your payment confirms.</div>
+      </div>
+
+      <button id="influence-confirm-btn" class="deploy-submit" onclick="submitInfluenceAction()" style="background:linear-gradient(135deg,#aa44cc,#4488ff);color:#fff">Unleash the Chaos</button>
+      <div id="influence-pay-status" class="deploy-status"></div>
     </div>
   </div>
 </div>
@@ -6856,6 +6907,176 @@ document.getElementById('deploy-btn').addEventListener('click',()=>{
 document.getElementById('deploy-modal').addEventListener('click',e=>{
   if(e.target.id==='deploy-modal')e.target.classList.remove('open');
 });
+
+// ═════════════════════════════════════════════════════════════
+//                   INFLUENCE WORLD MODAL
+// ═════════════════════════════════════════════════════════════
+// Phase 2: Paid chaos actions funded by $AGENTCRAFT tokens.
+// Flow:
+//   1. User clicks "Influence World" button → modal opens
+//   2. Fetch /api/action → show list of available actions + prices
+//   3. User clicks an action → payment view with treasury address
+//   4. User sends tokens in their wallet, pastes tx hash
+//   5. POST /api/action → server verifies on-chain + dispatches effect
+//   6. Success → drama banner appears for everyone watching the world
+
+var _influenceSelectedAction = null;
+var _influenceCatalogFetched = false;
+var _influenceActionsData = null;
+
+document.getElementById('influence-btn').addEventListener('click', function() {
+  document.getElementById('influence-modal').style.display = 'flex';
+  showInfluenceList();
+  loadInfluenceActions();
+});
+
+document.getElementById('influence-modal').addEventListener('click', function(e) {
+  if (e.target.id === 'influence-modal') closeInfluenceModal();
+});
+
+function closeInfluenceModal() {
+  document.getElementById('influence-modal').style.display = 'none';
+  // Clear input state so next open is fresh
+  var input = document.getElementById('influence-tx-input');
+  if (input) input.value = '';
+  var status = document.getElementById('influence-pay-status');
+  if (status) { status.textContent = ''; status.className = 'deploy-status'; }
+}
+
+function showInfluenceList() {
+  document.getElementById('influence-list-view').style.display = 'block';
+  document.getElementById('influence-pay-view').style.display = 'none';
+  _influenceSelectedAction = null;
+}
+
+function loadInfluenceActions() {
+  // Fetch the action catalog from the server. Includes price + treasury address.
+  fetch('/api/action').then(function(r) { return r.json(); }).then(function(data) {
+    _influenceActionsData = data;
+    _influenceCatalogFetched = true;
+    var listEl = document.getElementById('influence-actions-list');
+    var status = document.getElementById('influence-list-status');
+    listEl.innerHTML = '';
+    // Only show paid chaos actions (filter out the test 'echo' placeholder)
+    var paidActions = (data.actions || []).filter(function(a) { return a.name !== 'echo'; });
+    if (paidActions.length === 0) {
+      status.textContent = 'No paid actions available yet.';
+      return;
+    }
+    // Action display metadata (icons + fallback labels)
+    var meta = {
+      lightning:  { emoji:'⚡', label:'Lightning Strike', color:'#aaccff' },
+      wildfire:   { emoji:'🔥', label:'Wildfire',         color:'#ff6644' },
+      earthquake: { emoji:'💥', label:'Earthquake',       color:'#cc8844' },
+      tornado:    { emoji:'🌪️', label:'Tornado',          color:'#aaaaaa' },
+      meteor:     { emoji:'☄️', label:'Meteor Strike',    color:'#ff8800' },
+      plague:     { emoji:'☠️', label:'Plague',           color:'#44aa44' },
+      volcano:    { emoji:'🌋', label:'Volcanic Eruption',color:'#ff2200' },
+    };
+    for (var i = 0; i < paidActions.length; i++) {
+      var a = paidActions[i];
+      var m = meta[a.name] || { emoji:'?', label:a.name, color:'#888' };
+      var btn = document.createElement('button');
+      btn.className = 'influence-action-btn';
+      btn.style.cssText = 'display:flex;align-items:center;gap:12px;padding:12px;background:#080812;border:1px solid #2a2a4e;border-radius:6px;cursor:pointer;text-align:left;font-family:Courier New,monospace;color:#c8c8d8;transition:all 0.15s';
+      btn.onmouseenter = function() { this.style.borderColor = '#aa44cc'; this.style.background = '#120c1e'; };
+      btn.onmouseleave = function() { this.style.borderColor = '#2a2a4e'; this.style.background = '#080812'; };
+      btn.innerHTML =
+        '<div style="font-size:24px">' + m.emoji + '</div>' +
+        '<div style="flex:1">' +
+          '<div style="font-size:12px;font-weight:bold;color:' + m.color + '">' + m.label + '</div>' +
+          '<div style="font-size:9px;color:#888;margin-top:2px">' + (a.description || '') + '</div>' +
+        '</div>' +
+        '<div style="font-size:11px;color:#f0c040;font-weight:bold;white-space:nowrap">' + a.price + ' $AC</div>';
+      btn.dataset.action = a.name;
+      btn.onclick = (function(actionName, meta, price, desc) {
+        return function() { selectInfluenceAction(actionName, meta, price, desc); };
+      })(a.name, m, a.price, a.description);
+      listEl.appendChild(btn);
+    }
+    status.textContent = paidActions.length + ' action' + (paidActions.length === 1 ? '' : 's') + ' available';
+  }).catch(function(err) {
+    var status = document.getElementById('influence-list-status');
+    status.textContent = 'Failed to load actions: ' + err.message;
+    status.className = 'deploy-status err';
+  });
+}
+
+function selectInfluenceAction(name, meta, price, desc) {
+  _influenceSelectedAction = name;
+  document.getElementById('influence-list-view').style.display = 'none';
+  document.getElementById('influence-pay-view').style.display = 'block';
+  document.getElementById('influence-pay-icon').textContent = meta.emoji;
+  document.getElementById('influence-pay-label').textContent = meta.label;
+  document.getElementById('influence-pay-desc').textContent = desc;
+  document.getElementById('influence-pay-price').textContent = price;
+  document.getElementById('influence-treasury-addr').value = _influenceActionsData.treasury || '';
+  document.getElementById('influence-tx-input').value = '';
+  var status = document.getElementById('influence-pay-status');
+  status.textContent = '';
+  status.className = 'deploy-status';
+}
+
+function copyInfluenceTreasury() {
+  var input = document.getElementById('influence-treasury-addr');
+  input.select();
+  try {
+    document.execCommand('copy');
+    var btn = document.getElementById('influence-copy-btn');
+    var orig = btn.textContent;
+    btn.textContent = 'COPIED';
+    setTimeout(function() { btn.textContent = orig; }, 1500);
+  } catch (e) {
+    // Fall back to modern API if execCommand failed
+    if (navigator.clipboard) navigator.clipboard.writeText(input.value);
+  }
+}
+
+function submitInfluenceAction() {
+  var status = document.getElementById('influence-pay-status');
+  var confirmBtn = document.getElementById('influence-confirm-btn');
+  var txHash = (document.getElementById('influence-tx-input').value || '').trim();
+  if (!txHash) {
+    status.className = 'deploy-status err';
+    status.textContent = 'Please paste your transaction hash';
+    return;
+  }
+  if (!/^0x[0-9a-fA-F]{64}$/.test(txHash)) {
+    status.className = 'deploy-status err';
+    status.textContent = 'Invalid tx hash format (must be 0x + 64 hex chars)';
+    return;
+  }
+  if (!_influenceSelectedAction) {
+    status.className = 'deploy-status err';
+    status.textContent = 'No action selected';
+    return;
+  }
+  status.className = 'deploy-status';
+  status.textContent = 'Verifying payment on Base...';
+  confirmBtn.disabled = true;
+  fetch('/api/action', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ txHash: txHash, action: _influenceSelectedAction }),
+  }).then(function(r) {
+    return r.json().then(function(body) { return { status: r.status, body: body }; });
+  }).then(function(res) {
+    confirmBtn.disabled = false;
+    if (res.status === 200 && res.body.ok) {
+      status.className = 'deploy-status';
+      status.textContent = '✓ Chaos unleashed! Watch the world.';
+      // Close the modal after a short delay so the player sees the effect
+      setTimeout(closeInfluenceModal, 2000);
+    } else {
+      status.className = 'deploy-status err';
+      status.textContent = res.body.error || ('Request failed (' + res.status + ')');
+    }
+  }).catch(function(err) {
+    confirmBtn.disabled = false;
+    status.className = 'deploy-status err';
+    status.textContent = 'Network error: ' + err.message;
+  });
+}
 
 function switchDeployTab(panel){
   document.querySelectorAll('.deploy-tab').forEach(t=>t.classList.toggle('active',t.dataset.panel===panel));
