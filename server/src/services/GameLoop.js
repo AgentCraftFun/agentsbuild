@@ -801,23 +801,34 @@ class GameLoop {
       if (bld.workCost === 0) continue;     // skip HQ buildings (town halls, etc.)
 
       const owner = this.world.agents.get(bld.owner);
-      // Owner doesn't exist in agent map (e.g., 'settlement_0' HQ owner) → skip
-      if (!owner) continue;
+      // Orphaned: owner no longer exists in the agent map (dead/deleted agents).
+      // These are the real zombies clogging the world. Skip settlement HQ owners
+      // (string IDs like "settlement_0") since workCost=0 already filtered them out.
+      const isOrphaned = !owner && typeof bld.owner === 'string' && !bld.owner.startsWith('settlement_');
+      const ticksSinceActive = owner ? (tick - (owner.last_action_tick || 0)) : Infinity;
+      const isAbandoned = isOrphaned || ticksSinceActive > ABANDONED_THRESHOLD_TICKS;
 
-      const ticksSinceActive = tick - (owner.last_action_tick || 0);
-      const isAbandoned = ticksSinceActive > ABANDONED_THRESHOLD_TICKS;
+      // Settlement-owned HQs were already filtered by workCost check; if owner is missing
+      // and we're NOT treating it as orphaned, skip to avoid touching intentional nulls.
+      if (!owner && !isOrphaned) continue;
 
       if (isAbandoned) {
         bld.hp = (bld.hp || 1.0) - ABANDONED_DECAY_PER_CHECK;
         abandonedCount++;
         if (bld.hp <= DECAY_HP_THRESHOLD) {
-          // Free the tile ownership so new settlers can claim it
+          // Free the tile ownership so new settlers can claim it.
+          // For orphaned buildings, owner is null — just clear the tile owner directly.
           const tileId = `${bld.x},${bld.y}`;
           const tile = this.world.tiles.get(tileId);
-          if (tile && tile.owner === owner.id) {
-            tile.owner = null;
-            if (owner.owned_tiles && Array.isArray(owner.owned_tiles)) {
-              owner.owned_tiles = owner.owned_tiles.filter(t => t !== tileId);
+          if (tile) {
+            if (owner) {
+              if (tile.owner === owner.id) tile.owner = null;
+              if (owner.owned_tiles && Array.isArray(owner.owned_tiles)) {
+                owner.owned_tiles = owner.owned_tiles.filter(t => t !== tileId);
+              }
+            } else {
+              // Orphaned: just null out the tile owner regardless
+              tile.owner = null;
             }
           }
           this._destroyBuilding(bld, i);

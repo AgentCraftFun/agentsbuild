@@ -402,9 +402,11 @@ app.post('/api/meteor', (req, res) => {
 });
 
 // ─── Emergency Cleanup Endpoint ───
-// Destroys buildings owned by agents who haven't acted in N ticks.
+// Destroys buildings owned by:
+//   (a) agents who haven't acted in N ticks, OR
+//   (b) orphaned owner IDs (agents no longer in the world — "zombie buildings")
 // Protected by ADMIN_TOKEN env var to prevent abuse.
-// Usage: POST /api/cleanup?threshold=1000  (body: {token: "..."})
+// Usage: POST /api/cleanup?threshold=1000&orphansOnly=false&percent=0
 app.post('/api/cleanup', (req, res) => {
   const adminToken = process.env.ADMIN_TOKEN;
   const providedToken = (req.body && req.body.token) || req.query.token;
@@ -415,9 +417,12 @@ app.post('/api/cleanup', (req, res) => {
   // Default: remove buildings of agents inactive for 1000+ ticks
   const threshold = parseInt(req.query.threshold || (req.body && req.body.threshold) || 1000, 10);
   const dryRun = (req.query.dryRun === 'true') || (req.body && req.body.dryRun === true);
+  const orphansOnly = (req.query.orphansOnly === 'true') || (req.body && req.body.orphansOnly === true);
+  // Optional: destroy a random PERCENT of all non-HQ buildings (for mass extinction events)
+  const percent = Math.max(0, Math.min(100, parseInt(req.query.percent || (req.body && req.body.percent) || 0, 10)));
   const tick = worldState.tick || 0;
 
-  // Find inactive agents
+  // Find inactive agents (still alive in the map)
   const inactiveAgentIds = new Set();
   const inactiveInfo = [];
   for (const agent of worldState.agents.values()) {
@@ -428,34 +433,66 @@ app.post('/api/cleanup', (req, res) => {
     }
   }
 
+  // Find orphaned owner IDs — building owners that aren't in the agent map
+  // AND aren't the special 'settlement_*' HQ owner format
+  const orphanedOwnerIds = new Set();
+  for (const b of worldState.buildingsList) {
+    if (typeof b.owner !== 'string') continue;
+    if (b.owner.startsWith('settlement_')) continue;
+    if (!worldState.agents.has(b.owner)) orphanedOwnerIds.add(b.owner);
+  }
+
   // Find buildings to destroy
-  const toDestroy = worldState.buildingsList.filter(b =>
-    b.isComplete() && b.workCost > 0 && inactiveAgentIds.has(b.owner)
-  );
+  let toDestroy = worldState.buildingsList.filter(b => {
+    if (!b.isComplete() || b.workCost === 0) return false;  // skip under-construction and HQs
+    if (orphanedOwnerIds.has(b.owner)) return true;         // orphans always destroyed
+    if (orphansOnly) return false;                          // orphansOnly skips inactive-agent buildings
+    return inactiveAgentIds.has(b.owner);                   // inactive agents' buildings
+  });
+
+  // Mass extinction: destroy a random percent of ALL non-HQ buildings
+  // (This is the nuclear option — use when percent > 0)
+  if (percent > 0 && !orphansOnly) {
+    const all = worldState.buildingsList.filter(b =>
+      b.isComplete() && b.workCost > 0 && !toDestroy.includes(b)
+    );
+    const shuffled = all.slice().sort(() => Math.random() - 0.5);
+    const numRandom = Math.floor(all.length * (percent / 100));
+    toDestroy = toDestroy.concat(shuffled.slice(0, numRandom));
+  }
 
   if (dryRun) {
     return res.json({
       dryRun: true,
       tick,
       threshold,
+      orphansOnly,
+      percent,
       inactiveAgentCount: inactiveAgentIds.size,
+      orphanedOwnerCount: orphanedOwnerIds.size,
       buildingsWouldDestroy: toDestroy.length,
       totalBuildingsBefore: worldState.buildingsList.length,
-      sampleAgents: inactiveInfo.slice(0, 10),
+      sampleInactiveAgents: inactiveInfo.slice(0, 10),
+      sampleOrphanedOwners: [...orphanedOwnerIds].slice(0, 10),
     });
   }
 
   // Actually destroy them
   let destroyed = 0;
   for (const bld of toDestroy) {
-    // Free the tile ownership
+    // Free the tile ownership (works for both active and orphaned owners)
     const tileId = `${bld.x},${bld.y}`;
     const tile = worldState.tiles.get(tileId);
     const owner = worldState.agents.get(bld.owner);
-    if (tile && owner && tile.owner === owner.id) {
-      tile.owner = null;
-      if (owner.owned_tiles && Array.isArray(owner.owned_tiles)) {
-        owner.owned_tiles = owner.owned_tiles.filter(t => t !== tileId);
+    if (tile) {
+      if (owner) {
+        if (tile.owner === owner.id) tile.owner = null;
+        if (owner.owned_tiles && Array.isArray(owner.owned_tiles)) {
+          owner.owned_tiles = owner.owned_tiles.filter(t => t !== tileId);
+        }
+      } else {
+        // Orphaned: just clear tile ownership
+        tile.owner = null;
       }
     }
     if (gameLoop && typeof gameLoop._destroyBuilding === 'function') {
@@ -471,7 +508,7 @@ app.post('/api/cleanup', (req, res) => {
     destroyed++;
   }
 
-  const message = `[Cleanup] Destroyed ${destroyed} buildings from ${inactiveAgentIds.size} inactive agents (threshold=${threshold})`;
+  const message = `[Cleanup] Destroyed ${destroyed} buildings (inactive:${inactiveAgentIds.size}, orphaned:${orphanedOwnerIds.size}, threshold:${threshold}${percent > 0 ? `, randomPercent:${percent}` : ''})`;
   console.log(message);
   worldState.events = worldState.events || [];
   worldState.events.push({ tick, type: 'cleanup', message });
@@ -480,7 +517,10 @@ app.post('/api/cleanup', (req, res) => {
     success: true,
     tick,
     threshold,
+    orphansOnly,
+    percent,
     inactiveAgentCount: inactiveAgentIds.size,
+    orphanedOwnerCount: orphanedOwnerIds.size,
     buildingsDestroyed: destroyed,
     totalBuildingsAfter: worldState.buildingsList.length,
     message,
