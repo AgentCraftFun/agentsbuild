@@ -26,14 +26,15 @@
 
 // Price tiers (in $AGENTCRAFT with 18 decimals) — tuned for v1
 // All amounts are human strings; the verifier parses them to BigInt wei.
+// Minimum is 10M tokens (~$0.05-$0.10 at current price, adjusts with price action).
 const PRICES = {
-  LIGHTNING:  '100',
-  WILDFIRE:   '200',
-  EARTHQUAKE: '500',
-  TORNADO:    '1000',
-  METEOR:     '2000',
-  PLAGUE:     '3000',
-  VOLCANO:    '5000',
+  LIGHTNING:  '10000000',   //  10M  — cheapest entry
+  WILDFIRE:   '20000000',   //  20M
+  EARTHQUAKE: '50000000',   //  50M
+  TORNADO:    '100000000',  // 100M
+  METEOR:     '200000000',  // 200M
+  PLAGUE:     '300000000',  // 300M
+  VOLCANO:    '500000000',  // 500M  — most dramatic
 };
 
 /**

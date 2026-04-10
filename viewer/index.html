@@ -354,27 +354,22 @@ setTimeout(function(){var io=document.getElementById('intro-overlay');if(io)io.r
       </div>
 
       <div class="deploy-field">
-        <label>Step 1 — Send this amount</label>
+        <label>Cost</label>
         <div style="background:#080812;border:1px solid #2a2a4e;border-radius:4px;padding:10px;font-size:16px;color:#f0c040;text-align:center"><span id="influence-pay-price"></span> $AGENTCRAFT</div>
       </div>
 
       <div class="deploy-field">
-        <label>Step 2 — Send to this address on Base</label>
-        <div style="display:flex;gap:4px">
-          <input id="influence-treasury-addr" type="text" readonly style="flex:1;font-size:10px;color:#d088ff">
-          <button id="influence-copy-btn" onclick="copyInfluenceTreasury()" style="padding:8px 12px;background:#2a2a4e;border:1px solid #4a4a6e;color:#c8c8d8;font-family:'Courier New',monospace;font-size:10px;border-radius:4px;cursor:pointer">COPY</button>
-        </div>
-        <div class="hint">Open your wallet (MetaMask, Coinbase, Rabby) and send the exact amount above.</div>
+        <label>Wallet</label>
+        <div id="influence-wallet-row" style="background:#080812;border:1px solid #2a2a4e;border-radius:4px;padding:10px;font-size:11px;color:#888;text-align:center">Not connected</div>
       </div>
 
-      <div class="deploy-field">
-        <label>Step 3 — Paste the transaction hash</label>
-        <input id="influence-tx-input" type="text" placeholder="0x..." autocomplete="off" spellcheck="false" style="font-size:11px">
-        <div class="hint">Copy the hash from Basescan after your payment confirms.</div>
-      </div>
-
-      <button id="influence-confirm-btn" class="deploy-submit" onclick="submitInfluenceAction()" style="background:linear-gradient(135deg,#aa44cc,#4488ff);color:#fff">Unleash the Chaos</button>
+      <!-- Two-state submit button: "Connect Wallet" OR "Sign & Unleash" -->
+      <button id="influence-connect-btn" class="deploy-submit" onclick="connectInfluenceWallet()" style="background:linear-gradient(135deg,#aa44cc,#4488ff);color:#fff">Connect Wallet</button>
+      <button id="influence-sign-btn" class="deploy-submit" onclick="signInfluenceTransaction()" style="display:none;background:linear-gradient(135deg,#aa44cc,#4488ff);color:#fff">Sign & Unleash the Chaos</button>
       <div id="influence-pay-status" class="deploy-status"></div>
+      <div style="font-size:9px;color:#555;text-align:center;margin-top:10px;line-height:1.5">
+        Works with MetaMask, Coinbase Wallet, Rabby, Phantom, and any<br>injected Web3 wallet. Your wallet will pop up to confirm.
+      </div>
     </div>
   </div>
 </div>
@@ -6936,9 +6931,6 @@ document.getElementById('influence-modal').addEventListener('click', function(e)
 
 function closeInfluenceModal() {
   document.getElementById('influence-modal').style.display = 'none';
-  // Clear input state so next open is fresh
-  var input = document.getElementById('influence-tx-input');
-  if (input) input.value = '';
   var status = document.getElementById('influence-pay-status');
   if (status) { status.textContent = ''; status.className = 'deploy-status'; }
 }
@@ -6987,7 +6979,7 @@ function loadInfluenceActions() {
           '<div style="font-size:12px;font-weight:bold;color:' + m.color + '">' + m.label + '</div>' +
           '<div style="font-size:9px;color:#888;margin-top:2px">' + (a.description || '') + '</div>' +
         '</div>' +
-        '<div style="font-size:11px;color:#f0c040;font-weight:bold;white-space:nowrap">' + a.price + ' $AC</div>';
+        '<div style="font-size:11px;color:#f0c040;font-weight:bold;white-space:nowrap">' + formatInfluencePrice(a.price) + ' $AC</div>';
       btn.dataset.action = a.name;
       btn.onclick = (function(actionName, meta, price, desc) {
         return function() { selectInfluenceAction(actionName, meta, price, desc); };
@@ -7002,80 +6994,269 @@ function loadInfluenceActions() {
   });
 }
 
+// Format a big price string like "10000000" to "10M" / "200M" / "1B"
+function formatInfluencePrice(priceStr) {
+  var n = Number(priceStr);
+  if (!isFinite(n) || n <= 0) return priceStr;
+  if (n >= 1_000_000_000) return (n / 1_000_000_000).toFixed(n % 1_000_000_000 === 0 ? 0 : 1) + 'B';
+  if (n >= 1_000_000) return (n / 1_000_000).toFixed(n % 1_000_000 === 0 ? 0 : 1) + 'M';
+  if (n >= 1_000) return (n / 1_000).toFixed(n % 1_000 === 0 ? 0 : 1) + 'K';
+  return String(n);
+}
+
 function selectInfluenceAction(name, meta, price, desc) {
   _influenceSelectedAction = name;
+  _influenceSelectedPrice = price; // cache the human-readable price
   document.getElementById('influence-list-view').style.display = 'none';
   document.getElementById('influence-pay-view').style.display = 'block';
   document.getElementById('influence-pay-icon').textContent = meta.emoji;
   document.getElementById('influence-pay-label').textContent = meta.label;
   document.getElementById('influence-pay-desc').textContent = desc;
-  document.getElementById('influence-pay-price').textContent = price;
-  document.getElementById('influence-treasury-addr').value = _influenceActionsData.treasury || '';
-  document.getElementById('influence-tx-input').value = '';
+  document.getElementById('influence-pay-price').textContent = formatInfluencePrice(price);
   var status = document.getElementById('influence-pay-status');
   status.textContent = '';
   status.className = 'deploy-status';
+  // Refresh wallet state display
+  refreshInfluenceWalletUI();
 }
 
-function copyInfluenceTreasury() {
-  var input = document.getElementById('influence-treasury-addr');
-  input.select();
-  try {
-    document.execCommand('copy');
-    var btn = document.getElementById('influence-copy-btn');
-    var orig = btn.textContent;
-    btn.textContent = 'COPIED';
-    setTimeout(function() { btn.textContent = orig; }, 1500);
-  } catch (e) {
-    // Fall back to modern API if execCommand failed
-    if (navigator.clipboard) navigator.clipboard.writeText(input.value);
+// ─── WALLET CONNECTION (EIP-1193) ─────────────────────────────────
+// Works with MetaMask, Coinbase Wallet, Rabby, Phantom, Trust Wallet, etc.
+// Pure vanilla JS — no libraries — so no added bundle size.
+
+var _influenceWalletAddr = null;     // current connected wallet (lowercased)
+var _influenceSelectedPrice = null;  // price for currently selected action
+var BASE_CHAIN_ID_HEX = '0x2105';    // 8453 decimal = Base mainnet
+
+function getInjectedProvider() {
+  if (typeof window === 'undefined') return null;
+  // EIP-6963 multi-wallet: prefer window.ethereum which most still inject
+  return window.ethereum || null;
+}
+
+function refreshInfluenceWalletUI() {
+  var row = document.getElementById('influence-wallet-row');
+  var connectBtn = document.getElementById('influence-connect-btn');
+  var signBtn = document.getElementById('influence-sign-btn');
+  if (_influenceWalletAddr) {
+    var short = _influenceWalletAddr.slice(0, 6) + '...' + _influenceWalletAddr.slice(-4);
+    row.textContent = short + ' (Base)';
+    row.style.color = '#aaffaa';
+    connectBtn.style.display = 'none';
+    signBtn.style.display = 'block';
+  } else {
+    row.textContent = 'Not connected';
+    row.style.color = '#888';
+    connectBtn.style.display = 'block';
+    signBtn.style.display = 'none';
   }
 }
 
-function submitInfluenceAction() {
+async function connectInfluenceWallet() {
   var status = document.getElementById('influence-pay-status');
-  var confirmBtn = document.getElementById('influence-confirm-btn');
-  var txHash = (document.getElementById('influence-tx-input').value || '').trim();
-  if (!txHash) {
+  var provider = getInjectedProvider();
+  if (!provider) {
     status.className = 'deploy-status err';
-    status.textContent = 'Please paste your transaction hash';
+    status.textContent = 'No Web3 wallet detected. Install MetaMask, Coinbase Wallet, or Rabby.';
     return;
   }
-  if (!/^0x[0-9a-fA-F]{64}$/.test(txHash)) {
+  status.className = 'deploy-status';
+  status.textContent = 'Opening wallet...';
+  try {
+    var accounts = await provider.request({ method: 'eth_requestAccounts' });
+    if (!accounts || accounts.length === 0) {
+      status.className = 'deploy-status err';
+      status.textContent = 'No accounts returned by wallet';
+      return;
+    }
+    _influenceWalletAddr = accounts[0].toLowerCase();
+    // Make sure we're on Base
+    var currentChain = await provider.request({ method: 'eth_chainId' });
+    if (currentChain !== BASE_CHAIN_ID_HEX) {
+      status.textContent = 'Switching to Base network...';
+      try {
+        await provider.request({
+          method: 'wallet_switchEthereumChain',
+          params: [{ chainId: BASE_CHAIN_ID_HEX }],
+        });
+      } catch (switchErr) {
+        // Chain not added in wallet — try to add it
+        if (switchErr.code === 4902) {
+          await provider.request({
+            method: 'wallet_addEthereumChain',
+            params: [{
+              chainId: BASE_CHAIN_ID_HEX,
+              chainName: 'Base',
+              nativeCurrency: { name: 'Ether', symbol: 'ETH', decimals: 18 },
+              rpcUrls: ['https://mainnet.base.org'],
+              blockExplorerUrls: ['https://basescan.org'],
+            }],
+          });
+        } else {
+          throw switchErr;
+        }
+      }
+    }
+    status.textContent = '';
+    refreshInfluenceWalletUI();
+  } catch (err) {
     status.className = 'deploy-status err';
-    status.textContent = 'Invalid tx hash format (must be 0x + 64 hex chars)';
+    if (err && err.code === 4001) {
+      status.textContent = 'Connection rejected';
+    } else {
+      status.textContent = 'Wallet error: ' + (err.message || err);
+    }
+  }
+}
+
+// ─── TRANSACTION BUILDING ────────────────────────────────────────
+// Manually encode ERC-20 transfer(to, amount) calldata.
+// Function selector for transfer(address,uint256) = 0xa9059cbb
+// Followed by 32-byte padded address + 32-byte padded uint256 amount.
+
+function padLeft32(hex) {
+  var h = hex.replace(/^0x/, '');
+  while (h.length < 64) h = '0' + h;
+  return h;
+}
+
+// Convert a human string like "10000000" (meaning 10M tokens) into the
+// wei hex string assuming 18 decimals. Uses BigInt — never touches Number
+// for the math (prices are too large for Number precision).
+function priceToWeiHex(priceStr) {
+  var s = String(priceStr).trim();
+  if (!/^\d+(\.\d*)?$/.test(s)) throw new Error('Invalid price string: ' + priceStr);
+  var parts = s.split('.');
+  var whole = parts[0];
+  var frac = parts[1] || '';
+  if (frac.length > 18) frac = frac.slice(0, 18);
+  var fracPadded = frac + '0'.repeat(18 - frac.length);
+  var wei = BigInt(whole) * (10n ** 18n) + BigInt(fracPadded || '0');
+  return wei.toString(16);
+}
+
+function buildTransferCalldata(toAddress, priceStr) {
+  var TRANSFER_SELECTOR = 'a9059cbb';
+  var addrHex = toAddress.toLowerCase().replace(/^0x/, '');
+  var amountHex = priceToWeiHex(priceStr);
+  return '0x' + TRANSFER_SELECTOR + padLeft32(addrHex) + padLeft32(amountHex);
+}
+
+async function signInfluenceTransaction() {
+  var status = document.getElementById('influence-pay-status');
+  var signBtn = document.getElementById('influence-sign-btn');
+  var provider = getInjectedProvider();
+  if (!provider || !_influenceWalletAddr) {
+    status.className = 'deploy-status err';
+    status.textContent = 'Wallet not connected';
     return;
   }
-  if (!_influenceSelectedAction) {
+  if (!_influenceSelectedAction || !_influenceSelectedPrice) {
     status.className = 'deploy-status err';
     status.textContent = 'No action selected';
     return;
   }
-  status.className = 'deploy-status';
-  status.textContent = 'Verifying payment on Base...';
-  confirmBtn.disabled = true;
-  fetch('/api/action', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ txHash: txHash, action: _influenceSelectedAction }),
-  }).then(function(r) {
-    return r.json().then(function(body) { return { status: r.status, body: body }; });
-  }).then(function(res) {
-    confirmBtn.disabled = false;
-    if (res.status === 200 && res.body.ok) {
-      status.className = 'deploy-status';
-      status.textContent = '✓ Chaos unleashed! Watch the world.';
-      // Close the modal after a short delay so the player sees the effect
-      setTimeout(closeInfluenceModal, 2000);
-    } else {
-      status.className = 'deploy-status err';
-      status.textContent = res.body.error || ('Request failed (' + res.status + ')');
-    }
-  }).catch(function(err) {
-    confirmBtn.disabled = false;
+  if (!_influenceActionsData || !_influenceActionsData.treasury || !_influenceActionsData.token) {
     status.className = 'deploy-status err';
-    status.textContent = 'Network error: ' + err.message;
-  });
+    status.textContent = 'Missing treasury or token address — reload the page';
+    return;
+  }
+  // Double-check we're still on Base (user might have switched chains)
+  try {
+    var chain = await provider.request({ method: 'eth_chainId' });
+    if (chain !== BASE_CHAIN_ID_HEX) {
+      status.className = 'deploy-status err';
+      status.textContent = 'Please switch to Base network';
+      return;
+    }
+  } catch (e) {
+    status.className = 'deploy-status err';
+    status.textContent = 'Could not verify chain: ' + e.message;
+    return;
+  }
+
+  var calldata;
+  try {
+    calldata = buildTransferCalldata(_influenceActionsData.treasury, _influenceSelectedPrice);
+  } catch (e) {
+    status.className = 'deploy-status err';
+    status.textContent = 'Failed to build tx: ' + e.message;
+    return;
+  }
+
+  status.className = 'deploy-status';
+  status.textContent = 'Confirm in your wallet...';
+  signBtn.disabled = true;
+  var txHash;
+  try {
+    txHash = await provider.request({
+      method: 'eth_sendTransaction',
+      params: [{
+        from: _influenceWalletAddr,
+        to: _influenceActionsData.token,  // ERC-20 contract
+        data: calldata,
+        value: '0x0',
+      }],
+    });
+  } catch (err) {
+    signBtn.disabled = false;
+    status.className = 'deploy-status err';
+    if (err && err.code === 4001) {
+      status.textContent = 'You rejected the transaction';
+    } else {
+      status.textContent = 'Transaction failed: ' + (err.message || err);
+    }
+    return;
+  }
+
+  if (!txHash || !/^0x[0-9a-fA-F]{64}$/.test(txHash)) {
+    signBtn.disabled = false;
+    status.className = 'deploy-status err';
+    status.textContent = 'Wallet returned an invalid tx hash';
+    return;
+  }
+
+  // Now submit to our server. It may take a few seconds for the tx to
+  // confirm on Base, so we retry a few times if the server says "not found".
+  status.textContent = 'Transaction sent — waiting for Base confirmation...';
+  var attempts = 0;
+  var maxAttempts = 15;   // ~45s total (3s each)
+  var verifyOnce = async function() {
+    attempts++;
+    try {
+      var resp = await fetch('/api/action', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ txHash: txHash, action: _influenceSelectedAction }),
+      });
+      var body = await resp.json();
+      if (resp.status === 200 && body.ok) {
+        signBtn.disabled = false;
+        status.className = 'deploy-status';
+        status.textContent = '✓ Chaos unleashed! Watch the world.';
+        setTimeout(closeInfluenceModal, 2500);
+        return;
+      }
+      // If the server says "not found" or transient RPC, it probably just
+      // hasn't been mined yet. Keep retrying.
+      var notReadyYet = (resp.status === 402 && body.error && /not found|not yet confirmed/i.test(body.error))
+        || (resp.status === 502 && body.transient);
+      if (notReadyYet && attempts < maxAttempts) {
+        status.textContent = 'Waiting for confirmation... (attempt ' + attempts + '/' + maxAttempts + ')';
+        setTimeout(verifyOnce, 3000);
+        return;
+      }
+      // Final error
+      signBtn.disabled = false;
+      status.className = 'deploy-status err';
+      status.textContent = body.error || ('Verification failed (HTTP ' + resp.status + ')');
+    } catch (netErr) {
+      signBtn.disabled = false;
+      status.className = 'deploy-status err';
+      status.textContent = 'Network error: ' + netErr.message;
+    }
+  };
+  verifyOnce();
 }
 
 function switchDeployTab(panel){
