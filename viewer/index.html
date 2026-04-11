@@ -7399,9 +7399,10 @@ function loadInfluenceActions() {
       })(a.name, m, a.price, a.description);
       listEl.appendChild(btn);
     }
-    status.textContent = paidActions.length + ' action' + (paidActions.length === 1 ? '' : 's') + ' available';
     // Append the Loot Drops section — free (testing) section for Phase 1
-    appendLootDropsSection(listEl);
+    var lootCount = appendLootDropsSection(listEl);
+    var totalCount = paidActions.length + lootCount;
+    status.textContent = totalCount + ' action' + (totalCount === 1 ? '' : 's') + ' available';
   }).catch(function(err) {
     var status = document.getElementById('influence-list-status');
     status.textContent = 'Failed to load actions: ' + err.message;
@@ -7450,6 +7451,7 @@ function appendLootDropsSection(listEl) {
     })(L);
     listEl.appendChild(btn);
   }
+  return loot.length;
 }
 
 function triggerFreeLootDrop(lootDef, btnEl) {
