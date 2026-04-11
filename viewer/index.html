@@ -1128,6 +1128,7 @@ function resize(){canvasEl.width=wrap.clientWidth;canvasEl.height=wrap.clientHei
 // Mobile: start more zoomed in (targetZoom set after its declaration below)
 wrap.addEventListener('mousedown',e=>{lastInputFrame=frame;if(tvMode)tvMode=false;
   if(followAgent&&!tvMode){followAgent=null;const ti3=document.getElementById('tracking-indicator');if(ti3)ti3.style.display='none'}// release tracking on click
+  if(followDrop)followDrop=null;// release drop-follow on click
   if(e.button===0){dragging=true;dsx=e.clientX;dsy=e.clientY;dvx=vpX;dvy=vpY;if(cursorGrab)setCursor('grab')}});
 let _prevDragVpX=0,_prevDragVpY=0;
 window.addEventListener('mousemove',e=>{
@@ -1147,7 +1148,7 @@ let targetZoom=1;
 if(window.innerWidth<=768){zoom=1.5;targetZoom=1.5}
 let zoomAnchorX=0,zoomAnchorY=0;// world point to keep under mouse during zoom
 let _pendingWheelEvents=[];// queue wheel events for start-of-frame processing
-wrap.addEventListener('wheel',e=>{e.preventDefault();lastInputFrame=frame;if(tvMode)tvMode=false;
+wrap.addEventListener('wheel',e=>{e.preventDefault();lastInputFrame=frame;if(tvMode)tvMode=false;if(followDrop)followDrop=null;
   _pendingWheelEvents.push({deltaY:e.deltaY,clientX:e.clientX,clientY:e.clientY});
 },{passive:false});
 // Double-click to zoom in/out
@@ -1159,7 +1160,7 @@ wrap.addEventListener('dblclick',e=>{lastInputFrame=frame;if(tvMode)tvMode=false
 });
 // === Touch events for mobile ===
 let _touchId=null,_pinchDist=0;
-wrap.addEventListener('touchstart',e=>{e.preventDefault();lastInputFrame=frame;if(tvMode)tvMode=false;
+wrap.addEventListener('touchstart',e=>{e.preventDefault();lastInputFrame=frame;if(tvMode)tvMode=false;if(followDrop)followDrop=null;
   if(e.touches.length===1){const t=e.touches[0];_touchId=t.identifier;dragging=true;dsx=t.clientX;dsy=t.clientY;dvx=vpX;dvy=vpY}
   if(e.touches.length===2){const dx=e.touches[0].clientX-e.touches[1].clientX,dy=e.touches[0].clientY-e.touches[1].clientY;_pinchDist=Math.sqrt(dx*dx+dy*dy)}
 },{passive:false});
@@ -4217,6 +4218,31 @@ if(followAgent){
     vpX+=(targetVpX2-vpX)*0.08;vpY+=(targetVpY2-vpY)*0.08;// smooth track
   }
 }
+// Follow dropped loot item — sticky lock that holds the camera on a
+// ground item until the user interacts, the item is picked up (with a
+// brief grace period so the pickup flash is visible), or timeout.
+if(followDrop){
+  followDrop.heldFrames=(followDrop.heldFrames||0)+1;
+  const gi=(S.groundItems||[]).find(g=>g.id===followDrop.itemId);
+  if(gi){
+    // Item still on the ground — track its tile
+    followDrop.x=gi.x;followDrop.y=gi.y;
+    const dropVpX=canvasEl.width/(2*zoom)-gi.x*TS-TS/2;
+    const dropVpY=canvasEl.height/(2*zoom)-gi.y*TS-TS/2;
+    vpX+=(dropVpX-vpX)*0.12;vpY+=(dropVpY-vpY)*0.12;
+    // Safety: bail after 60s (~1200 frames at 20fps) even if nobody picks up
+    if(followDrop.heldFrames>followDrop.maxFrames)followDrop=null;
+  }else{
+    // Item was picked up — hold on its last known position for 90 frames
+    // (~3-4s) so the pickup flash + "+N resource" text are fully visible
+    if(followDrop._pickupHoldStart==null)followDrop._pickupHoldStart=followDrop.heldFrames;
+    const holdElapsed=followDrop.heldFrames-followDrop._pickupHoldStart;
+    const dropVpX=canvasEl.width/(2*zoom)-followDrop.x*TS-TS/2;
+    const dropVpY=canvasEl.height/(2*zoom)-followDrop.y*TS-TS/2;
+    vpX+=(dropVpX-vpX)*0.12;vpY+=(dropVpY-vpY)*0.12;
+    if(holdElapsed>90)followDrop=null;
+  }
+}
 // TV Mode: auto-camera when idle
 if(frame-lastInputFrame>TV_IDLE_THRESHOLD&&!tvMode&&!panTarget){tvMode=true;tvModeTimer=0}
 if(tvMode){
@@ -6148,7 +6174,7 @@ function updateParticles(){
 let shiftDown=false;
 window.addEventListener('keydown',e=>{
   if(e.key==='Shift')shiftDown=true;
-  if(e.key==='Escape'){followAgent=null;tvMode=false;const ti4=document.getElementById('tracking-indicator');if(ti4)ti4.style.display='none';lastInputFrame=frame}
+  if(e.key==='Escape'){followAgent=null;followDrop=null;tvMode=false;const ti4=document.getElementById('tracking-indicator');if(ti4)ti4.style.display='none';lastInputFrame=frame}
 });
 window.addEventListener('keyup',e=>{if(e.key==='Shift')shiftDown=false});
 
@@ -6218,6 +6244,11 @@ ${progBar}
 
 // === Smooth Camera System ===
 let panTarget=null,panFrames=0,panHighlight=null;
+// Sticky camera lock on a dropped loot item. When set, each render frame
+// snaps the camera to the item's tile (like followAgent but tied to a
+// ground item id). Cleared on user input, on pickup (with a brief grace
+// period so the viewer sees the pickup flash), or after a 60s timeout.
+let followDrop=null; // {itemId, x, y, heldFrames, maxFrames}
 let followAgent=null;// agent to auto-follow
 let tvMode=false,tvModeTimer=0,lastInputFrame=0;
 const TV_IDLE_THRESHOLD=60*30;// 30 sec no input → TV mode
@@ -7448,12 +7479,28 @@ function triggerFreeLootDrop(lootDef, btnEl) {
         status.textContent = lootDef.emoji + ' ' + lootDef.label + ' dropped at (' + res.data.item.x + ',' + res.data.item.y + ')';
         status.className = 'deploy-status ok';
       }
-      // Pan + zoom the camera to the drop so the user can actually see
-      // where it landed (mirrors the lightning-strike pan behavior).
+      // Zoom + pan to the drop AND sticky-lock the camera on it so the
+      // user can watch the agent come collect it. The lock is released
+      // when the item is picked up (after a brief grace period) or the
+      // user manually interacts (click / drag / wheel / Escape).
       try {
         if (typeof panToWorld === 'function') {
           panToWorld(res.data.item.x, res.data.item.y, 1.8, 40);
         }
+        // Release any existing follow lock so we don't fight it
+        if (typeof followAgent !== 'undefined') followAgent = null;
+        if (typeof tvMode !== 'undefined') tvMode = false;
+        // Prevent TV mode from kicking in during the watch window
+        if (typeof lastInputFrame !== 'undefined' && typeof frame !== 'undefined') lastInputFrame = frame;
+        // Engage sticky drop-follow
+        followDrop = {
+          itemId: res.data.item.id,
+          x: res.data.item.x,
+          y: res.data.item.y,
+          heldFrames: 0,
+          maxFrames: 1200, // ~60s safety cap
+          _pickupHoldStart: null,
+        };
       } catch (e) {}
       // Close the modal after a brief success flash so the user can watch
       setTimeout(function() { closeInfluenceModal(); }, 700);
