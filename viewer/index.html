@@ -2571,10 +2571,45 @@ function drawAgentPixelArt(c,ax,ay,agent,sel,fr,anim){
     c.globalAlpha=1;
   }else if(!name.includes('Faelith')){// Faelith has scroll instead
     const ix=ax+10*toolSide+toolSwing,iy=by-2+toolOy;
-    if(t==='human'){c.fillStyle='#5a3010';c.fillRect(ix,iy-8,2,10);c.fillStyle='#888890';c.fillRect(ix-2,iy-10,6,4)}
-    else if(t==='orc'){c.fillStyle='#5a3010';c.fillRect(ix,iy-8,2,10);c.fillStyle='#cc3311';c.fillRect(ix+1*toolSide,iy-10,5,5)}
-    else if(t==='dwarf'){c.fillStyle='#5a3010';c.fillRect(ix,iy-8,2,10);c.fillStyle='#888890';c.fillRect(ix-1,iy-10,6,3)}
-    else if(t==='elf'){c.fillStyle='#5a3010';c.fillRect(ix,iy-10,2,12);c.fillStyle='#44ee66';c.beginPath();c.arc(ix+1,iy-12,3,0,Math.PI*2);c.fill()}
+    // ── LOOT DROPS Phase 2: Golden tools override the default factional tool ──
+    // If the agent has a permanent perk (golden_pickaxe / golden_axe),
+    // render it instead of the faction weapon so everyone can SEE which
+    // agents have been blessed.
+    const perks=agent.perks||{};
+    if(perks.golden_axe){
+      // Wooden handle
+      c.fillStyle='#6a3a10';c.fillRect(ix,iy-10,2,12);
+      // Golden double-bladed axe head
+      c.fillStyle='#ffdd44';
+      c.fillRect(ix-3,iy-11,3,6);c.fillRect(ix+2,iy-11,3,6);
+      c.fillStyle='#ffee88';
+      c.fillRect(ix-3,iy-10,1,4);c.fillRect(ix+4,iy-10,1,4);
+      // Sparkle highlight
+      if(fr%20<10){c.fillStyle='#ffffff';c.fillRect(ix-2,iy-10,1,1);c.fillRect(ix+3,iy-9,1,1)}
+      // Golden glow underneath
+      c.fillStyle='rgba(255,221,68,'+(0.15+Math.sin(fr*0.1)*0.05)+')';
+      c.beginPath();c.arc(ix+1,iy-8,7,0,Math.PI*2);c.fill();
+    }else if(perks.golden_pickaxe){
+      // Wooden handle
+      c.fillStyle='#6a3a10';c.fillRect(ix,iy-10,2,12);
+      // Golden pickaxe head (horizontal bar + pointed tip)
+      c.fillStyle='#ffdd44';
+      c.fillRect(ix-4,iy-11,9,3);
+      c.fillRect(ix-5,iy-10,1,2);c.fillRect(ix+5,iy-10,1,2);
+      // Highlight
+      c.fillStyle='#ffee88';c.fillRect(ix-4,iy-11,9,1);
+      // Sparkle
+      if(fr%20<10){c.fillStyle='#ffffff';c.fillRect(ix-3,iy-11,1,1);c.fillRect(ix+4,iy-10,1,1)}
+      // Golden glow
+      c.fillStyle='rgba(255,221,68,'+(0.15+Math.sin(fr*0.1)*0.05)+')';
+      c.beginPath();c.arc(ix+1,iy-8,7,0,Math.PI*2);c.fill();
+    }else{
+      // Default factional tool
+      if(t==='human'){c.fillStyle='#5a3010';c.fillRect(ix,iy-8,2,10);c.fillStyle='#888890';c.fillRect(ix-2,iy-10,6,4)}
+      else if(t==='orc'){c.fillStyle='#5a3010';c.fillRect(ix,iy-8,2,10);c.fillStyle='#cc3311';c.fillRect(ix+1*toolSide,iy-10,5,5)}
+      else if(t==='dwarf'){c.fillStyle='#5a3010';c.fillRect(ix,iy-8,2,10);c.fillStyle='#888890';c.fillRect(ix-1,iy-10,6,3)}
+      else if(t==='elf'){c.fillStyle='#5a3010';c.fillRect(ix,iy-10,2,12);c.fillStyle='#44ee66';c.beginPath();c.arc(ix+1,iy-12,3,0,Math.PI*2);c.fill()}
+    }
     if(hammerPhase===1&&fr%10<5){c.fillStyle='#ffee44';c.fillRect(ix-1,iy+2,3,3)}
   }
 
