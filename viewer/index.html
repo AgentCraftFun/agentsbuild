@@ -7448,6 +7448,13 @@ function triggerFreeLootDrop(lootDef, btnEl) {
         status.textContent = lootDef.emoji + ' ' + lootDef.label + ' dropped at (' + res.data.item.x + ',' + res.data.item.y + ')';
         status.className = 'deploy-status ok';
       }
+      // Pan + zoom the camera to the drop so the user can actually see
+      // where it landed (mirrors the lightning-strike pan behavior).
+      try {
+        if (typeof panToWorld === 'function') {
+          panToWorld(res.data.item.x, res.data.item.y, 1.8, 40);
+        }
+      } catch (e) {}
       // Close the modal after a brief success flash so the user can watch
       setTimeout(function() { closeInfluenceModal(); }, 700);
     }
