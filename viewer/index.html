@@ -7484,9 +7484,12 @@ function triggerFreeLootDrop(lootDef, btnEl) {
       // when the item is picked up (after a brief grace period) or the
       // user manually interacts (click / drag / wheel / Escape).
       try {
+        // Max zoom (3x) so the drop fills the screen — user was zooming
+        // manually because 1.8x wasn't close enough to see the crate
         if (typeof panToWorld === 'function') {
-          panToWorld(res.data.item.x, res.data.item.y, 1.8, 40);
+          panToWorld(res.data.item.x, res.data.item.y, 2.8, 40);
         }
+        if (typeof targetZoom !== 'undefined') targetZoom = 2.8;
         // Release any existing follow lock so we don't fight it
         if (typeof followAgent !== 'undefined') followAgent = null;
         if (typeof tvMode !== 'undefined') tvMode = false;
