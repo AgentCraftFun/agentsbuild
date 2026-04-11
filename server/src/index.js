@@ -50,11 +50,14 @@ function saveWorldState(ws) {
     }
     const buildings = ws.buildingsList.map(b => b.toJSON());
     const state = {
-      version: 1, savedAt: Date.now(), tick: ws.tick,
+      version: 2, savedAt: Date.now(), tick: ws.tick,
       seed: ws.seed, width: ws.width, height: ws.height,
       agents, buildings, events: (ws.events || []).slice(-200),
       leaderboard: ws.leaderboard || [],
       settlements: ws.settlements || [],
+      // Phase 1 of loot drops: persisted ground items (backwards-compatible
+      // with v1 saves — absent field loads as [])
+      groundItems: Array.isArray(ws.groundItems) ? ws.groundItems : [],
     };
     fs.writeFileSync(STATE_FILE, JSON.stringify(state));
     console.log(`[Save] Tick:${ws.tick} Agents:${agents.length} Buildings:${buildings.length}`);
@@ -72,7 +75,9 @@ function loadWorldState() {
     const world = WorldGen.generate(state.width || WORLD_WIDTH, state.height || WORLD_HEIGHT, state.seed || WORLD_SEED);
     const ws = { tiles: world.tiles, width: world.width, height: world.height, seed: world.seed,
       tick: state.tick || 0, agents: new Map(), buildingsList: [], events: state.events || [], leaderboard: state.leaderboard || [],
-      settlements: state.settlements || [] };
+      settlements: state.settlements || [],
+      // Loot drops: v1 saves have no groundItems, default to []
+      groundItems: Array.isArray(state.groundItems) ? state.groundItems : [] };
 
     const Agent = require('./models/Agent');
     const Building = require('./models/Building');
@@ -126,6 +131,8 @@ let worldState;
 if (loadedState) {
   worldState = loadedState;
   worldState._dirtyTiles = new Set();
+  // Defensive: ensure groundItems exists even if the loaded save predated it
+  if (!Array.isArray(worldState.groundItems)) worldState.groundItems = [];
   console.log('[Server] Resumed from saved state');
   // Reset agent tasks so they re-evaluate on first tick (stale targets from before save)
   for (const agent of worldState.agents.values()) {
@@ -138,7 +145,8 @@ if (loadedState) {
   console.log('[Server] Generating new world...');
   const world = WorldGen.generate(WORLD_WIDTH, WORLD_HEIGHT, WORLD_SEED);
   worldState = { tiles: world.tiles, width: world.width, height: world.height, seed: world.seed,
-    tick: 0, agents: new Map(), buildingsList: [], events: [], leaderboard: [], settlements: [], _dirtyTiles: new Set() };
+    tick: 0, agents: new Map(), buildingsList: [], events: [], leaderboard: [], settlements: [], _dirtyTiles: new Set(),
+    groundItems: [] };
   console.log('[Server] Seeding demo agents...');
   seedAgents(worldState);
 }
@@ -676,6 +684,64 @@ app.post('/api/test/:action', (req, res) => {
     tick: worldState.tick || 0,
     result,
   });
+});
+
+// ─── Loot Drop Endpoint (admin) ───
+// Drop an item onto the map at (x, y). Agents within a 15-tile radius will
+// autonomously chase and pick it up. Guarded by ADMIN_TOKEN.
+//
+// Usage:
+//   POST /api/drop?token=XXX
+//   body: { "type": "food_cache", "x": 100, "y": 75, "amount": 50 }
+//
+// Types: food_cache | wood_cache | stone_cache | gold_cache
+// If x/y omitted, drops near a random agent for easy testing.
+app.post('/api/drop', (req, res) => {
+  const adminToken = process.env.ADMIN_TOKEN;
+  if (adminToken) {
+    const providedToken = (req.body && req.body.token) || req.query.token;
+    if (providedToken !== adminToken) {
+      return res.status(403).json({ ok: false, error: 'Forbidden: invalid admin token' });
+    }
+  }
+  if (!gameLoop) {
+    return res.status(503).json({ ok: false, error: 'Game loop not ready' });
+  }
+
+  const body = req.body || {};
+  const type = (body.type || req.query.type || 'food_cache').toString();
+  let x = Number(body.x != null ? body.x : req.query.x);
+  let y = Number(body.y != null ? body.y : req.query.y);
+  const amount = Number(body.amount != null ? body.amount : req.query.amount);
+
+  // If coords missing, drop near a random agent (handy for smoke-testing)
+  if (!Number.isFinite(x) || !Number.isFinite(y)) {
+    const agents = [...worldState.agents.values()];
+    if (agents.length > 0) {
+      const target = agents[Math.floor(Math.random() * agents.length)];
+      x = target.x + (Math.floor(Math.random() * 7) - 3);
+      y = target.y + (Math.floor(Math.random() * 7) - 3);
+    } else {
+      x = Math.floor(worldState.width / 2);
+      y = Math.floor(worldState.height / 2);
+    }
+  }
+
+  const item = gameLoop.dropItem({
+    type,
+    x,
+    y,
+    amount: Number.isFinite(amount) ? amount : undefined,
+    droppedBy: 'admin',
+  });
+  if (!item) {
+    return res.status(400).json({
+      ok: false,
+      error: `Invalid item type: ${type}. Try food_cache, wood_cache, stone_cache, gold_cache.`,
+    });
+  }
+  console.log(`[DROP] ${type} x${item.amount} @(${item.x},${item.y}) via admin`);
+  return res.json({ ok: true, item, tick: worldState.tick || 0 });
 });
 
 // ─── Emergency Cleanup Endpoint ───

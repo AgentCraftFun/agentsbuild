@@ -152,6 +152,21 @@ class GameLoop {
   }
 
   async _processAgent(agent, tick, events) {
+    // LOOT DROPS (Phase 1): if there's a ground item nearby and the agent
+    // isn't locked into a critical mode, interrupt normal AI to chase/pickup.
+    // - Adjacent (|dx|,|dy| <= 1): pick up immediately, done for this tick
+    // - Within scan radius: override decision with a move toward the item
+    // - Otherwise: fall through to normal brain
+    // Critical moods (raiding/celebrating/returning/building) are never interrupted.
+    const lockedMoods = new Set(['raiding', 'celebrating', 'returning', 'building']);
+    if (!lockedMoods.has(agent.mood)) {
+      const lootResult = this._tryLootBehavior(agent, tick, events);
+      if (lootResult === 'picked_up' || lootResult === 'chasing') {
+        agent.last_action_tick = tick;
+        return;
+      }
+    }
+
     // RAIDING/CELEBRATING/RETURNING: warfare system controls this agent, skip normal AI
     // But ONLY if there's actually an active raid for them (prevents stuck agents after restart)
     if (agent.mood === 'raiding' || agent.mood === 'celebrating' || agent.mood === 'returning') {
@@ -1818,6 +1833,149 @@ class GameLoop {
     return true;
   }
 
+  // ─── Loot Drops (Phase 1) ───────────────────────────────────────────
+  // Items sitting on the ground that agents autonomously pick up.
+  // Currently supports food_cache. More types in later phases.
+
+  /**
+   * Catalog of droppable item types with their effects.
+   * Effects are applied by _applyItemEffect() when an agent picks one up.
+   */
+  static ITEM_CATALOG = {
+    food_cache: { label: 'Food Cache', resource: 'food', defaultAmount: 50, emoji: '🍞' },
+    wood_cache: { label: 'Wood Cache', resource: 'wood', defaultAmount: 50, emoji: '🪵' },
+    stone_cache: { label: 'Stone Cache', resource: 'stone', defaultAmount: 50, emoji: '🪨' },
+    gold_cache: { label: 'Gold Cache', resource: 'gold', defaultAmount: 25, emoji: '💰' },
+  };
+
+  /**
+   * Drop an item onto the map. Called from admin / paid endpoints.
+   * Returns the created item or null on failure.
+   */
+  dropItem({ type, x, y, amount, droppedBy }) {
+    const def = GameLoop.ITEM_CATALOG[type];
+    if (!def) return null;
+    if (!Number.isFinite(x) || !Number.isFinite(y)) return null;
+    const cx = Math.max(0, Math.min(this.world.width - 1, Math.round(x)));
+    const cy = Math.max(0, Math.min(this.world.height - 1, Math.round(y)));
+    const finalAmount = Number.isFinite(amount) && amount > 0 ? Math.round(amount) : def.defaultAmount;
+    if (!Array.isArray(this.world.groundItems)) this.world.groundItems = [];
+    const item = {
+      id: `item_${this.world.tick}_${Math.floor(Math.random() * 1e9).toString(36)}`,
+      type,
+      x: cx,
+      y: cy,
+      amount: finalAmount,
+      dropped_tick: this.world.tick || 0,
+      dropped_by: droppedBy || null,
+    };
+    this.world.groundItems.push(item);
+    // Announce the drop so the viewer can flash it + log it in the feed
+    const ev = {
+      tick: this.world.tick || 0,
+      type: 'item_dropped',
+      itemId: item.id,
+      itemType: type,
+      x: cx,
+      y: cy,
+      amount: finalAmount,
+      emoji: def.emoji,
+      message: `${def.emoji} A ${def.label} (+${finalAmount} ${def.resource}) dropped at (${cx},${cy})!`,
+    };
+    if (!Array.isArray(this.world.events)) this.world.events = [];
+    if (!Array.isArray(this.world._pendingBroadcastEvents)) this.world._pendingBroadcastEvents = [];
+    this.world.events.push(ev);
+    this.world._pendingBroadcastEvents.push(ev);
+    return item;
+  }
+
+  /**
+   * Attempt loot behavior for an agent this tick.
+   * Returns: 'picked_up' | 'chasing' | 'none'
+   */
+  _tryLootBehavior(agent, tick, events) {
+    const items = this.world.groundItems;
+    if (!Array.isArray(items) || items.length === 0) return 'none';
+
+    const SCAN_RADIUS = 15;   // Manhattan distance at which agents notice a drop
+    let best = null;
+    let bestDist = Infinity;
+    for (const it of items) {
+      const dx = Math.abs(agent.x - it.x);
+      const dy = Math.abs(agent.y - it.y);
+      const dist = dx + dy;
+      if (dist <= SCAN_RADIUS && dist < bestDist) {
+        best = it;
+        bestDist = dist;
+      }
+    }
+    if (!best) return 'none';
+
+    // Adjacent (or on-top) → pick it up
+    if (Math.abs(agent.x - best.x) <= 1 && Math.abs(agent.y - best.y) <= 1) {
+      this._pickupItem(agent, best, tick, events);
+      return 'picked_up';
+    }
+
+    // Otherwise chase it: one step toward target
+    const dxStep = Math.sign(best.x - agent.x);
+    const dyStep = Math.sign(best.y - agent.y);
+    agent.move(dxStep, dyStep, this.world.width, this.world.height);
+    agent.mood = 'moving';
+    agent.current_action = { type: 'loot_chase', target_x: best.x, target_y: best.y, itemId: best.id };
+    agent.idle_ticks = 0;
+    agent.message = `Spotted a ${GameLoop.ITEM_CATALOG[best.type]?.label || 'loot drop'}!`;
+    return 'chasing';
+  }
+
+  /**
+   * Remove the item from the world, apply its effect to the agent,
+   * and emit an event so the viewer can flash a pickup animation.
+   */
+  _pickupItem(agent, item, tick, events) {
+    const def = GameLoop.ITEM_CATALOG[item.type];
+    if (!def) return;
+    // Remove item from the world (first occurrence by id)
+    const idx = this.world.groundItems.findIndex(i => i.id === item.id);
+    if (idx >= 0) this.world.groundItems.splice(idx, 1);
+    // Apply the effect
+    this._applyItemEffect(agent, item);
+    // Agent state
+    agent.mood = 'idle';
+    agent.current_action = { type: 'loot_pickup', itemId: item.id, itemType: item.type };
+    agent.idle_ticks = 0;
+    agent.message = `Picked up a ${def.label}! (+${item.amount} ${def.resource})`;
+    // Event for the viewer (pickup flash + feed)
+    events.push({
+      tick,
+      type: 'item_pickup',
+      itemId: item.id,
+      itemType: item.type,
+      agent: agent.name,
+      agentId: agent.id,
+      x: item.x,
+      y: item.y,
+      amount: item.amount,
+      resource: def.resource,
+      emoji: def.emoji,
+      message: `${def.emoji} ${agent.name} picked up a ${def.label}! (+${item.amount} ${def.resource})`,
+    });
+  }
+
+  /**
+   * Apply an item's effect. For Phase 1 every cataloged item is a simple
+   * resource bump. Later phases will branch on item.type for weapons,
+   * potions, scrolls, etc.
+   */
+  _applyItemEffect(agent, item) {
+    const def = GameLoop.ITEM_CATALOG[item.type];
+    if (!def) return;
+    if (def.resource && Number.isFinite(item.amount)) {
+      if (!agent.resources) agent.resources = {};
+      agent.resources[def.resource] = (agent.resources[def.resource] || 0) + item.amount;
+    }
+  }
+
   _buildDiff(events) {
     const agents = [];
     for (const agent of this.world.agents.values()) {
@@ -1857,6 +2015,7 @@ class GameLoop {
       events: allEvents,
       leaderboard: this.world.leaderboard || [],
       settlements: this.world.settlements || [],
+      groundItems: Array.isArray(this.world.groundItems) ? this.world.groundItems : [],
     };
   }
 
