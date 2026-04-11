@@ -29,6 +29,8 @@ class Agent {
     message = '',
     last_action_tick = 0,
     idle_ticks = 0,
+    buffs = [],
+    perks = {},
   }) {
     if (!Agent.FACTIONS.includes(faction)) {
       throw new Error(`Invalid faction: ${faction}. Must be one of: ${Agent.FACTIONS.join(', ')}`);
@@ -52,6 +54,12 @@ class Agent {
     this.last_action_tick = last_action_tick;
     this.idle_ticks = idle_ticks;
     this.action_queue = [];
+    // Loot drops Phase 2:
+    //   buffs — array of {type, expiresTick, meta?} for temporary effects
+    //           (scroll_haste, potion_gather, potion_build)
+    //   perks — object with permanent flags (golden_pickaxe, golden_axe)
+    this.buffs = Array.isArray(buffs) ? [...buffs] : [];
+    this.perks = perks && typeof perks === 'object' ? { ...perks } : {};
   }
 
   toJSON() {
@@ -70,6 +78,8 @@ class Agent {
       owned_tiles: this.owned_tiles.length,
       buildings_count: this.buildings.length,
       message: this.message,
+      buffs: Array.isArray(this.buffs) ? this.buffs.map(b => ({ type: b.type, expiresTick: b.expiresTick })) : [],
+      perks: this.perks && typeof this.perks === 'object' ? { ...this.perks } : {},
     };
     if (this._raidTarget) data._raidTarget = this._raidTarget;
     return data;

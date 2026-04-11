@@ -39,6 +39,23 @@ class GameLoop {
       const tick = this.world.tick;
       const events = [];
 
+      // 2a. Loot drops Phase 2: prune expired buffs BEFORE agents decide
+      // so stale buffs don't influence this tick's behavior. Emit a feed
+      // event for each expiry so the viewer can show "X's haste wore off".
+      for (const agent of this.world.agents.values()) {
+        const expired = GameLoop.pruneExpiredBuffs(agent, tick);
+        for (const b of expired) {
+          events.push({
+            tick,
+            type: 'buff_expired',
+            agent: agent.name,
+            agentId: agent.id,
+            buff: b.type,
+            message: `✨ ${agent.name}'s ${b.type} buff wore off.`,
+          });
+        }
+      }
+
       // 2. For each agent: evaluate state, pick action if idle
       // Process agents — LLM agents may be async
       const agentPromises = [];
@@ -60,7 +77,9 @@ class GameLoop {
           if (owner.mood !== 'building') continue;
           // Owner must be AT the building site (within 1 tile)
           if (Math.abs(owner.x - building.x) > 1 || Math.abs(owner.y - building.y) > 1) continue;
-          building.advanceProgress(1);
+          // Loot drops Phase 2: Builder's Potion (potion_build) → 2× progress
+          const buildStep = GameLoop.hasBuff(owner, 'build', tick) ? 2 : 1;
+          building.advanceProgress(buildStep);
           if (building.isComplete()) {
             // Building just completed
             if (!this.world._dirtyTiles) this.world._dirtyTiles = new Set();
@@ -294,7 +313,7 @@ class GameLoop {
     const { dx = 0, dy = 0 } = decision.payload || {};
     const clampedDx = Math.max(-2, Math.min(2, dx));
     const clampedDy = Math.max(-2, Math.min(2, dy));
-    agent.move(clampedDx, clampedDy, this.world.width, this.world.height);
+    this._moveAgent(agent, clampedDx, clampedDy);
     agent.mood = 'moving';
     agent.current_action = { type: 'move', dx: clampedDx, dy: clampedDy };
     agent.idle_ticks = 0;
@@ -555,21 +574,32 @@ class GameLoop {
     const agentBuildings = agent.buildings.filter(b => b.isComplete());
     const yields = Economy.calculateBuildingYields(agentBuildings);
 
+    // ── Loot drops Phase 2 multipliers ─────────────────────────────
+    //   Gatherer's Potion (potion_gather) → 2× all resources (temporary)
+    //   Golden Axe (golden_axe)           → 2× wood   (permanent)
+    //   Golden Pickaxe (golden_pickaxe)   → 2× stone  (permanent)
+    // Multipliers stack: a hasted gatherer with a golden axe gets 4× wood.
+    const gatherMult = GameLoop.hasBuff(agent, 'gather', tick) ? 2 : 1;
+    const woodMult = gatherMult * (GameLoop.hasPerk(agent, 'golden_axe') ? 2 : 1);
+    const stoneMult = gatherMult * (GameLoop.hasPerk(agent, 'golden_pickaxe') ? 2 : 1);
+    const foodMult = gatherMult;
+    const goldMult = gatherMult;
+
     // Scale down to per-tick amounts
-    agent.resources.food += yields.food * 0.1;
-    agent.resources.wood += yields.wood * 0.1;
-    agent.resources.stone += yields.stone * 0.1;
-    agent.resources.gold += yields.gold * 0.1;
+    agent.resources.food  += yields.food  * 0.1 * foodMult;
+    agent.resources.wood  += yields.wood  * 0.1 * woodMult;
+    agent.resources.stone += yields.stone * 0.1 * stoneMult;
+    agent.resources.gold  += yields.gold  * 0.1 * goldMult;
 
     // Also get base tile yields
     for (const tileId of agent.owned_tiles) {
       const tile = this.world.tiles.get(tileId);
       if (tile) {
         const tileYields = WorldGen.getTileYield(tile.biome);
-        agent.resources.food += tileYields.food * 0.05;
-        agent.resources.wood += tileYields.wood * 0.05;
-        agent.resources.stone += tileYields.stone * 0.05;
-        agent.resources.gold += tileYields.gold * 0.05;
+        agent.resources.food  += tileYields.food  * 0.05 * foodMult;
+        agent.resources.wood  += tileYields.wood  * 0.05 * woodMult;
+        agent.resources.stone += tileYields.stone * 0.05 * stoneMult;
+        agent.resources.gold  += tileYields.gold  * 0.05 * goldMult;
       }
     }
   }
@@ -636,7 +666,7 @@ class GameLoop {
         if (dist > 2) {
           const dx = Math.sign(tx - raider.x), dy = Math.sign(ty - raider.y);
           // Move 1 tile per tick — same as normal walking for smooth animation
-          raider.move(dx, dy, this.world.width, this.world.height);
+          this._moveAgent(raider, dx, dy);
           raider.mood = 'raiding';
           raider.message = `Marching to attack! (${dist} tiles away)`;
           continue;
@@ -677,7 +707,7 @@ class GameLoop {
       const sinceFire = tick - (raid.attackTick || tick);
       if (sinceFire < 12) {
         raider.mood = 'celebrating';
-        raider.move(sinceFire % 2 === 0 ? 1 : -1, 0, this.world.width, this.world.height);
+        this._moveAgent(raider, sinceFire % 2 === 0 ? 1 : -1, 0);
         continue;
       }
 
@@ -689,7 +719,7 @@ class GameLoop {
           raider.mood = 'returning'; raider.message = 'Returning victorious!';
           raider._raidTarget = { x: homeSett.cx, y: homeSett.cy }; // client uses this for smooth walk
           const dx = Math.sign(homeSett.cx - raider.x), dy = Math.sign(homeSett.cy - raider.y);
-          raider.move(dx, dy, this.world.width, this.world.height);
+          this._moveAgent(raider, dx, dy);
           continue;
         }
       }
@@ -1840,13 +1870,69 @@ class GameLoop {
   /**
    * Catalog of droppable item types with their effects.
    * Effects are applied by _applyItemEffect() when an agent picks one up.
+   *
+   * Categories:
+   *   resource — one-shot resource bump (food/wood/stone/gold caches)
+   *   buff     — temporary buff with expiry tick (scroll/potion)
+   *   perk     — permanent flag on the agent (golden tools)
    */
+  static BUFF_DURATION_TICKS = 100; // ~5 min at 3s/tick
+
   static ITEM_CATALOG = {
-    food_cache: { label: 'Food Cache', resource: 'food', defaultAmount: 50, emoji: '🍞' },
-    wood_cache: { label: 'Wood Cache', resource: 'wood', defaultAmount: 50, emoji: '🪵' },
-    stone_cache: { label: 'Stone Cache', resource: 'stone', defaultAmount: 50, emoji: '🪨' },
-    gold_cache: { label: 'Gold Cache', resource: 'gold', defaultAmount: 25, emoji: '💰' },
+    // ─── Resource caches (Phase 1) ───
+    food_cache:  { category: 'resource', label: 'Food Cache',  resource: 'food',  defaultAmount: 50, emoji: '🍞' },
+    wood_cache:  { category: 'resource', label: 'Wood Cache',  resource: 'wood',  defaultAmount: 50, emoji: '🪵' },
+    stone_cache: { category: 'resource', label: 'Stone Cache', resource: 'stone', defaultAmount: 50, emoji: '🪨' },
+    gold_cache:  { category: 'resource', label: 'Gold Cache',  resource: 'gold',  defaultAmount: 25, emoji: '💰' },
+    // ─── Buffs (Phase 2, temporary) ───
+    scroll_haste:  { category: 'buff', label: 'Scroll of Haste',   buff: 'haste',   emoji: '📜', description: 'Agent moves 2× faster for 5 minutes.' },
+    potion_gather: { category: 'buff', label: 'Gatherer\'s Potion', buff: 'gather', emoji: '🧪', description: '2× resource collection for 5 minutes.' },
+    potion_build:  { category: 'buff', label: 'Builder\'s Potion',  buff: 'build',  emoji: '⚗️', description: '2× building speed for 5 minutes.' },
+    // ─── Perks (Phase 2, permanent) ───
+    golden_pickaxe: { category: 'perk', label: 'Golden Pickaxe', perk: 'golden_pickaxe', emoji: '⛏️', description: 'Permanent 2× stone yield from all owned tiles.' },
+    golden_axe:     { category: 'perk', label: 'Golden Axe',     perk: 'golden_axe',     emoji: '🪓', description: 'Permanent 2× wood yield from all owned tiles.' },
   };
+
+  /** Returns true if agent currently has an unexpired buff of the given type. */
+  static hasBuff(agent, buffType, tick) {
+    if (!agent || !Array.isArray(agent.buffs)) return false;
+    for (const b of agent.buffs) {
+      if (b.type === buffType && b.expiresTick > tick) return true;
+    }
+    return false;
+  }
+
+  /**
+   * Move wrapper that applies the haste buff. If the agent has an active
+   * scroll_haste buff, dx/dy are doubled (2× movement speed). Used by
+   * every agent.move() call site in the game loop.
+   */
+  _moveAgent(agent, dx, dy) {
+    const tick = this.world.tick || 0;
+    let mx = dx, my = dy;
+    if (GameLoop.hasBuff(agent, 'haste', tick)) {
+      mx *= 2;
+      my *= 2;
+    }
+    agent.move(mx, my, this.world.width, this.world.height);
+  }
+
+  /** Returns true if agent has the given permanent perk flag. */
+  static hasPerk(agent, perkName) {
+    return !!(agent && agent.perks && agent.perks[perkName]);
+  }
+
+  /** Drop expired buffs in place. Called once per agent per tick. */
+  static pruneExpiredBuffs(agent, tick) {
+    if (!agent || !Array.isArray(agent.buffs) || agent.buffs.length === 0) return [];
+    const expired = [];
+    agent.buffs = agent.buffs.filter(b => {
+      if (b.expiresTick > tick) return true;
+      expired.push(b);
+      return false;
+    });
+    return expired;
+  }
 
   /**
    * Drop an item onto the map. Called from admin / paid endpoints.
@@ -1858,11 +1944,16 @@ class GameLoop {
     if (!Number.isFinite(x) || !Number.isFinite(y)) return null;
     const cx = Math.max(0, Math.min(this.world.width - 1, Math.round(x)));
     const cy = Math.max(0, Math.min(this.world.height - 1, Math.round(y)));
-    const finalAmount = Number.isFinite(amount) && amount > 0 ? Math.round(amount) : def.defaultAmount;
+    // Resource caches have an amount; buffs/perks don't
+    const isResource = def.category === 'resource' || (!def.category && def.resource);
+    const finalAmount = isResource
+      ? (Number.isFinite(amount) && amount > 0 ? Math.round(amount) : def.defaultAmount)
+      : 0;
     if (!Array.isArray(this.world.groundItems)) this.world.groundItems = [];
     const item = {
       id: `item_${this.world.tick}_${Math.floor(Math.random() * 1e9).toString(36)}`,
       type,
+      category: def.category || 'resource',
       x: cx,
       y: cy,
       amount: finalAmount,
@@ -1870,17 +1961,23 @@ class GameLoop {
       dropped_by: droppedBy || null,
     };
     this.world.groundItems.push(item);
+    // Build a category-appropriate drop message
+    let dropSuffix;
+    if (def.category === 'buff') dropSuffix = '(temporary buff)';
+    else if (def.category === 'perk') dropSuffix = '(permanent perk!)';
+    else dropSuffix = `(+${finalAmount} ${def.resource})`;
     // Announce the drop so the viewer can flash it + log it in the feed
     const ev = {
       tick: this.world.tick || 0,
       type: 'item_dropped',
       itemId: item.id,
       itemType: type,
+      category: def.category || 'resource',
       x: cx,
       y: cy,
       amount: finalAmount,
       emoji: def.emoji,
-      message: `${def.emoji} A ${def.label} (+${finalAmount} ${def.resource}) dropped at (${cx},${cy})!`,
+      message: `${def.emoji} A ${def.label} ${dropSuffix} dropped at (${cx},${cy})!`,
     };
     if (!Array.isArray(this.world.events)) this.world.events = [];
     if (!Array.isArray(this.world._pendingBroadcastEvents)) this.world._pendingBroadcastEvents = [];
@@ -1920,7 +2017,7 @@ class GameLoop {
     // Otherwise chase it: one step toward target
     const dxStep = Math.sign(best.x - agent.x);
     const dyStep = Math.sign(best.y - agent.y);
-    agent.move(dxStep, dyStep, this.world.width, this.world.height);
+    this._moveAgent(agent, dxStep, dyStep);
     agent.mood = 'moving';
     agent.current_action = { type: 'loot_chase', target_x: best.x, target_y: best.y, itemId: best.id };
     agent.idle_ticks = 0;
@@ -1944,35 +2041,71 @@ class GameLoop {
     agent.mood = 'idle';
     agent.current_action = { type: 'loot_pickup', itemId: item.id, itemType: item.type };
     agent.idle_ticks = 0;
-    agent.message = `Picked up a ${def.label}! (+${item.amount} ${def.resource})`;
+    // Build a category-appropriate message for the agent bubble + event feed
+    let msgSuffix;
+    if (def.category === 'buff') {
+      msgSuffix = '(5 min buff)';
+    } else if (def.category === 'perk') {
+      msgSuffix = '(permanent perk!)';
+    } else {
+      msgSuffix = `(+${item.amount} ${def.resource})`;
+    }
+    agent.message = `Picked up a ${def.label}! ${msgSuffix}`;
     // Event for the viewer (pickup flash + feed)
     events.push({
       tick,
       type: 'item_pickup',
       itemId: item.id,
       itemType: item.type,
+      category: def.category,
       agent: agent.name,
       agentId: agent.id,
       x: item.x,
       y: item.y,
       amount: item.amount,
       resource: def.resource,
+      buff: def.buff,
+      perk: def.perk,
       emoji: def.emoji,
-      message: `${def.emoji} ${agent.name} picked up a ${def.label}! (+${item.amount} ${def.resource})`,
+      message: `${def.emoji} ${agent.name} picked up a ${def.label}! ${msgSuffix}`,
     });
   }
 
   /**
-   * Apply an item's effect. For Phase 1 every cataloged item is a simple
-   * resource bump. Later phases will branch on item.type for weapons,
-   * potions, scrolls, etc.
+   * Apply an item's effect. Dispatches on def.category:
+   *   resource — credit the stored amount to agent.resources[def.resource]
+   *   buff     — push a {type, expiresTick} onto agent.buffs (replaces any
+   *              existing buff of the same type — refresh behavior)
+   *   perk     — set agent.perks[def.perk] = true (permanent, idempotent)
    */
   _applyItemEffect(agent, item) {
     const def = GameLoop.ITEM_CATALOG[item.type];
     if (!def) return;
-    if (def.resource && Number.isFinite(item.amount)) {
+    const tick = this.world.tick || 0;
+
+    if (def.category === 'resource' || (!def.category && def.resource)) {
       if (!agent.resources) agent.resources = {};
-      agent.resources[def.resource] = (agent.resources[def.resource] || 0) + item.amount;
+      const amt = Number.isFinite(item.amount) ? item.amount : (def.defaultAmount || 0);
+      agent.resources[def.resource] = (agent.resources[def.resource] || 0) + amt;
+      return;
+    }
+
+    if (def.category === 'buff' && def.buff) {
+      if (!Array.isArray(agent.buffs)) agent.buffs = [];
+      // Refresh any existing same-type buff (don't stack, just extend)
+      agent.buffs = agent.buffs.filter(b => b.type !== def.buff);
+      agent.buffs.push({
+        type: def.buff,
+        expiresTick: tick + GameLoop.BUFF_DURATION_TICKS,
+        grantedTick: tick,
+      });
+      return;
+    }
+
+    if (def.category === 'perk' && def.perk) {
+      if (!agent.perks || typeof agent.perks !== 'object') agent.perks = {};
+      agent.perks[def.perk] = true;
+      return;
     }
   }
 

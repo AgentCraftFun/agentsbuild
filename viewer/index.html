@@ -5148,6 +5148,30 @@ for(const item of renderItems){
     const agOnWater=(agTx>=0&&agTx<WW&&agTy>=0&&agTy<WH)?(tBiomes[agTy*WW+agTx]===0||tBiomes[agTy*WW+agTx]===1||tBiomes[agTy*WW+agTx]===10):false;
     const isCelebrating=ad.a.mood==='celebrating';
     const isAgRaiding=ad.a.mood==='raiding';
+    // Loot drops Phase 2: buff aura — a pulsing ring under the agent when
+    // they have an active buff (haste = cyan, gather = green, build = magenta)
+    // and a small golden sparkle if they have a permanent perk
+    const agBuffs=ad.a.buffs;
+    if(Array.isArray(agBuffs)&&agBuffs.length){
+      const buffColors={haste:'102,238,255',gather:'170,255,102',build:'255,170,255'};
+      for(const ab of agBuffs){
+        const col=buffColors[ab.type];if(!col)continue;
+        const pulse=0.45+0.25*Math.sin(frame*0.12+(ab.type.charCodeAt(0)||0));
+        ctx.strokeStyle='rgba('+col+','+pulse+')';
+        ctx.lineWidth=2;
+        ctx.beginPath();ctx.ellipse(ax,ay+5,11,4,0,0,Math.PI*2);ctx.stroke();
+        ctx.lineWidth=1;
+      }
+    }
+    const agPerks=ad.a.perks;
+    if(agPerks&&(agPerks.golden_pickaxe||agPerks.golden_axe)){
+      // Tiny golden sparkle above the agent
+      const sparkle=Math.sin(frame*0.18)*0.5+0.5;
+      ctx.fillStyle='rgba(255,221,68,'+(0.5+sparkle*0.5)+')';
+      ctx.beginPath();ctx.arc(ax+6,ay-14,1.4+sparkle,0,Math.PI*2);ctx.fill();
+      ctx.fillStyle='rgba(255,255,255,'+(0.3+sparkle*0.4)+')';
+      ctx.beginPath();ctx.arc(ax-5,ay-16,1+sparkle*0.7,0,Math.PI*2);ctx.fill();
+    }
     drawAgentPixelArt(ctx,ax,ay,ad.a,sel,frame,{walking:ad.isWalking||isAgRaiding,building:ad.isBuilding,faceLeft:ad.faceLeft,idleFrames:ad.a._idleFrames||0,resting:isResting,carrying,chopping:isChopping2,mining:isMining2,onWater:agOnWater});
     // Pitchfork + evil dance for celebrating raiders
     if(isCelebrating){
@@ -5332,9 +5356,17 @@ if(S.groundItems&&S.groundItems.length){
     const gix=gi.x*ts+ts/2;
     const giy=gi.y*ts+ts/2;
     const bounce=Math.sin((frame+(gi.x+gi.y)*7)*0.08)*3;
-    // Color by type (hex + rgba glow)
-    const typeColor={food_cache:'#ffaa33',wood_cache:'#cc8844',stone_cache:'#aaaaaa',gold_cache:'#ffdd44'}[gi.type]||'#ffaa33';
-    const glowRgba={food_cache:'rgba(255,170,51,0.5)',wood_cache:'rgba(204,136,68,0.5)',stone_cache:'rgba(200,200,200,0.5)',gold_cache:'rgba(255,221,68,0.6)'}[gi.type]||'rgba(255,170,51,0.5)';
+    // Color by type (hex + rgba glow) — resource caches, buffs, perks
+    const typeColor={
+      food_cache:'#ffaa33',wood_cache:'#cc8844',stone_cache:'#aaaaaa',gold_cache:'#ffdd44',
+      scroll_haste:'#66eeff',potion_gather:'#aaff66',potion_build:'#ffaaff',
+      golden_pickaxe:'#ffdd44',golden_axe:'#ffdd44'
+    }[gi.type]||'#ffaa33';
+    const glowRgba={
+      food_cache:'rgba(255,170,51,0.5)',wood_cache:'rgba(204,136,68,0.5)',stone_cache:'rgba(200,200,200,0.5)',gold_cache:'rgba(255,221,68,0.6)',
+      scroll_haste:'rgba(102,238,255,0.65)',potion_gather:'rgba(170,255,102,0.65)',potion_build:'rgba(255,170,255,0.65)',
+      golden_pickaxe:'rgba(255,221,68,0.75)',golden_axe:'rgba(255,221,68,0.75)'
+    }[gi.type]||'rgba(255,170,51,0.5)';
     // Pulsing radial glow
     const glowR=18+Math.sin(frame*0.1)*3;
     const gg=ctx.createRadialGradient(gix,giy+bounce,2,gix,giy+bounce,glowR);
@@ -5357,7 +5389,11 @@ if(S.groundItems&&S.groundItems.length){
     ctx.fillRect(gix-1,giy-5+bounce,2,10);
     // Emoji label above
     ctx.font='12px serif';ctx.textAlign='center';ctx.textBaseline='middle';
-    const emoji={food_cache:'🍞',wood_cache:'🪵',stone_cache:'🪨',gold_cache:'💰'}[gi.type]||'📦';
+    const emoji={
+      food_cache:'🍞',wood_cache:'🪵',stone_cache:'🪨',gold_cache:'💰',
+      scroll_haste:'📜',potion_gather:'🧪',potion_build:'⚗️',
+      golden_pickaxe:'⛏️',golden_axe:'🪓'
+    }[gi.type]||'📦';
     ctx.fillText(emoji,gix,giy-12+bounce);
     ctx.textAlign='start';ctx.textBaseline='alphabetic';
   }
@@ -7427,10 +7463,18 @@ function appendLootDropsSection(listEl) {
   listEl.appendChild(blurb);
 
   var loot = [
-    { type:'food_cache',  emoji:'🍞', label:'Food Cache',  amount:50, color:'#ffaa33', desc:'Adds +50 food to the agent who picks it up.' },
-    { type:'wood_cache',  emoji:'🪵', label:'Wood Cache',  amount:50, color:'#cc8844', desc:'Adds +50 wood to the agent who picks it up.' },
-    { type:'stone_cache', emoji:'🪨', label:'Stone Cache', amount:50, color:'#bbbbbb', desc:'Adds +50 stone to the agent who picks it up.' },
-    { type:'gold_cache',  emoji:'💰', label:'Gold Cache',  amount:25, color:'#ffdd44', desc:'Adds +25 gold to the agent who picks it up.' },
+    // ── Resource caches (Phase 1) ──
+    { type:'food_cache',     emoji:'🍞', label:'Food Cache',       amount:50, color:'#ffaa33', desc:'Adds +50 food to the agent who picks it up.' },
+    { type:'wood_cache',     emoji:'🪵', label:'Wood Cache',       amount:50, color:'#cc8844', desc:'Adds +50 wood to the agent who picks it up.' },
+    { type:'stone_cache',    emoji:'🪨', label:'Stone Cache',      amount:50, color:'#bbbbbb', desc:'Adds +50 stone to the agent who picks it up.' },
+    { type:'gold_cache',     emoji:'💰', label:'Gold Cache',       amount:25, color:'#ffdd44', desc:'Adds +25 gold to the agent who picks it up.' },
+    // ── Buffs (Phase 2, temporary 5 min) ──
+    { type:'scroll_haste',   emoji:'📜', label:'Scroll of Haste',   color:'#66eeff', desc:'2× movement speed for 5 minutes.' },
+    { type:'potion_gather',  emoji:'🧪', label:"Gatherer's Potion", color:'#aaff66', desc:'2× resource collection for 5 minutes.' },
+    { type:'potion_build',   emoji:'⚗️', label:"Builder's Potion",  color:'#ffaaff', desc:'2× building speed for 5 minutes.' },
+    // ── Perks (Phase 2, PERMANENT) ──
+    { type:'golden_pickaxe', emoji:'⛏️', label:'Golden Pickaxe',    color:'#ffdd44', desc:'PERMANENT: double stone yield from all owned tiles.' },
+    { type:'golden_axe',     emoji:'🪓', label:'Golden Axe',        color:'#ffdd44', desc:'PERMANENT: double wood yield from all owned tiles.' },
   ];
   for (var li = 0; li < loot.length; li++) {
     var L = loot[li];

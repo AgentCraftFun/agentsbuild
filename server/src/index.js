@@ -46,6 +46,9 @@ function saveWorldState(ws) {
         message: agent.message || '', idle_ticks: agent.idle_ticks || 0,
         last_action_tick: agent.last_action_tick || 0,
         _settlementId: agent._settlementId || 0,
+        // Phase 2: buffs (temporary) + perks (permanent) — absent in v1 saves
+        buffs: Array.isArray(agent.buffs) ? agent.buffs : [],
+        perks: (agent.perks && typeof agent.perks === 'object') ? agent.perks : {},
       });
     }
     const buildings = ws.buildingsList.map(b => b.toJSON());
@@ -89,7 +92,9 @@ function loadWorldState() {
           x: ad.x, y: ad.y, wallet_address: ad.wallet_address, api_key: ad.api_key,
           work_balance: ad.work_balance || 0, resources: ad.resources || { food: 10, wood: 10, stone: 5, gold: 0 },
           mood: ad.mood || 'idle', owned_tiles: ad.owned_tiles || [], buildings: [],
-          message: ad.message || '', idle_ticks: ad.idle_ticks || 0, last_action_tick: ad.last_action_tick || 0 });
+          message: ad.message || '', idle_ticks: ad.idle_ticks || 0, last_action_tick: ad.last_action_tick || 0,
+          buffs: Array.isArray(ad.buffs) ? ad.buffs : [],
+          perks: (ad.perks && typeof ad.perks === 'object') ? ad.perks : {} });
         agent._settlementId = ad._settlementId || 0;
         ws.agents.set(agent.id, agent);
       } catch (e) { console.warn(`[Load] Agent ${ad.name} failed:`, e.message); }
@@ -788,12 +793,18 @@ app.post('/api/drop/free', (req, res) => {
 
   const body = req.body || {};
   const type = (body.type || req.query.type || 'food_cache').toString();
-  // Fixed amounts for the free version — no user-controlled amount
-  const FIXED_AMOUNTS = { food_cache: 50, wood_cache: 50, stone_cache: 50, gold_cache: 25 };
-  if (!FIXED_AMOUNTS[type]) {
+  // Fixed amounts for the free version — no user-controlled amount.
+  // Resource caches carry their amount; buffs/perks use 0 (amount is unused
+  // for those categories — the effect is the payload).
+  const FIXED_AMOUNTS = {
+    food_cache: 50, wood_cache: 50, stone_cache: 50, gold_cache: 25,
+    scroll_haste: 0, potion_gather: 0, potion_build: 0,
+    golden_pickaxe: 0, golden_axe: 0,
+  };
+  if (!(type in FIXED_AMOUNTS)) {
     return res.status(400).json({
       ok: false,
-      error: `Invalid item type: ${type}. Try food_cache, wood_cache, stone_cache, gold_cache.`,
+      error: `Invalid item type: ${type}.`,
     });
   }
 
