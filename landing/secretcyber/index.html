@@ -1,0 +1,740 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
+<meta name="robots" content="noindex,nofollow">
+<title>AgentCraft · LEAKED: Cyberpunk Biome</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Ctext y='20' font-size='20'%3E%F0%9F%8C%86%3C/text%3E%3C/svg%3E">
+<style>
+  :root {
+    --bg:       #05020e;
+    --ink:      #eaf4ff;
+    --neon-pink:#ff4dd2;
+    --neon-cyn: #4df3ff;
+    --neon-vio: #a64dff;
+    --neon-ylw: #f0ff5a;
+    --panel-bg: rgba(10,6,30,0.82);
+    --panel-br: rgba(255,77,210,0.35);
+  }
+  * { box-sizing:border-box; }
+  html,body {
+    margin:0; padding:0;
+    background:#05020e;
+    color:var(--ink);
+    font-family:'Courier New',monospace;
+    overflow:hidden;
+    height:100%;
+    -webkit-font-smoothing:none;
+    image-rendering:pixelated;
+  }
+  /* Canvas fills the viewport */
+  canvas#scene {
+    position:fixed; inset:0;
+    width:100vw; height:100vh;
+    image-rendering:pixelated;
+    image-rendering:crisp-edges;
+    background:
+      radial-gradient(ellipse at 50% 0%,  rgba(166,77,255,0.28),  transparent 55%),
+      radial-gradient(ellipse at 100% 100%, rgba(77,243,255,0.18), transparent 60%),
+      linear-gradient(180deg, #0a0420 0%, #05020e 60%, #0b0218 100%);
+    cursor:crosshair;
+  }
+  /* Scanline overlay — the CRT feel */
+  #scene::after {
+    content:''; position:fixed; inset:0; pointer-events:none;
+    background:repeating-linear-gradient(
+      0deg,
+      rgba(0,0,0,0.18) 0,
+      rgba(0,0,0,0.18) 1px,
+      transparent 1px,
+      transparent 3px
+    );
+  }
+
+  /* ── TOP BANNER ─────────────────────────────────── */
+  .top-banner {
+    position:fixed; top:18px; left:50%; transform:translateX(-50%);
+    z-index:10;
+    padding:10px 22px;
+    background:var(--panel-bg);
+    border:1px solid var(--neon-pink);
+    border-radius:4px;
+    box-shadow:
+      0 0 12px rgba(255,77,210,0.5),
+      inset 0 0 18px rgba(166,77,255,0.15);
+    font-size:13px; letter-spacing:2px;
+    color:var(--neon-pink);
+    text-shadow:0 0 8px rgba(255,77,210,0.9);
+    white-space:nowrap;
+    animation:banner-glow 2.6s ease-in-out infinite;
+  }
+  .top-banner .lock { color:var(--neon-cyn); }
+  .top-banner .tag  { color:var(--neon-ylw); text-shadow:0 0 8px rgba(240,255,90,0.8); }
+  @keyframes banner-glow {
+    0%,100% { box-shadow:0 0 12px rgba(255,77,210,0.5), inset 0 0 18px rgba(166,77,255,0.15); }
+    50%     { box-shadow:0 0 24px rgba(255,77,210,0.8), inset 0 0 26px rgba(166,77,255,0.3); }
+  }
+
+  /* ── BACK LINK (top-left) ───────────────────────── */
+  .back-link {
+    position:fixed; top:18px; left:20px; z-index:10;
+    padding:8px 14px;
+    background:var(--panel-bg);
+    border:1px solid var(--neon-cyn);
+    border-radius:4px;
+    color:var(--neon-cyn);
+    text-decoration:none;
+    font-size:11px; letter-spacing:1px;
+    text-shadow:0 0 6px rgba(77,243,255,0.8);
+    transition:all .2s;
+  }
+  .back-link:hover {
+    background:rgba(77,243,255,0.15);
+    box-shadow:0 0 16px rgba(77,243,255,0.6);
+  }
+
+  /* ── INFO PANEL (bottom-right) ──────────────────── */
+  .info-panel {
+    position:fixed; bottom:18px; right:20px; z-index:10;
+    padding:12px 16px; max-width:340px;
+    background:var(--panel-bg);
+    border:1px solid var(--panel-br);
+    border-left:3px solid var(--neon-pink);
+    border-radius:3px;
+    font-size:10px; line-height:1.55;
+    color:#d8e4f5;
+    box-shadow:0 0 18px rgba(255,77,210,0.3);
+  }
+  .info-panel h3 {
+    margin:0 0 6px; padding:0;
+    font-size:11px; letter-spacing:2px;
+    color:var(--neon-pink);
+    text-shadow:0 0 6px rgba(255,77,210,0.8);
+  }
+  .info-panel ul { margin:6px 0 0; padding-left:14px; }
+  .info-panel li { margin-bottom:2px; }
+  .info-panel .cnt { color:var(--neon-cyn); }
+
+  /* ── TICKER (bottom-left) ───────────────────────── */
+  .ticker {
+    position:fixed; bottom:18px; left:20px; z-index:10;
+    padding:8px 14px;
+    background:rgba(8,2,20,0.82);
+    border:1px dashed var(--neon-vio);
+    border-radius:2px;
+    font-size:10px; letter-spacing:1px;
+    color:var(--neon-vio);
+    text-shadow:0 0 6px rgba(166,77,255,0.6);
+    animation:ticker-blink 1.8s step-end infinite;
+  }
+  @keyframes ticker-blink {
+    0%,60%,100% { opacity:1; }
+    70%         { opacity:0.25; }
+  }
+
+  /* ── MOBILE tweaks ──────────────────────────────── */
+  @media(max-width:640px) {
+    .top-banner { font-size:10px; padding:8px 14px; top:12px; letter-spacing:1px; }
+    .info-panel { max-width:calc(100vw - 40px); bottom:auto; top:56px; right:20px; }
+    .ticker     { font-size:8px; }
+    .back-link  { font-size:10px; padding:6px 10px; top:12px; left:12px; }
+  }
+</style>
+</head>
+<body>
+
+<canvas id="scene"></canvas>
+
+<a href="/" class="back-link">&larr; AGENTCRAFT</a>
+
+<div class="top-banner">
+  <span class="lock">&#128274;</span>
+  &nbsp;LEAKED&nbsp;&middot;&nbsp;CYBERPUNK BIOME&nbsp;&middot;&nbsp;
+  <span class="tag">DROPPING NEXT WEEK</span>
+</div>
+
+<div class="info-panel">
+  <h3>&#127758; BIOME: NEO-KYOTO</h3>
+  Signals leaked from an unreleased world generator. Agents in this biome
+  will roam a neon underworld of hologram gods, acid-pink palms, and
+  megacorp towers. Shipping with the v0.3 Biomes update.
+  <ul>
+    <li>New tile: <span class="cnt">neon asphalt</span> &amp; <span class="cnt">circuit grid</span></li>
+    <li>New props: <span class="cnt">hologram statues</span>, <span class="cnt">LED palms</span>, <span class="cnt">vendors</span></li>
+    <li>New weather: <span class="cnt">acid rain</span>, <span class="cnt">drone patrols</span></li>
+  </ul>
+</div>
+
+<div class="ticker" id="ticker">&gt; decrypting preview stream...</div>
+
+<script>
+'use strict';
+// ═══════════════════════════════════════════════════════
+//  CYBERPUNK BIOME — LEAKED PREVIEW
+//  Pure client-side animated scene. No server calls.
+//  Built for a fixed "demo world" so we can share a
+//  live URL without touching the main game state.
+// ═══════════════════════════════════════════════════════
+
+const canvas = document.getElementById('scene');
+const ctx    = canvas.getContext('2d');
+ctx.imageSmoothingEnabled = false;
+
+// ── Tile sizing / camera ──────────────────────────────
+const TS = 24;                  // tile size in px
+let   vw = window.innerWidth;
+let   vh = window.innerHeight;
+let   camX = 0;                 // world px offset
+let   camY = 0;
+let   autoPanPhase = 0;         // for gentle breathing camera
+
+function resize() {
+  vw = window.innerWidth;
+  vh = window.innerHeight;
+  canvas.width  = vw;
+  canvas.height = vh;
+}
+resize();
+window.addEventListener('resize', resize);
+
+// ══════════════════════════════════════════════════════
+//  SCENE DATA — hardcoded demo world for the preview
+// ══════════════════════════════════════════════════════
+// Grid is 40 wide × 26 tall, tiles of TS=24px → 960×624 world.
+const WW = 40;
+const WH = 26;
+
+// Tile types:
+//  0 = neon asphalt (street)     1 = sidewalk circuit grid
+//  2 = building footprint        3 = glow strip (walkway edge)
+//  4 = plaza tile (light)        5 = water drain / gutter
+const tiles = new Uint8Array(WW * WH);
+function setTile(x, y, v) { if (x>=0&&x<WW&&y>=0&&y<WH) tiles[y*WW+x] = v; }
+function fillRect(x, y, w, h, v) {
+  for (let j=0; j<h; j++) for (let i=0; i<w; i++) setTile(x+i, y+j, v);
+}
+
+// Base = asphalt
+fillRect(0, 0, WW, WH, 0);
+// Sidewalks (circuit grid tiles) along the horizontal street edges
+fillRect(0, 6, WW, 2, 1);      // upper sidewalk strip
+fillRect(0, 18, WW, 2, 1);     // lower sidewalk strip
+// Central plaza (light tiles)
+fillRect(14, 10, 12, 6, 4);
+// Glow strips lining the plaza
+for (let i=14; i<26; i++) { setTile(i, 9, 3); setTile(i, 16, 3); }
+for (let j=10; j<16; j++) { setTile(13, j, 3); setTile(26, j, 3); }
+// Side gutters
+for (let i=0; i<WW; i++) { setTile(i, 0, 5); setTile(i, WH-1, 5); }
+
+// ── Buildings: {x, y, w, h, color, accent, windows, sign?} ──
+const buildings = [
+  { x: 1,  y: 1,  w: 6,  h: 5, color:'#1a0a2a', accent:'#ff4dd2', windows:'hot',  sign:{text:'NOODLE',  col:'#ff4dd2'} },
+  { x: 8,  y: 1,  w: 5,  h: 5, color:'#0e1630', accent:'#4df3ff', windows:'cold', sign:{text:'CYBER',   col:'#4df3ff'} },
+  { x: 14, y: 1,  w: 4,  h: 5, color:'#180a20', accent:'#a64dff', windows:'vio',  sign:null },
+  { x: 19, y: 1,  w: 6,  h: 5, color:'#0a1828', accent:'#4df3ff', windows:'cold', sign:{text:'DATA',    col:'#4df3ff'} },
+  { x: 26, y: 1,  w: 4,  h: 5, color:'#1a0820', accent:'#ff4dd2', windows:'hot',  sign:null },
+  { x: 31, y: 1,  w: 8,  h: 5, color:'#0c0a22', accent:'#f0ff5a', windows:'ylw',  sign:{text:'2077',    col:'#f0ff5a'} },
+  // lower row (below the street)
+  { x: 0,  y: 20, w: 7,  h: 5, color:'#10081e', accent:'#ff4dd2', windows:'hot',  sign:{text:'HACK',    col:'#ff4dd2'} },
+  { x: 8,  y: 20, w: 5,  h: 5, color:'#0a1428', accent:'#4df3ff', windows:'cold', sign:null },
+  { x: 14, y: 20, w: 6,  h: 5, color:'#160a24', accent:'#a64dff', windows:'vio',  sign:{text:'NEON',    col:'#a64dff'} },
+  { x: 21, y: 20, w: 4,  h: 5, color:'#0e081e', accent:'#ff4dd2', windows:'hot',  sign:null },
+  { x: 26, y: 20, w: 5,  h: 5, color:'#0a1020', accent:'#4df3ff', windows:'cold', sign:{text:'CORP',    col:'#4df3ff'} },
+  { x: 32, y: 20, w: 7,  h: 5, color:'#180a20', accent:'#ff4dd2', windows:'hot',  sign:null },
+];
+
+// ── Props: palms, lamps, hologram, drones, vendors ──
+const palms = [
+  { x: 6,  y: 9  }, { x: 10, y: 9  }, { x: 30, y: 9  }, { x: 34, y: 9  },
+  { x: 6,  y: 17 }, { x: 10, y: 17 }, { x: 30, y: 17 }, { x: 34, y: 17 },
+  { x: 18, y: 11 }, { x: 21, y: 11 }, { x: 18, y: 15 }, { x: 21, y: 15 },
+];
+const lamps = [
+  { x: 3,  y: 8  }, { x: 13, y: 8  }, { x: 26, y: 8  }, { x: 37, y: 8  },
+  { x: 3,  y: 19 }, { x: 13, y: 19 }, { x: 26, y: 19 }, { x: 37, y: 19 },
+];
+const vendors = [
+  { x: 2,  y: 16, color:'#ff4dd2' },
+  { x: 38, y: 16, color:'#4df3ff' },
+  { x: 2,  y: 9,  color:'#f0ff5a' },
+  { x: 38, y: 9,  color:'#a64dff' },
+];
+// Centerpiece: holographic goddess statue in the plaza
+const hologram = { x: 20, y: 13 };
+
+// ── Walking NPCs (simple circular paths) ──
+const npcs = [
+  { path:[[15,9],[25,9],[25,16],[15,16]], t:0, speed:0.012, col:'#ff4dd2', idx:0 },
+  { path:[[3,8],[3,19],[38,19],[38,8]],   t:0.25, speed:0.006, col:'#4df3ff', idx:0 },
+  { path:[[18,12],[22,12],[22,15],[18,15]], t:0.5, speed:0.016, col:'#f0ff5a', idx:0 },
+];
+
+// ── Drone patrols (floating dots that wander) ──
+const drones = [
+  { x: 8,  y: 4,  vx: 0.03, vy: 0.015, col:'#4df3ff' },
+  { x: 22, y: 3,  vx:-0.02, vy: 0.01,  col:'#ff4dd2' },
+  { x: 34, y: 5,  vx: 0.018,vy:-0.02,  col:'#f0ff5a' },
+];
+
+// ── Acid rain particles ──
+const rain = [];
+for (let i=0; i<140; i++) {
+  rain.push({ x: Math.random()*WW*TS, y: Math.random()*WH*TS, s: 0.8+Math.random()*1.8 });
+}
+
+// ══════════════════════════════════════════════════════
+//  DRAW FUNCTIONS
+// ══════════════════════════════════════════════════════
+
+// Center the world in the viewport with a gentle auto-pan
+function updateCamera() {
+  autoPanPhase += 0.003;
+  const worldW = WW * TS;
+  const worldH = WH * TS;
+  camX = (vw - worldW) / 2 + Math.sin(autoPanPhase) * 14;
+  camY = (vh - worldH) / 2 + Math.cos(autoPanPhase * 0.7) * 8;
+}
+
+// Tile draw — one of 6 types
+function drawTile(i, j, type, f) {
+  const x = Math.round(camX + i * TS);
+  const y = Math.round(camY + j * TS);
+  if (x + TS < 0 || y + TS < 0 || x > vw || y > vh) return;
+  if (type === 0) {
+    // Neon asphalt — dark base + subtle gradient
+    ctx.fillStyle = '#0d0820';
+    ctx.fillRect(x, y, TS, TS);
+    // Dot pattern
+    ctx.fillStyle = 'rgba(77,243,255,0.04)';
+    ctx.fillRect(x+5,  y+5,  1, 1);
+    ctx.fillRect(x+17, y+11, 1, 1);
+    ctx.fillRect(x+9,  y+19, 1, 1);
+  } else if (type === 1) {
+    // Sidewalk circuit grid
+    ctx.fillStyle = '#110a28';
+    ctx.fillRect(x, y, TS, TS);
+    ctx.strokeStyle = 'rgba(77,243,255,0.22)';
+    ctx.lineWidth = 1;
+    ctx.strokeRect(x+2.5, y+2.5, TS-5, TS-5);
+    // Glowing node
+    const pulse = 0.3 + Math.sin(f*0.08 + i*0.4 + j*0.3) * 0.3;
+    ctx.fillStyle = `rgba(77,243,255,${Math.max(0,pulse)})`;
+    ctx.fillRect(x + TS/2 - 1, y + TS/2 - 1, 2, 2);
+  } else if (type === 3) {
+    // Glow strip — magenta border edge
+    ctx.fillStyle = '#0b041a';
+    ctx.fillRect(x, y, TS, TS);
+    const pulse = 0.45 + Math.sin(f*0.1 + i*0.6) * 0.2;
+    ctx.fillStyle = `rgba(255,77,210,${pulse})`;
+    ctx.fillRect(x+1, y+1, TS-2, 3);
+    ctx.fillRect(x+1, y+TS-4, TS-2, 3);
+  } else if (type === 4) {
+    // Plaza light tile
+    ctx.fillStyle = '#18102e';
+    ctx.fillRect(x, y, TS, TS);
+    // Diagonal highlight
+    const p2 = 0.18 + Math.sin(f*0.05 + i*0.2 - j*0.2) * 0.1;
+    ctx.fillStyle = `rgba(166,77,255,${p2})`;
+    ctx.fillRect(x, y, TS, TS);
+    // Tile crosshair
+    ctx.strokeStyle = 'rgba(240,255,90,0.14)';
+    ctx.beginPath();
+    ctx.moveTo(x+TS/2, y+3); ctx.lineTo(x+TS/2, y+TS-3);
+    ctx.moveTo(x+3, y+TS/2); ctx.lineTo(x+TS-3, y+TS/2);
+    ctx.stroke();
+  } else if (type === 5) {
+    // Gutter / edge
+    ctx.fillStyle = '#07031a';
+    ctx.fillRect(x, y, TS, TS);
+    ctx.fillStyle = 'rgba(77,243,255,0.09)';
+    ctx.fillRect(x, y+TS-2, TS, 2);
+  }
+}
+
+// Tall megacorp building
+function drawBuilding(b, f) {
+  const x  = Math.round(camX + b.x * TS);
+  const y  = Math.round(camY + b.y * TS);
+  const bw = b.w * TS;
+  const bh = b.h * TS;
+  if (x + bw < 0 || y + bh < 0 || x > vw || y > vh) return;
+
+  // Base block
+  ctx.fillStyle = b.color;
+  ctx.fillRect(x, y, bw, bh);
+  // Top highlight strip (ambient sky light)
+  ctx.fillStyle = 'rgba(166,77,255,0.12)';
+  ctx.fillRect(x, y, bw, 2);
+  // Accent outline
+  ctx.strokeStyle = b.accent;
+  ctx.lineWidth = 1;
+  ctx.globalAlpha = 0.55;
+  ctx.strokeRect(x+0.5, y+0.5, bw-1, bh-1);
+  ctx.globalAlpha = 1;
+  // Window grid — some windows flicker
+  const cols = Math.floor(bw / 6);
+  const rows = Math.floor(bh / 6);
+  const winCol = b.windows === 'hot'  ? '255,170,220' :
+                 b.windows === 'cold' ? '150,220,255' :
+                 b.windows === 'vio'  ? '190,140,255' :
+                                        '240,240,140';
+  for (let ri = 1; ri < rows; ri++) {
+    for (let ci = 0; ci < cols; ci++) {
+      // Skip some windows for variation
+      const seed = (b.x*31 + b.y*17 + ri*7 + ci*13) | 0;
+      if ((seed % 5) === 0) continue;
+      const flickerOn = ((f + seed) % 240) > 10;
+      if (!flickerOn) continue;
+      const brightness = 0.55 + ((seed % 7) / 14);
+      ctx.fillStyle = `rgba(${winCol},${brightness})`;
+      ctx.fillRect(x + 2 + ci*6, y + 2 + ri*6, 3, 3);
+    }
+  }
+  // Rooftop antenna / vents
+  ctx.fillStyle = b.accent;
+  ctx.globalAlpha = 0.4;
+  ctx.fillRect(x + bw - 6, y - 6, 2, 6);
+  ctx.fillRect(x + 4,       y - 4, 2, 4);
+  ctx.globalAlpha = 1;
+  // Sign
+  if (b.sign) {
+    const sx = x + bw/2;
+    const sy = y + bh*0.35;
+    ctx.font = 'bold 9px Courier New';
+    ctx.textAlign = 'center';
+    // Glow
+    ctx.fillStyle = b.sign.col + 'aa';
+    ctx.fillText(b.sign.text, sx, sy+1);
+    // Core
+    ctx.fillStyle = '#ffffff';
+    const pulse = 0.8 + Math.sin(f*0.1 + b.x) * 0.2;
+    ctx.globalAlpha = pulse;
+    ctx.fillText(b.sign.text, sx, sy);
+    ctx.globalAlpha = 1;
+    ctx.textAlign = 'start';
+  }
+}
+
+// Pink-leaf LED palm tree
+function drawPalm(p, f) {
+  const x = Math.round(camX + p.x * TS + TS/2);
+  const y = Math.round(camY + p.y * TS + TS);
+  // Trunk
+  ctx.fillStyle = '#2a1038';
+  ctx.fillRect(x-1, y-22, 3, 22);
+  ctx.fillStyle = '#3a1a4a';
+  ctx.fillRect(x-1, y-22, 1, 22);
+  // Glow behind fronds
+  const glowR = 18 + Math.sin(f*0.07 + p.x) * 2;
+  const grad = ctx.createRadialGradient(x, y-24, 2, x, y-24, glowR);
+  grad.addColorStop(0, 'rgba(255,77,210,0.45)');
+  grad.addColorStop(1, 'rgba(255,77,210,0)');
+  ctx.fillStyle = grad;
+  ctx.fillRect(x-glowR, y-24-glowR, glowR*2, glowR*2);
+  // Pink fronds — 6 blades
+  const sway = Math.sin(f*0.04 + p.x*0.5) * 1.5;
+  ctx.fillStyle = '#ff4dd2';
+  for (let fi = 0; fi < 6; fi++) {
+    const ang = (fi / 6) * Math.PI * 2 + sway * 0.04;
+    const fx = x + Math.cos(ang) * 9;
+    const fy = y - 24 + Math.sin(ang) * 5;
+    ctx.beginPath();
+    ctx.ellipse(fx, fy, 7, 3, ang, 0, Math.PI*2);
+    ctx.fill();
+  }
+  // Inner hot-pink highlights
+  ctx.fillStyle = '#ff8cec';
+  for (let fi = 0; fi < 6; fi++) {
+    const ang = (fi / 6) * Math.PI * 2 + sway * 0.04;
+    const fx = x + Math.cos(ang) * 7;
+    const fy = y - 24 + Math.sin(ang) * 4;
+    ctx.fillRect(fx-1, fy-1, 2, 2);
+  }
+}
+
+// Tall LED street lamp
+function drawLamp(l, f) {
+  const x = Math.round(camX + l.x * TS + TS/2);
+  const y = Math.round(camY + l.y * TS + TS);
+  // Pole
+  ctx.fillStyle = '#1a1020';
+  ctx.fillRect(x-1, y-30, 2, 30);
+  // Head
+  ctx.fillStyle = '#4df3ff';
+  ctx.fillRect(x-3, y-32, 6, 2);
+  // Glow
+  const glowR = 14 + Math.sin(f*0.09 + l.x) * 2;
+  const grad = ctx.createRadialGradient(x, y-32, 2, x, y-32, glowR);
+  grad.addColorStop(0, 'rgba(77,243,255,0.55)');
+  grad.addColorStop(1, 'rgba(77,243,255,0)');
+  ctx.fillStyle = grad;
+  ctx.fillRect(x-glowR, y-32-glowR, glowR*2, glowR*2);
+  // Light cone on ground
+  ctx.fillStyle = 'rgba(77,243,255,0.08)';
+  ctx.beginPath();
+  ctx.moveTo(x, y-30);
+  ctx.lineTo(x-10, y);
+  ctx.lineTo(x+10, y);
+  ctx.closePath();
+  ctx.fill();
+}
+
+// Vending machine
+function drawVendor(v, f) {
+  const x = Math.round(camX + v.x * TS + 4);
+  const y = Math.round(camY + v.y * TS + 4);
+  // Body
+  ctx.fillStyle = '#0a0418';
+  ctx.fillRect(x, y, 16, 18);
+  ctx.strokeStyle = v.color;
+  ctx.lineWidth = 1;
+  ctx.strokeRect(x+0.5, y+0.5, 15, 17);
+  // Screen
+  const flicker = Math.sin(f*0.3 + v.x) > 0.3 ? 0.8 : 0.4;
+  ctx.fillStyle = v.color;
+  ctx.globalAlpha = flicker;
+  ctx.fillRect(x+2, y+2, 12, 6);
+  ctx.globalAlpha = 1;
+  // Slot
+  ctx.fillStyle = '#2a1a3a';
+  ctx.fillRect(x+3, y+11, 10, 2);
+  // Button panel
+  ctx.fillStyle = v.color;
+  ctx.fillRect(x+3, y+15, 2, 2);
+  ctx.fillRect(x+6, y+15, 2, 2);
+  ctx.fillRect(x+9, y+15, 2, 2);
+  ctx.fillRect(x+12, y+15, 2, 2);
+}
+
+// Massive holographic goddess statue — centerpiece
+function drawHologram(h, f) {
+  const x = Math.round(camX + h.x * TS);
+  const y = Math.round(camY + h.y * TS);
+  // Base plinth
+  ctx.fillStyle = '#0a0218';
+  ctx.fillRect(x-8, y+4, 40, 6);
+  ctx.strokeStyle = '#4df3ff';
+  ctx.lineWidth = 1;
+  ctx.strokeRect(x-7.5, y+4.5, 39, 5);
+  // Emitter dots
+  for (let i = 0; i < 5; i++) {
+    const pulse = 0.5 + Math.sin(f*0.2 + i) * 0.5;
+    ctx.fillStyle = `rgba(77,243,255,${pulse})`;
+    ctx.fillRect(x - 6 + i*9, y + 6, 2, 2);
+  }
+  // Holographic projection — vertical flicker bands
+  const bandShift = (f * 0.6) % 6;
+  ctx.save();
+  ctx.translate(x + 12, y - 30);
+  // Cyan figure silhouette (simple goddess form: head, shoulders, body, legs)
+  const cyan = 'rgba(77,243,255,';
+  // Flicker: random horizontal slices drop out
+  const slices = 24;
+  for (let si = 0; si < slices; si++) {
+    const sy = -si * 2;
+    const seed = Math.floor((f + si*7)/5) % 7;
+    if (seed === 0) continue; // skip = glitch
+    const alpha = 0.25 + (si / slices) * 0.5;
+    ctx.fillStyle = cyan + alpha + ')';
+    // Figure width tapers
+    let w;
+    if (si > 20)      w = 4;       // head
+    else if (si > 17) w = 8;       // shoulders
+    else if (si > 10) w = 6 - Math.abs(si-14)*0.3; // torso
+    else              w = 4;       // legs
+    ctx.fillRect(-w, sy, w*2, 2);
+  }
+  // Core white highlight
+  ctx.fillStyle = 'rgba(255,255,255,0.25)';
+  ctx.fillRect(-1, -40, 2, 44);
+  // Scanline band that moves
+  ctx.fillStyle = 'rgba(255,255,255,0.35)';
+  ctx.fillRect(-10, -44 + bandShift*4, 20, 1);
+  ctx.restore();
+  // Ground glow
+  const gr = ctx.createRadialGradient(x+12, y+7, 2, x+12, y+7, 40);
+  gr.addColorStop(0, 'rgba(77,243,255,0.35)');
+  gr.addColorStop(1, 'rgba(77,243,255,0)');
+  ctx.fillStyle = gr;
+  ctx.fillRect(x+12-40, y+7-40, 80, 80);
+}
+
+// Tiny pixel-art NPC walking on a preset path
+function drawNpc(n, f) {
+  // Interpolate along closed path
+  const pts = n.path;
+  const segLen = 1 / pts.length;
+  const pos = (n.t % 1);
+  const segIdx = Math.floor(pos / segLen);
+  const segT = (pos - segIdx * segLen) / segLen;
+  const a = pts[segIdx];
+  const b = pts[(segIdx + 1) % pts.length];
+  const tx = a[0] + (b[0] - a[0]) * segT;
+  const ty = a[1] + (b[1] - a[1]) * segT;
+  const x = Math.round(camX + tx * TS + TS/2);
+  const y = Math.round(camY + ty * TS + TS - 4);
+  const bob = Math.floor(f/8) % 2 === 0 ? 0 : -1;
+  // Shadow
+  ctx.fillStyle = 'rgba(0,0,0,0.4)';
+  ctx.beginPath();
+  ctx.ellipse(x, y+2, 4, 1.5, 0, 0, Math.PI*2);
+  ctx.fill();
+  // Body
+  ctx.fillStyle = n.col;
+  ctx.fillRect(x-3, y-10+bob, 6, 6);
+  // Head
+  ctx.fillStyle = '#f4d8b0';
+  ctx.fillRect(x-2, y-14+bob, 4, 4);
+  // Hair
+  ctx.fillStyle = '#1a0a20';
+  ctx.fillRect(x-2, y-14+bob, 4, 1);
+  // Legs
+  const lp = Math.floor(f/6) % 2;
+  ctx.fillStyle = '#1a0820';
+  ctx.fillRect(x-3, y-4+bob, 2, 4);
+  ctx.fillRect(x+1, y-4+bob, 2, 4);
+  if (lp === 0) { ctx.fillRect(x-3, y+bob, 2, 1); }
+  else          { ctx.fillRect(x+1, y+bob, 2, 1); }
+  // Neon outline glow
+  ctx.strokeStyle = n.col;
+  ctx.globalAlpha = 0.35;
+  ctx.lineWidth = 1;
+  ctx.strokeRect(x-3.5, y-14.5+bob, 7, 14);
+  ctx.globalAlpha = 1;
+  // Advance
+  n.t = (n.t + n.speed * 0.016 * 60) % 1;
+}
+
+// Floating patrol drone
+function drawDrone(d, f) {
+  const x = Math.round(camX + d.x * TS);
+  const y = Math.round(camY + d.y * TS);
+  const bob = Math.sin(f * 0.15 + d.x) * 2;
+  // Glow
+  const gr = ctx.createRadialGradient(x, y+bob, 1, x, y+bob, 10);
+  gr.addColorStop(0, d.col + 'cc');
+  gr.addColorStop(1, d.col + '00');
+  ctx.fillStyle = gr;
+  ctx.fillRect(x-10, y+bob-10, 20, 20);
+  // Body
+  ctx.fillStyle = '#0a0418';
+  ctx.fillRect(x-3, y+bob-2, 6, 3);
+  ctx.strokeStyle = d.col;
+  ctx.lineWidth = 1;
+  ctx.strokeRect(x-3, y+bob-2, 6, 3);
+  // Blinking light
+  if (Math.floor(f/12) % 2 === 0) {
+    ctx.fillStyle = d.col;
+    ctx.fillRect(x, y+bob-1, 2, 2);
+  }
+  // Scan beam
+  if ((f + Math.floor(d.x*10)) % 120 < 40) {
+    ctx.fillStyle = d.col;
+    ctx.globalAlpha = 0.12;
+    ctx.beginPath();
+    ctx.moveTo(x, y+bob+1);
+    ctx.lineTo(x-6, y+bob+16);
+    ctx.lineTo(x+6, y+bob+16);
+    ctx.closePath();
+    ctx.fill();
+    ctx.globalAlpha = 1;
+  }
+  // Advance
+  d.x += d.vx;
+  d.y += d.vy;
+  if (d.x < 0 || d.x > WW) d.vx *= -1;
+  if (d.y < 0 || d.y > 8) d.vy *= -1;
+}
+
+// Acid rain — streaks at ~60deg angle
+function drawRain(f) {
+  ctx.strokeStyle = 'rgba(170,255,255,0.35)';
+  ctx.lineWidth = 1;
+  for (const r of rain) {
+    const rx = camX + r.x;
+    const ry = camY + r.y;
+    ctx.beginPath();
+    ctx.moveTo(rx, ry);
+    ctx.lineTo(rx - 2*r.s, ry + 6*r.s);
+    ctx.stroke();
+    // Fall
+    r.y += 3.5 * r.s;
+    r.x -= 1.2 * r.s;
+    if (r.y > WH * TS) { r.y = -10; r.x = Math.random() * WW * TS; }
+    if (r.x < -20)     { r.x = WW * TS + 10; }
+  }
+}
+
+// ══════════════════════════════════════════════════════
+//  MAIN LOOP
+// ══════════════════════════════════════════════════════
+let frame = 0;
+function tick() {
+  frame++;
+
+  // Clear (the CSS gradient shows through slightly for ambient glow)
+  ctx.fillStyle = 'rgba(5,2,14,0.93)';
+  ctx.fillRect(0, 0, vw, vh);
+
+  updateCamera();
+
+  // Pass 1: tiles
+  for (let j = 0; j < WH; j++) {
+    for (let i = 0; i < WW; i++) {
+      drawTile(i, j, tiles[j*WW+i], frame);
+    }
+  }
+
+  // Pass 2: buildings (sorted top→bottom so lower ones overlap)
+  const sortedB = buildings.slice().sort((a,b) => a.y - b.y);
+  for (const b of sortedB) drawBuilding(b, frame);
+
+  // Pass 3: vendors (ground level, behind palms/lamps)
+  for (const v of vendors) drawVendor(v, frame);
+
+  // Pass 4: hologram centerpiece
+  drawHologram(hologram, frame);
+
+  // Pass 5: lamps
+  for (const l of lamps) drawLamp(l, frame);
+
+  // Pass 6: palms
+  for (const p of palms) drawPalm(p, frame);
+
+  // Pass 7: NPCs
+  for (const n of npcs) drawNpc(n, frame);
+
+  // Pass 8: drones
+  for (const d of drones) drawDrone(d, frame);
+
+  // Pass 9: rain (on top of everything)
+  drawRain(frame);
+
+  // Pass 10: vignette for depth
+  const vignette = ctx.createRadialGradient(vw/2, vh/2, Math.min(vw,vh)*0.35, vw/2, vh/2, Math.max(vw,vh)*0.7);
+  vignette.addColorStop(0, 'rgba(5,2,14,0)');
+  vignette.addColorStop(1, 'rgba(5,2,14,0.55)');
+  ctx.fillStyle = vignette;
+  ctx.fillRect(0, 0, vw, vh);
+
+  requestAnimationFrame(tick);
+}
+tick();
+
+// Ticker rotation
+const tickerEl = document.getElementById('ticker');
+const tickerLines = [
+  '> decrypting preview stream...',
+  '> biome seed: NEO-KYOTO_001',
+  '> palm canopy: 4 variants loaded',
+  '> hologram uplink: STABLE',
+  '> acid rain ppm: 0.42',
+  '> drone patrol: 3 active',
+];
+let tix = 0;
+setInterval(() => { tix = (tix + 1) % tickerLines.length; tickerEl.textContent = tickerLines[tix]; }, 2600);
+</script>
+</body>
+</html>
