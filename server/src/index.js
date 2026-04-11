@@ -744,6 +744,93 @@ app.post('/api/drop', (req, res) => {
   return res.json({ ok: true, item, tick: worldState.tick || 0 });
 });
 
+// ─── Free Loot Drop Endpoint (public, rate-limited) ───
+// Phase 1 of loot drops ships as a FREE feature so anyone on the viewer
+// can watch agents chase a dropped item. The Influence World modal has
+// a "Loot Drops" section that hits this endpoint.
+//
+// Abuse controls:
+//   - Global cap: max 30 live ground items at once (older drops still
+//     on the ground count)
+//   - Per-IP cooldown: 4 seconds between drops
+//   - Fixed amounts (can't be exploited to mint arbitrary resources)
+//
+// Usage: POST /api/drop/free  body: { "type": "food_cache" }
+const _freeDropCooldownMs = 4000;
+const _freeDropLastByIp = new Map(); // ip -> last ms timestamp
+const _freeDropMaxLive = 30;
+
+app.post('/api/drop/free', (req, res) => {
+  if (!gameLoop) {
+    return res.status(503).json({ ok: false, error: 'Game loop not ready' });
+  }
+
+  // Per-IP cooldown
+  const ip = (req.headers['x-forwarded-for'] || req.socket.remoteAddress || 'unknown').toString().split(',')[0].trim();
+  const now = Date.now();
+  const last = _freeDropLastByIp.get(ip) || 0;
+  if (now - last < _freeDropCooldownMs) {
+    const waitMs = _freeDropCooldownMs - (now - last);
+    return res.status(429).json({
+      ok: false,
+      error: `Slow down — wait ${Math.ceil(waitMs / 1000)}s before dropping again.`,
+      retryAfterMs: waitMs,
+    });
+  }
+  // Global live-item cap
+  const liveCount = Array.isArray(worldState.groundItems) ? worldState.groundItems.length : 0;
+  if (liveCount >= _freeDropMaxLive) {
+    return res.status(429).json({
+      ok: false,
+      error: `Too many drops live in the world (${liveCount}/${_freeDropMaxLive}). Wait for agents to pick some up.`,
+    });
+  }
+
+  const body = req.body || {};
+  const type = (body.type || req.query.type || 'food_cache').toString();
+  // Fixed amounts for the free version — no user-controlled amount
+  const FIXED_AMOUNTS = { food_cache: 50, wood_cache: 50, stone_cache: 50, gold_cache: 25 };
+  if (!FIXED_AMOUNTS[type]) {
+    return res.status(400).json({
+      ok: false,
+      error: `Invalid item type: ${type}. Try food_cache, wood_cache, stone_cache, gold_cache.`,
+    });
+  }
+
+  // Drop near a random agent for maximum drama
+  let x, y;
+  const agents = [...worldState.agents.values()];
+  if (agents.length > 0) {
+    const target = agents[Math.floor(Math.random() * agents.length)];
+    x = target.x + (Math.floor(Math.random() * 9) - 4);
+    y = target.y + (Math.floor(Math.random() * 9) - 4);
+  } else {
+    x = Math.floor(worldState.width / 2);
+    y = Math.floor(worldState.height / 2);
+  }
+
+  const item = gameLoop.dropItem({
+    type,
+    x,
+    y,
+    amount: FIXED_AMOUNTS[type],
+    droppedBy: `viewer:${ip.slice(0, 12)}`,
+  });
+  if (!item) {
+    return res.status(500).json({ ok: false, error: 'dropItem returned null' });
+  }
+  _freeDropLastByIp.set(ip, now);
+  // Prevent the map from growing unbounded
+  if (_freeDropLastByIp.size > 1000) {
+    const cutoff = now - 60_000;
+    for (const [k, v] of _freeDropLastByIp.entries()) {
+      if (v < cutoff) _freeDropLastByIp.delete(k);
+    }
+  }
+  console.log(`[DROP-FREE] ${type} x${item.amount} @(${item.x},${item.y}) from ${ip}`);
+  return res.json({ ok: true, item, tick: worldState.tick || 0 });
+});
+
 // ─── Emergency Cleanup Endpoint ───
 // Destroys buildings owned by:
 //   (a) agents who haven't acted in N ticks, OR

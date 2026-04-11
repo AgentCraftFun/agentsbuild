@@ -7369,10 +7369,100 @@ function loadInfluenceActions() {
       listEl.appendChild(btn);
     }
     status.textContent = paidActions.length + ' action' + (paidActions.length === 1 ? '' : 's') + ' available';
+    // Append the Loot Drops section — free (testing) section for Phase 1
+    appendLootDropsSection(listEl);
   }).catch(function(err) {
     var status = document.getElementById('influence-list-status');
     status.textContent = 'Failed to load actions: ' + err.message;
     status.className = 'deploy-status err';
+  });
+}
+
+// ─── LOOT DROPS (free testing section) ───────────────────────────
+// Phase 1 of the Loot Drops roadmap item ships as a FREE section in
+// the Influence World modal. Clicking any of these buttons hits
+// POST /api/drop/free which spawns a ground item near a random agent.
+// Agents within 15 tiles autonomously chase and pick it up.
+function appendLootDropsSection(listEl) {
+  // Divider
+  var divider = document.createElement('div');
+  divider.style.cssText = 'margin:16px 0 8px;padding-top:12px;border-top:1px dashed #3a2a5e;display:flex;align-items:center;gap:8px;color:#88ccff;font-size:10px;letter-spacing:1px;font-weight:bold';
+  divider.innerHTML = '🎁 LOOT DROPS <span style="color:#66aa66;background:#0a2a0a;border:1px solid #2a5a2a;padding:2px 6px;border-radius:3px;font-size:8px">FREE · BETA</span>';
+  listEl.appendChild(divider);
+  var blurb = document.createElement('div');
+  blurb.style.cssText = 'font-size:10px;color:#888;margin-bottom:8px;padding:0 2px';
+  blurb.textContent = 'Drop items onto the map. Agents within 15 tiles will chase and pick them up. (Phase 1 — fixed amounts, free to test.)';
+  listEl.appendChild(blurb);
+
+  var loot = [
+    { type:'food_cache',  emoji:'🍞', label:'Food Cache',  amount:50, color:'#ffaa33', desc:'Adds +50 food to the agent who picks it up.' },
+    { type:'wood_cache',  emoji:'🪵', label:'Wood Cache',  amount:50, color:'#cc8844', desc:'Adds +50 wood to the agent who picks it up.' },
+    { type:'stone_cache', emoji:'🪨', label:'Stone Cache', amount:50, color:'#bbbbbb', desc:'Adds +50 stone to the agent who picks it up.' },
+    { type:'gold_cache',  emoji:'💰', label:'Gold Cache',  amount:25, color:'#ffdd44', desc:'Adds +25 gold to the agent who picks it up.' },
+  ];
+  for (var li = 0; li < loot.length; li++) {
+    var L = loot[li];
+    var btn = document.createElement('button');
+    btn.className = 'influence-action-btn loot-drop-btn';
+    btn.style.cssText = 'display:flex;align-items:center;gap:12px;padding:12px;background:#080812;border:1px solid #2a4e4e;border-radius:6px;cursor:pointer;text-align:left;font-family:Courier New,monospace;color:#c8c8d8;transition:all 0.15s;margin-bottom:6px';
+    btn.onmouseenter = function() { this.style.borderColor = '#44ccaa'; this.style.background = '#0c1e1c'; };
+    btn.onmouseleave = function() { this.style.borderColor = '#2a4e4e'; this.style.background = '#080812'; };
+    btn.innerHTML =
+      '<div style="font-size:24px">' + L.emoji + '</div>' +
+      '<div style="flex:1">' +
+        '<div style="font-size:12px;font-weight:bold;color:' + L.color + '">' + L.label + '</div>' +
+        '<div style="font-size:9px;color:#888;margin-top:2px">' + L.desc + '</div>' +
+      '</div>' +
+      '<div style="font-size:10px;color:#66cc88;font-weight:bold;white-space:nowrap">FREE</div>';
+    btn.onclick = (function(lootDef) {
+      return function() { triggerFreeLootDrop(lootDef, this); };
+    })(L);
+    listEl.appendChild(btn);
+  }
+}
+
+function triggerFreeLootDrop(lootDef, btnEl) {
+  if (btnEl) {
+    btnEl.disabled = true;
+    btnEl.style.opacity = '0.5';
+  }
+  var status = document.getElementById('influence-list-status');
+  if (status) {
+    status.textContent = 'Dropping ' + lootDef.label + '...';
+    status.className = 'deploy-status';
+  }
+  fetch('/api/drop/free', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ type: lootDef.type }),
+  }).then(function(r) {
+    return r.json().then(function(data) { return { status: r.status, data: data }; });
+  }).then(function(res) {
+    if (!res.data.ok) {
+      if (status) {
+        status.textContent = res.data.error || 'Drop failed';
+        status.className = 'deploy-status err';
+      }
+    } else {
+      if (status) {
+        status.textContent = lootDef.emoji + ' ' + lootDef.label + ' dropped at (' + res.data.item.x + ',' + res.data.item.y + ')';
+        status.className = 'deploy-status ok';
+      }
+      // Close the modal after a brief success flash so the user can watch
+      setTimeout(function() { closeInfluenceModal(); }, 700);
+    }
+  }).catch(function(err) {
+    if (status) {
+      status.textContent = 'Drop failed: ' + err.message;
+      status.className = 'deploy-status err';
+    }
+  }).finally(function() {
+    if (btnEl) {
+      setTimeout(function() {
+        btnEl.disabled = false;
+        btnEl.style.opacity = '1';
+      }, 500);
+    }
   });
 }
 
