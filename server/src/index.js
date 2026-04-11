@@ -610,6 +610,74 @@ app.post('/api/chaos/:type', (req, res) => {
   });
 });
 
+// ─── Admin Test Trigger (fire paid actions without payment) ───
+//
+// POST /api/test/:action  — fires the PAID version of a chaos action
+// without any $AGENTCRAFT payment. Use for testing visuals in prod.
+//
+// Protected by ADMIN_TOKEN env var if set. Without the env var this is
+// open (useful during development, set ADMIN_TOKEN in prod to lock it).
+//
+// Usage:
+//   POST /api/test/lightning
+//   POST /api/test/wildfire
+//   POST /api/test/earthquake
+//   POST /api/test/tornado
+//   POST /api/test/meteor
+//   POST /api/test/plague
+//   POST /api/test/volcano
+//
+// Include the admin token in the body or ?token= query param:
+//   curl -X POST "https://agentcraft.fun/api/test/lightning?token=XXX"
+app.post('/api/test/:action', (req, res) => {
+  const adminToken = process.env.ADMIN_TOKEN;
+  if (adminToken) {
+    const providedToken = (req.body && req.body.token) || req.query.token;
+    if (providedToken !== adminToken) {
+      return res.status(403).json({ ok: false, error: 'Forbidden: invalid admin token' });
+    }
+  }
+
+  const actionName = (req.params.action || '').toLowerCase();
+  const actionDef = ActionCatalog.get(actionName);
+  if (!actionDef) {
+    return res.status(400).json({ ok: false, error: `Unknown action: ${actionName}. Try lightning, wildfire, earthquake, tornado, meteor, plague, volcano.` });
+  }
+  if (actionName === 'echo') {
+    return res.status(400).json({ ok: false, error: 'echo has no visual effect' });
+  }
+  if (!gameLoop) {
+    return res.status(503).json({ ok: false, error: 'Game loop not ready' });
+  }
+
+  // Build a fake ctx that matches what /api/action would provide
+  const ctx = {
+    worldState,
+    gameLoop,
+    from: '0x0000000000000000000000000000000000000000',  // admin/test sender
+    txHash: '0x' + 'admin'.padEnd(64, '0').slice(0, 64),
+    amount: actionDef.price,
+    tick: worldState.tick || 0,
+  };
+
+  let result;
+  try {
+    result = actionDef.dispatch(ctx, {});
+  } catch (err) {
+    console.error(`[API /test] dispatch error for ${actionName}:`, err.stack || err.message);
+    return res.status(500).json({ ok: false, error: `Dispatch failed: ${err.message}` });
+  }
+
+  console.log(`[TEST] ${actionName} (no payment) from admin endpoint`);
+
+  return res.json({
+    ok: true,
+    action: actionName,
+    tick: worldState.tick || 0,
+    result,
+  });
+});
+
 // ─── Emergency Cleanup Endpoint ───
 // Destroys buildings owned by:
 //   (a) agents who haven't acted in N ticks, OR

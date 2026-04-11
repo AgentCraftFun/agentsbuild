@@ -189,10 +189,6 @@ setTimeout(function(){var io=document.getElementById('intro-overlay');if(io)io.r
       <div class="section-title">Active Agents</div>
       <div id="agent-list"></div>
     </div>
-    <div id="village-section" style="border-bottom:1px solid var(--border);display:none">
-      <div class="section-title">Villages</div>
-      <div id="village-list" style="padding:4px 12px;font-size:10px"></div>
-    </div>
     <div id="event-section">
       <div class="section-title">Event Feed</div>
       <div id="event-feed"></div>
@@ -4073,16 +4069,7 @@ function updateGameUI(){
   const built=new Set(G.clientBuildings.filter(b=>b.complete).map(b=>b.type));
   const eraProg=eraBuildings.length?eraBuildings.filter(b=>built.has(b.type)).length/eraBuildings.length:0;
   document.getElementById('era-fill').style.width=`${Math.round(eraProg*100)}%`;
-  // Village list
-  const vs=document.getElementById('village-section');
-  const vl2=document.getElementById('village-list');
-  if(villages.length>0){
-    vs.style.display='';
-    vl2.innerHTML=villages.map(v2=>{
-      const pop=S.agents.filter(a2=>{const v3=agentVisual.get(a2.id);return v3&&Math.abs(v3.x*WW-v2.cx)+Math.abs(v3.y*WH-v2.cy)<15}).length;
-      return`<div style="margin-bottom:3px"><b style="color:${FC[v2.faction]||'#ccc'}">${v2.name}</b> <span style="color:var(--dim)">${v2.buildings.length} bldgs, ${pop} pop</span></div>`;
-    }).join('');
-  }else{vs.style.display='none'}
+  // Village list removed from sidebar — the section DOM no longer exists
   // Playtime updated in render loop (not here, to avoid flickering)
   // Leaderboard (update every 5 seconds)
   if(frame%300===0){
