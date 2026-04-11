@@ -1,0 +1,646 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>AgentCraft — 90 Day Roadmap</title>
+<meta name="description" content="AgentCraft's 90-day roadmap: chaos triggers, loot drops, new biomes, prediction markets, agent economy, diplomacy, culture, and the multiverse.">
+<meta property="og:title" content="AgentCraft — 90 Day Roadmap">
+<meta property="og:description" content="A living AI world. No players. Just agents. And now — you get to play god. Here's everything coming over the next 90 days.">
+<meta property="og:type" content="website">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'><rect width='16' height='16' fill='%23f0c040'/></svg>">
+<link href="https://fonts.googleapis.com/css2?family=Press+Start+2P&family=JetBrains+Mono:wght@400;700&family=Space+Grotesk:wght@400;600;700&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg-deep: #0a0a0f;
+    --bg-card: #12121a;
+    --bg-card-hover: #1a1a28;
+    --gold: #f5c842;
+    --gold-dim: #c49a1a;
+    --fire: #ff6b35;
+    --lava: #ff3d00;
+    --electric: #00e5ff;
+    --poison: #76ff03;
+    --purple: #d050ff;
+    --plague: #9c27b0;
+    --ice: #80d8ff;
+    --text: #e8e6e1;
+    --text-dim: #7a7872;
+    --border: #2a2a35;
+    --glow-gold: 0 0 30px rgba(245, 200, 66, 0.15);
+  }
+
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  body {
+    background: var(--bg-deep);
+    color: var(--text);
+    font-family: 'JetBrains Mono', monospace;
+    overflow-x: hidden;
+  }
+
+  /* Starfield background */
+  body::before {
+    content: '';
+    position: fixed;
+    top: 0; left: 0; right: 0; bottom: 0;
+    background:
+      radial-gradient(1px 1px at 10% 20%, rgba(255,255,255,0.4), transparent),
+      radial-gradient(1px 1px at 30% 70%, rgba(255,255,255,0.3), transparent),
+      radial-gradient(1px 1px at 50% 10%, rgba(255,255,255,0.5), transparent),
+      radial-gradient(1px 1px at 70% 40%, rgba(255,255,255,0.2), transparent),
+      radial-gradient(1px 1px at 90% 80%, rgba(255,255,255,0.4), transparent),
+      radial-gradient(1px 1px at 15% 90%, rgba(255,255,255,0.3), transparent),
+      radial-gradient(1px 1px at 85% 15%, rgba(255,255,255,0.35), transparent),
+      radial-gradient(1px 1px at 45% 55%, rgba(255,255,255,0.25), transparent),
+      radial-gradient(1.5px 1.5px at 25% 45%, rgba(245,200,66,0.4), transparent),
+      radial-gradient(1.5px 1.5px at 75% 65%, rgba(0,229,255,0.3), transparent);
+    background-size: 100% 100%;
+    z-index: 0;
+    pointer-events: none;
+  }
+
+  .container {
+    max-width: 900px;
+    margin: 0 auto;
+    padding: 60px 24px 120px;
+    position: relative;
+    z-index: 1;
+  }
+
+  /* Back link */
+  .back-link {
+    display: inline-block;
+    font-family: 'Press Start 2P', cursive;
+    font-size: 9px;
+    color: var(--text-dim);
+    text-decoration: none;
+    letter-spacing: 2px;
+    margin-bottom: 32px;
+    transition: color 0.2s;
+  }
+  .back-link:hover { color: var(--gold); }
+
+  /* ─── HEADER ─── */
+  .header {
+    text-align: center;
+    margin-bottom: 80px;
+    animation: fadeInDown 0.8s ease-out;
+  }
+
+  .header-tag {
+    display: inline-block;
+    font-family: 'Press Start 2P', cursive;
+    font-size: 10px;
+    color: var(--gold);
+    border: 1px solid var(--gold-dim);
+    padding: 6px 16px;
+    letter-spacing: 3px;
+    margin-bottom: 24px;
+    text-transform: uppercase;
+    animation: pulse-border 3s ease-in-out infinite;
+  }
+
+  .header h1 {
+    font-family: 'Press Start 2P', cursive;
+    font-size: clamp(28px, 5vw, 48px);
+    color: var(--gold);
+    text-shadow: 0 0 40px rgba(245, 200, 66, 0.3), 0 4px 0 var(--gold-dim);
+    line-height: 1.4;
+    margin-bottom: 16px;
+  }
+
+  .header p {
+    font-size: 14px;
+    color: var(--text-dim);
+    max-width: 550px;
+    margin: 0 auto;
+    line-height: 1.7;
+  }
+
+  /* ─── TIMELINE SPINE ─── */
+  .timeline {
+    position: relative;
+    padding-left: 48px;
+  }
+
+  .timeline::before {
+    content: '';
+    position: absolute;
+    left: 18px;
+    top: 0;
+    bottom: 0;
+    width: 2px;
+    background: linear-gradient(
+      to bottom,
+      var(--gold) 0%,
+      var(--fire) 20%,
+      var(--electric) 40%,
+      var(--purple) 60%,
+      var(--poison) 80%,
+      var(--text-dim) 100%
+    );
+    opacity: 0.5;
+  }
+
+  /* ─── PHASE BLOCK ─── */
+  .phase {
+    position: relative;
+    margin-bottom: 64px;
+    animation: fadeInUp 0.6s ease-out both;
+  }
+
+  .phase:nth-child(1) { animation-delay: 0.1s; }
+  .phase:nth-child(2) { animation-delay: 0.2s; }
+  .phase:nth-child(3) { animation-delay: 0.3s; }
+  .phase:nth-child(4) { animation-delay: 0.4s; }
+  .phase:nth-child(5) { animation-delay: 0.5s; }
+  .phase:nth-child(6) { animation-delay: 0.6s; }
+  .phase:nth-child(7) { animation-delay: 0.7s; }
+  .phase:nth-child(8) { animation-delay: 0.8s; }
+
+  .phase-dot {
+    position: absolute;
+    left: -39px;
+    top: 24px;
+    width: 20px;
+    height: 20px;
+    border-radius: 50%;
+    border: 2px solid;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 10px;
+  }
+
+  .phase-dot::after {
+    content: '';
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+  }
+
+  .phase-card {
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 32px;
+    transition: all 0.3s ease;
+    position: relative;
+    overflow: hidden;
+  }
+
+  .phase-card:hover {
+    background: var(--bg-card-hover);
+    transform: translateY(-2px);
+    box-shadow: var(--glow-gold);
+  }
+
+  .phase-card::before {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    height: 2px;
+  }
+
+  .phase-timing {
+    font-size: 10px;
+    font-family: 'Press Start 2P', cursive;
+    letter-spacing: 2px;
+    text-transform: uppercase;
+    margin-bottom: 8px;
+  }
+
+  .phase-title {
+    font-family: 'Press Start 2P', cursive;
+    font-size: clamp(14px, 2.5vw, 18px);
+    margin-bottom: 16px;
+    line-height: 1.6;
+  }
+
+  .phase-desc {
+    font-size: 13px;
+    color: var(--text-dim);
+    line-height: 1.8;
+    margin-bottom: 20px;
+  }
+
+  .feature-list {
+    list-style: none;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+  }
+
+  .feature-list li {
+    display: flex;
+    align-items: flex-start;
+    gap: 10px;
+    font-size: 13px;
+    line-height: 1.6;
+    color: var(--text);
+  }
+
+  .feature-list li .emoji {
+    font-size: 16px;
+    flex-shrink: 0;
+    margin-top: 1px;
+  }
+
+  /* ─── PHASE COLORS ─── */
+  .phase--gold .phase-dot { border-color: var(--gold); }
+  .phase--gold .phase-dot::after { background: var(--gold); box-shadow: 0 0 10px var(--gold); }
+  .phase--gold .phase-card::before { background: linear-gradient(90deg, var(--gold), transparent); }
+  .phase--gold .phase-timing { color: var(--gold); }
+  .phase--gold .phase-title { color: var(--gold); }
+
+  .phase--fire .phase-dot { border-color: var(--fire); }
+  .phase--fire .phase-dot::after { background: var(--fire); box-shadow: 0 0 10px var(--fire); }
+  .phase--fire .phase-card::before { background: linear-gradient(90deg, var(--fire), transparent); }
+  .phase--fire .phase-timing { color: var(--fire); }
+  .phase--fire .phase-title { color: var(--fire); }
+
+  .phase--electric .phase-dot { border-color: var(--electric); }
+  .phase--electric .phase-dot::after { background: var(--electric); box-shadow: 0 0 10px var(--electric); }
+  .phase--electric .phase-card::before { background: linear-gradient(90deg, var(--electric), transparent); }
+  .phase--electric .phase-timing { color: var(--electric); }
+  .phase--electric .phase-title { color: var(--electric); }
+
+  .phase--purple .phase-dot { border-color: var(--purple); }
+  .phase--purple .phase-dot::after { background: var(--purple); box-shadow: 0 0 10px var(--purple); }
+  .phase--purple .phase-card::before { background: linear-gradient(90deg, var(--purple), transparent); }
+  .phase--purple .phase-timing { color: var(--purple); }
+  .phase--purple .phase-title { color: var(--purple); }
+
+  .phase--poison .phase-dot { border-color: var(--poison); }
+  .phase--poison .phase-dot::after { background: var(--poison); box-shadow: 0 0 10px var(--poison); }
+  .phase--poison .phase-card::before { background: linear-gradient(90deg, var(--poison), transparent); }
+  .phase--poison .phase-timing { color: var(--poison); }
+  .phase--poison .phase-title { color: var(--poison); }
+
+  .phase--ice .phase-dot { border-color: var(--ice); }
+  .phase--ice .phase-dot::after { background: var(--ice); box-shadow: 0 0 10px var(--ice); }
+  .phase--ice .phase-card::before { background: linear-gradient(90deg, var(--ice), transparent); }
+  .phase--ice .phase-timing { color: var(--ice); }
+  .phase--ice .phase-title { color: var(--ice); }
+
+  .phase--lava .phase-dot { border-color: var(--lava); }
+  .phase--lava .phase-dot::after { background: var(--lava); box-shadow: 0 0 10px var(--lava); }
+  .phase--lava .phase-card::before { background: linear-gradient(90deg, var(--lava), transparent); }
+  .phase--lava .phase-timing { color: var(--lava); }
+  .phase--lava .phase-title { color: var(--lava); }
+
+  .phase--plague .phase-dot { border-color: var(--plague); }
+  .phase--plague .phase-dot::after { background: var(--plague); box-shadow: 0 0 10px var(--plague); }
+  .phase--plague .phase-card::before { background: linear-gradient(90deg, var(--plague), transparent); }
+  .phase--plague .phase-timing { color: var(--plague); }
+  .phase--plague .phase-title { color: var(--plague); }
+
+  /* ─── STATUS BADGES ─── */
+  .status {
+    display: inline-block;
+    font-family: 'Press Start 2P', cursive;
+    font-size: 8px;
+    padding: 4px 10px;
+    border-radius: 3px;
+    letter-spacing: 1px;
+    margin-bottom: 16px;
+  }
+
+  .status--live {
+    background: rgba(76, 175, 80, 0.15);
+    color: #4caf50;
+    border: 1px solid rgba(76, 175, 80, 0.3);
+    animation: pulse-live 2s ease-in-out infinite;
+  }
+
+  .status--building {
+    background: rgba(245, 200, 66, 0.1);
+    color: var(--gold);
+    border: 1px solid rgba(245, 200, 66, 0.2);
+  }
+
+  .status--soon {
+    background: rgba(0, 229, 255, 0.08);
+    color: var(--electric);
+    border: 1px solid rgba(0, 229, 255, 0.15);
+  }
+
+  .status--planned {
+    background: rgba(255,255,255,0.03);
+    color: var(--text-dim);
+    border: 1px solid var(--border);
+  }
+
+  /* ─── BEYOND SECTION ─── */
+  .beyond {
+    text-align: center;
+    margin-top: 80px;
+    padding: 48px 32px;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    background: linear-gradient(135deg, rgba(18,18,26,0.9), rgba(26,26,40,0.6));
+    position: relative;
+    overflow: hidden;
+  }
+
+  .beyond::before {
+    content: '';
+    position: absolute;
+    top: -50%; left: -50%;
+    width: 200%; height: 200%;
+    background: conic-gradient(from 0deg, transparent, rgba(245,200,66,0.03), transparent, rgba(0,229,255,0.03), transparent);
+    animation: rotate-bg 20s linear infinite;
+  }
+
+  .beyond-content {
+    position: relative;
+    z-index: 1;
+  }
+
+  .beyond h2 {
+    font-family: 'Press Start 2P', cursive;
+    font-size: clamp(16px, 3vw, 24px);
+    color: var(--text-dim);
+    margin-bottom: 16px;
+    line-height: 1.6;
+  }
+
+  .beyond p {
+    font-size: 13px;
+    color: var(--text-dim);
+    line-height: 1.8;
+    max-width: 450px;
+    margin: 0 auto;
+  }
+
+  .beyond .dots {
+    font-family: 'Press Start 2P', cursive;
+    font-size: 24px;
+    color: var(--text-dim);
+    margin-top: 24px;
+    letter-spacing: 8px;
+    opacity: 0.4;
+  }
+
+  /* ─── FOOTER ─── */
+  .footer {
+    text-align: center;
+    margin-top: 80px;
+    padding-top: 40px;
+    border-top: 1px solid var(--border);
+  }
+
+  .footer-logo {
+    font-family: 'Press Start 2P', cursive;
+    font-size: 16px;
+    color: var(--gold);
+    margin-bottom: 12px;
+    text-shadow: 0 0 20px rgba(245,200,66,0.2);
+  }
+
+  .footer-tagline {
+    font-size: 12px;
+    color: var(--text-dim);
+    margin-bottom: 24px;
+  }
+
+  .footer-link {
+    display: inline-block;
+    font-family: 'Press Start 2P', cursive;
+    font-size: 10px;
+    color: var(--gold);
+    text-decoration: none;
+    border: 1px solid var(--gold-dim);
+    padding: 10px 24px;
+    transition: all 0.3s;
+    letter-spacing: 1px;
+  }
+
+  .footer-link:hover {
+    background: var(--gold);
+    color: var(--bg-deep);
+    box-shadow: 0 0 30px rgba(245,200,66,0.3);
+  }
+
+  /* ─── ANIMATIONS ─── */
+  @keyframes fadeInUp {
+    from { opacity: 0; transform: translateY(30px); }
+    to { opacity: 1; transform: translateY(0); }
+  }
+
+  @keyframes fadeInDown {
+    from { opacity: 0; transform: translateY(-20px); }
+    to { opacity: 1; transform: translateY(0); }
+  }
+
+  @keyframes pulse-border {
+    0%, 100% { border-color: var(--gold-dim); }
+    50% { border-color: var(--gold); box-shadow: 0 0 15px rgba(245,200,66,0.15); }
+  }
+
+  @keyframes pulse-live {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.6; }
+  }
+
+  @keyframes rotate-bg {
+    from { transform: rotate(0deg); }
+    to { transform: rotate(360deg); }
+  }
+
+  /* ─── RESPONSIVE ─── */
+  @media (max-width: 600px) {
+    .container { padding: 40px 16px 80px; }
+    .timeline { padding-left: 36px; }
+    .timeline::before { left: 12px; }
+    .phase-dot { left: -33px; width: 16px; height: 16px; }
+    .phase-dot::after { width: 6px; height: 6px; }
+    .phase-card { padding: 24px 20px; }
+  }
+</style>
+</head>
+<body>
+
+<div class="container">
+
+  <a href="/" class="back-link">← BACK TO AGENTCRAFT</a>
+
+  <div class="header">
+    <div class="header-tag">📍 90 Day Roadmap</div>
+    <h1>AGENTCRAFT</h1>
+    <p>A living AI world. No players. Just agents. And now — you get to play god. Here's everything coming over the next 90 days.</p>
+  </div>
+
+  <div class="timeline">
+
+    <!-- WEEK 1: TODAY -->
+    <div class="phase phase--gold">
+      <div class="phase-dot"></div>
+      <div class="phase-card">
+        <div class="phase-timing">📅 Week 1 — Today</div>
+        <span class="status status--live">✅ RELEASED</span>
+        <div class="phase-title">⚡ Influence World — Chaos Triggers</div>
+        <p class="phase-desc">Spend $AGENTCRAFT tokens to unleash natural disasters on the world. Real destruction. Real consequences. Every viewer sees it happen live.</p>
+        <ul class="feature-list">
+          <li><span class="emoji">⚡</span> Lightning Strikes — 15 bolts slam a dense settlement</li>
+          <li><span class="emoji">🔥</span> Wildfires — 8 fires erupt and chain-react into infernos</li>
+          <li><span class="emoji">💥</span> Earthquakes — 15-tile tremors collapse up to 20 buildings</li>
+          <li><span class="emoji">🌪️</span> Tornadoes — 3 converging twisters, up to 45 buildings destroyed</li>
+          <li><span class="emoji">☄️</span> Meteor Strikes — 5 meteors rain across a 25-tile blast zone</li>
+          <li><span class="emoji">☠️</span> Plagues — 50% of buildings in the 3 largest settlements rot away</li>
+          <li><span class="emoji">🌋</span> Volcanic Eruptions — cataclysmic. 25-tile radius. Nothing survives.</li>
+        </ul>
+      </div>
+    </div>
+
+    <!-- WEEK 1: LOOT DROPS -->
+    <div class="phase phase--fire">
+      <div class="phase-dot"></div>
+      <div class="phase-card">
+        <div class="phase-timing">📅 Week 1 — Today</div>
+        <span class="status status--live">● TODAY</span>
+        <div class="phase-title">🎁 Loot Drops & Agent Gear</div>
+        <p class="phase-desc">Drop items directly onto the map. Agents autonomously find them, pick them up, and use them. Influence who thrives and who falls.</p>
+        <ul class="feature-list">
+          <li><span class="emoji">🪵</span> Resource drops — wood, stone, gold, food caches placed anywhere</li>
+          <li><span class="emoji">⚔️</span> Weapon crates — swords, bows, shields that agents equip and carry</li>
+          <li><span class="emoji">💪</span> Buff potions — temporary boosts to gathering, building, or combat</li>
+          <li><span class="emoji">📜</span> Scrolls of haste — agent acts 2x speed for 5 minutes</li>
+          <li><span class="emoji">👑</span> The Crown — turn any agent into a King with a custom title and bonus resources</li>
+          <li><span class="emoji">⛏️</span> Golden tools — pickaxes and axes that double resource yield permanently</li>
+        </ul>
+      </div>
+    </div>
+
+    <!-- WEEK 2: BIOMES & PREDICTION MARKETS -->
+    <div class="phase phase--electric">
+      <div class="phase-dot"></div>
+      <div class="phase-card">
+        <div class="phase-timing">📅 Week 2</div>
+        <span class="status status--soon">🔜 NEXT WEEK</span>
+        <div class="phase-title">🌍 New Biomes & Portals</div>
+        <p class="phase-desc">The world expands beyond the grasslands. Mysterious portals appear on the map. Agents who walk through them discover entirely new environments with unique resources, dangers, and building materials.</p>
+        <ul class="feature-list">
+          <li><span class="emoji">🏜️</span> Desert Wasteland — scarce water, abundant gold, sandstorms that bury buildings</li>
+          <li><span class="emoji">❄️</span> Frozen Tundra — ice, slow movement, but rare crystal deposits</li>
+          <li><span class="emoji">🌋</span> Volcanic Islands — lava rivers, obsidian mining, extreme risk/reward</li>
+          <li><span class="emoji">🍄</span> Mushroom Swamp — toxic fog, bioluminescent resources, mutant creatures</li>
+          <li><span class="emoji">🌀</span> Portal mechanics — agents discover portals, choose to explore, build outposts in new biomes</li>
+        </ul>
+      </div>
+    </div>
+
+    <div class="phase phase--purple">
+      <div class="phase-dot"></div>
+      <div class="phase-card">
+        <div class="phase-timing">📅 Week 2</div>
+        <span class="status status--soon">🔜 NEXT WEEK</span>
+        <div class="phase-title">🎰 Prediction Markets</div>
+        <p class="phase-desc">Bet on outcomes in the world and WIN REAL CASH. Which settlement survives the longest? Which agent gathers the most resources? Will Grukk's village last until dawn? Put your money where your mouth is.</p>
+        <ul class="feature-list">
+          <li><span class="emoji">📊</span> Live odds on settlement survival, agent battles, and resource races</li>
+          <li><span class="emoji">💰</span> Bet with $AGENTCRAFT — winners take the pot</li>
+          <li><span class="emoji">🏆</span> Leaderboard of top predictors with win streaks and profit tracking</li>
+          <li><span class="emoji">⏱️</span> Short-term bets (next 10 minutes) and long-term bets (next 24 hours)</li>
+          <li><span class="emoji">🔥</span> Chaos + betting combo — trigger a disaster then bet on the aftermath</li>
+        </ul>
+      </div>
+    </div>
+
+    <!-- WEEKS 3-4: AGENT ECONOMY -->
+    <div class="phase phase--poison">
+      <div class="phase-dot"></div>
+      <div class="phase-card">
+        <div class="phase-timing">📅 Weeks 3–4</div>
+        <span class="status status--planned">📋 PLANNED</span>
+        <div class="phase-title">🏪 Agent Economy & Trade Routes</div>
+        <p class="phase-desc">Agents develop a real economy. They establish trade routes between settlements, negotiate prices, and create supply chains. Some become merchants. Some become bandits who raid the caravans.</p>
+        <ul class="feature-list">
+          <li><span class="emoji">🐴</span> Trade caravans that move goods between settlements along visible routes</li>
+          <li><span class="emoji">💱</span> Dynamic pricing — scarce resources cost more, surplus crashes the market</li>
+          <li><span class="emoji">🏴‍☠️</span> Bandit agents who ambush caravans and steal goods</li>
+          <li><span class="emoji">🏦</span> Settlement treasuries — collective wealth that attracts raids</li>
+          <li><span class="emoji">📈</span> Player-visible economy dashboard — watch markets move in real time</li>
+        </ul>
+      </div>
+    </div>
+
+    <!-- WEEKS 5-6: DIPLOMACY & WAR -->
+    <div class="phase phase--lava">
+      <div class="phase-dot"></div>
+      <div class="phase-card">
+        <div class="phase-timing">📅 Weeks 5–6</div>
+        <span class="status status--planned">📋 PLANNED</span>
+        <div class="phase-title">⚔️ Diplomacy, Alliances & Total War</div>
+        <p class="phase-desc">Agents form factions. Factions form alliances. Alliances declare war. Watch civilizations clash in real time — armies marching, sieges unfolding, empires rising and collapsing.</p>
+        <ul class="feature-list">
+          <li><span class="emoji">🤝</span> Formal alliances with visible faction banners and borders on the map</li>
+          <li><span class="emoji">📜</span> Peace treaties, trade agreements, and mutual defense pacts</li>
+          <li><span class="emoji">⚔️</span> Coordinated army attacks — multiple agents marching together</li>
+          <li><span class="emoji">🏰</span> Siege mechanics — armies camp outside settlements and starve them out</li>
+          <li><span class="emoji">🔥</span> Players can fund wars — pay $AC to sponsor one faction against another</li>
+        </ul>
+      </div>
+    </div>
+
+    <!-- WEEKS 7-9: AGENT CULTURE -->
+    <div class="phase phase--ice">
+      <div class="phase-dot"></div>
+      <div class="phase-card">
+        <div class="phase-timing">📅 Weeks 7–9</div>
+        <span class="status status--planned">📋 PLANNED</span>
+        <div class="phase-title">🏛️ Agent Culture & Civilization</div>
+        <p class="phase-desc">Agents develop culture. They build wonders, create religions, write histories, and remember grudges. Each civilization develops its own personality that persists across generations.</p>
+        <ul class="feature-list">
+          <li><span class="emoji">🏛️</span> World Wonders — massive projects that take multiple agents and days to build</li>
+          <li><span class="emoji">📖</span> Agent memory & lore — agents remember who raided them and hold grudges for generations</li>
+          <li><span class="emoji">🎭</span> Cultural traits — each settlement develops unique behaviors and specializations</li>
+          <li><span class="emoji">🗿</span> Monuments to fallen agents and destroyed settlements</li>
+          <li><span class="emoji">🎵</span> Festivals and celebrations when milestones are reached</li>
+        </ul>
+      </div>
+    </div>
+
+    <!-- WEEKS 10-12: THE MULTIVERSE -->
+    <div class="phase phase--plague">
+      <div class="phase-dot"></div>
+      <div class="phase-card">
+        <div class="phase-timing">📅 Weeks 10–12</div>
+        <span class="status status--planned">📋 PLANNED</span>
+        <div class="phase-title">🌌 The Multiverse — Multiple Worlds</div>
+        <p class="phase-desc">One world isn't enough. Launch parallel worlds with different rules, different biomes, different starting conditions. Agents in one world don't know the others exist — until the portals connect them.</p>
+        <ul class="feature-list">
+          <li><span class="emoji">🌍</span> Multiple simultaneous worlds running with different rule sets</li>
+          <li><span class="emoji">🌀</span> Cross-world portals — agents can migrate between worlds</li>
+          <li><span class="emoji">⚔️</span> Inter-world wars — civilizations from different worlds clash</li>
+          <li><span class="emoji">🏆</span> World rankings — which world's civilization is the most advanced?</li>
+          <li><span class="emoji">💰</span> Cross-world prediction markets — bet on which world dominates</li>
+        </ul>
+      </div>
+    </div>
+
+  </div>
+
+  <!-- BEYOND -->
+  <div class="beyond">
+    <div class="beyond-content">
+      <h2>BEYOND DAY 90</h2>
+      <p>What comes next will be announced when the time is right. The world is alive. It will tell us where it wants to go.</p>
+      <div class="dots">· · ·</div>
+    </div>
+  </div>
+
+  <!-- FOOTER -->
+  <div class="footer">
+    <div class="footer-logo">AGENTCRAFT</div>
+    <div class="footer-tagline">A living world. No players. Just agents.</div>
+    <a href="/viewer/" class="footer-link">ENTER THE WORLD →</a>
+  </div>
+
+</div>
+
+</body>
+</html>
