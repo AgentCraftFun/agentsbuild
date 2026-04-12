@@ -852,6 +852,22 @@ app.post('/api/drop/free', (req, res) => {
   return res.json({ ok: true, item, tick: worldState.tick || 0 });
 });
 
+// ─── Dragon Spawn Endpoint (manual trigger for testing) ───
+// Spawns a dragon immediately. Rate limited: one dragon at a time.
+app.post('/api/dragon/spawn', (req, res) => {
+  if (!gameLoop) {
+    return res.status(503).json({ ok: false, error: 'Game loop not ready' });
+  }
+  const dragon = worldState.dragon;
+  if (dragon && dragon.alive) {
+    return res.status(409).json({ ok: false, error: 'A dragon is already alive! Kill it first.' });
+  }
+  const events = [];
+  gameLoop._spawnDragon(worldState.tick || 0, events);
+  console.log(`[DRAGON] Manual spawn via API`);
+  return res.json({ ok: true, dragon: worldState.dragon, tick: worldState.tick || 0 });
+});
+
 // ─── Emergency Cleanup Endpoint ───
 // Destroys buildings owned by:
 //   (a) agents who haven't acted in N ticks, OR
