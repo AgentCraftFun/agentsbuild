@@ -217,26 +217,26 @@ app.get('/api/health', (req, res) => {
 
 // ─── Live stats for the landing page ───
 // Lightweight public endpoint that powers the LIVE STATS section.
-// CORS-friendly (same origin anyway) and returns just the 5 metrics.
+// IMPORTANT: formulas MUST match the viewer header so both surfaces
+// show the same numbers. See viewer/index.html:6367-6373.
 app.get('/api/stats', (req, res) => {
   res.set('Cache-Control', 'no-store');
   const tick = worldState.tick || 0;
-  // One in-game day = 480 ticks (3s/tick × 480 = 1440s = 24 game minutes).
-  // Tuning: if you want "Day N" to feel like a dramatic milestone, tweak here.
-  const TICKS_PER_DAY = 480;
-  const day = Math.max(1, Math.floor(tick / TICKS_PER_DAY) + 1);
-  // Count tiles claimed across all agents (cheap — just sum owned_tiles.length)
+  // Day formula matches viewer: _clockBase = tick*3, days = _clockBase/300
+  //   → days = tick / 100, displayed as days+1
+  const day = Math.max(1, Math.floor(tick / 100) + 1);
+  // Count tiles claimed across all agents
   let tilesClaimed = 0;
   for (const agent of worldState.agents.values()) {
     tilesClaimed += (agent.owned_tiles && agent.owned_tiles.length) || 0;
   }
-  // Count completed buildings only (not in-progress)
-  const buildingsStanding = worldState.buildingsList.filter(b => b.isComplete && b.isComplete()).length;
+  // Buildings: match viewer (S.buildings.length = all buildings, not filtered)
+  const buildingsCount = worldState.buildingsList.length;
   res.json({
     tick,
     day,
     agents: worldState.agents.size,
-    buildings: buildingsStanding,
+    buildings: buildingsCount,
     tilesClaimed,
     viewers: wss ? wss.clients.size : 0,
     serverUptime: Math.round(process.uptime()),
