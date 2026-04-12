@@ -2603,13 +2603,34 @@ function drawAgentPixelArt(c,ax,ay,agent,sel,fr,anim){
     c.globalAlpha=1;
   }else if(!name.includes('Faelith')){// Faelith has scroll instead
     const ix=ax+10*toolSide+toolSwing,iy=by-2+toolOy;
-    // ── LOOT DROPS Phase 2: Golden tools override the default factional tool ──
-    // If the agent has a permanent perk (golden_pickaxe / golden_axe),
-    // render it instead of the faction weapon so everyone can SEE which
-    // agents have been blessed.
+    // ── Equipment rendering priority: WEAPON > GOLDEN TOOL > DEFAULT ──
+    // Weapons are combat gear — people want to SEE the sword even if the
+    // agent also has a golden axe (which still works for economy).
     const perks=agent.perks||{};
     const equip=agent.equipment||{};
-    if(perks.golden_axe){
+    if(equip.weapon==='sword'){
+      // SWORD — steel blade + crossguard
+      c.fillStyle='#aab0b8';c.fillRect(ix,iy-12,2,12);// blade
+      c.fillStyle='#e0e4ea';c.fillRect(ix,iy-12,2,2);// tip highlight
+      c.fillStyle='#5a3a18';c.fillRect(ix-3,iy-1,8,2);// crossguard
+      c.fillStyle='#6a4a28';c.fillRect(ix,iy+1,2,4);// grip
+      // Steel gleam
+      if(fr%24<12){c.fillStyle='rgba(255,255,255,0.5)';c.fillRect(ix,iy-8,1,4)}
+    }else if(equip.weapon==='bow'){
+      // BOW — curved wood + string
+      c.strokeStyle='#6a4a20';c.lineWidth=2;
+      c.beginPath();c.arc(ix+1,iy-6,8,Math.PI*0.8,Math.PI*1.7);c.stroke();
+      c.strokeStyle='#c0c0c0';c.lineWidth=1;
+      c.beginPath();c.moveTo(ix-3,iy-12);c.lineTo(ix-1,iy);c.stroke();
+      // Arrow nocked
+      c.fillStyle='#5a3010';c.fillRect(ix-1,iy-14,1,12);
+      c.fillStyle='#aab0b8';c.fillRect(ix-2,iy-14,3,2);// arrowhead
+    }else if(equip.weapon==='spear'){
+      // SPEAR — long shaft + silver tip
+      c.fillStyle='#5a3a10';c.fillRect(ix,iy-16,2,16);// shaft
+      c.fillStyle='#aab0b8';c.fillRect(ix-1,iy-18,4,3);// head
+      c.fillStyle='#e0e4ea';c.fillRect(ix,iy-18,2,1);// highlight
+    }else if(perks.golden_axe){
       // Wooden handle
       c.fillStyle='#6a3a10';c.fillRect(ix,iy-10,2,12);
       // Golden double-bladed axe head
@@ -2636,28 +2657,6 @@ function drawAgentPixelArt(c,ax,ay,agent,sel,fr,anim){
       // Golden glow
       c.fillStyle='rgba(255,221,68,'+(0.15+Math.sin(fr*0.1)*0.05)+')';
       c.beginPath();c.arc(ix+1,iy-8,7,0,Math.PI*2);c.fill();
-    }else if(equip&&equip.weapon==='sword'){
-      // SWORD — steel blade + crossguard
-      c.fillStyle='#aab0b8';c.fillRect(ix,iy-12,2,12);// blade
-      c.fillStyle='#e0e4ea';c.fillRect(ix,iy-12,2,2);// tip highlight
-      c.fillStyle='#5a3a18';c.fillRect(ix-3,iy-1,8,2);// crossguard
-      c.fillStyle='#6a4a28';c.fillRect(ix,iy+1,2,4);// grip
-      // Steel gleam
-      if(fr%24<12){c.fillStyle='rgba(255,255,255,0.5)';c.fillRect(ix,iy-8,1,4)}
-    }else if(equip&&equip.weapon==='bow'){
-      // BOW — curved wood + string
-      c.strokeStyle='#6a4a20';c.lineWidth=2;
-      c.beginPath();c.arc(ix+1,iy-6,8,Math.PI*0.8,Math.PI*1.7);c.stroke();
-      c.strokeStyle='#c0c0c0';c.lineWidth=1;
-      c.beginPath();c.moveTo(ix-3,iy-12);c.lineTo(ix-1,iy);c.stroke();
-      // Arrow nocked
-      c.fillStyle='#5a3010';c.fillRect(ix-1,iy-14,1,12);
-      c.fillStyle='#aab0b8';c.fillRect(ix-2,iy-14,3,2);// arrowhead
-    }else if(equip&&equip.weapon==='spear'){
-      // SPEAR — long shaft + silver tip
-      c.fillStyle='#5a3a10';c.fillRect(ix,iy-16,2,16);// shaft
-      c.fillStyle='#aab0b8';c.fillRect(ix-1,iy-18,4,3);// head
-      c.fillStyle='#e0e4ea';c.fillRect(ix,iy-18,2,1);// highlight
     }else{
       // Default factional tool
       if(t==='human'){c.fillStyle='#5a3010';c.fillRect(ix,iy-8,2,10);c.fillStyle='#888890';c.fillRect(ix-2,iy-10,6,4)}
