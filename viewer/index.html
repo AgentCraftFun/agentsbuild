@@ -7839,27 +7839,7 @@ function appendLootDropsSection(listEl) {
     })(L);
     listEl.appendChild(btn);
   }
-  // ── WORLD BOSS section ──
-  var bossDivider = document.createElement('div');
-  bossDivider.style.cssText = 'margin:16px 0 8px;padding-top:12px;border-top:1px dashed #5a2a2a;display:flex;align-items:center;gap:8px;color:#ff4444;font-size:10px;letter-spacing:1px;font-weight:bold';
-  bossDivider.innerHTML = '🐉 WORLD BOSS <span style="color:#ff8844;background:#2a0a0a;border:1px solid #5a2a2a;padding:2px 6px;border-radius:3px;font-size:8px">TESTING</span>';
-  listEl.appendChild(bossDivider);
-  var bossBtn = document.createElement('button');
-  bossBtn.className = 'influence-action-btn';
-  bossBtn.style.cssText = 'display:flex;align-items:center;gap:12px;padding:12px;background:#1a0808;border:1px solid #5a2222;border-radius:6px;cursor:pointer;text-align:left;font-family:Courier New,monospace;color:#c8c8d8;transition:all 0.15s;margin-bottom:6px';
-  bossBtn.onmouseenter = function() { this.style.borderColor = '#cc4444'; this.style.background = '#2a0a0a'; };
-  bossBtn.onmouseleave = function() { this.style.borderColor = '#5a2222'; this.style.background = '#1a0808'; };
-  bossBtn.innerHTML =
-    '<div style="font-size:24px">🐉</div>' +
-    '<div style="flex:1">' +
-      '<div style="font-size:12px;font-weight:bold;color:#ff4444">Spawn Dragon</div>' +
-      '<div style="font-size:9px;color:#888;margin-top:2px">Summon a dragon to roam the map, burn buildings, and be fought by agents.</div>' +
-    '</div>' +
-    '<div style="font-size:10px;color:#ff6644;font-weight:bold;white-space:nowrap">FREE</div>';
-  bossBtn.onclick = function() { triggerDragonSpawn(this); };
-  listEl.appendChild(bossBtn);
-
-  return loot.length + 1;
+  return loot.length;
 }
 
 function triggerDragonSpawn(btnEl) {
