@@ -125,6 +125,10 @@ class GameLoop {
       // world dynamically balanced without hard caps.
       this._processChaos(tick, events);
 
+      // 5d. WORLD BOSS — Dragon that naturally spawns, roams, burns buildings,
+      // and agents must fight to kill. One dragon at a time.
+      this._processDragon(tick, events);
+
       // 6. Generate event feed entries (already collected above, add tick summary)
       if (tick % 10 === 0) {
         const agentCount = this.world.agents.size;
@@ -171,6 +175,18 @@ class GameLoop {
   }
 
   async _processAgent(agent, tick, events) {
+    // DRAGON COMBAT: if a dragon is alive and nearby, armed agents rush to
+    // fight it. Unarmed agents will also fight but deal less damage.
+    // Priority: dragon > loot > normal brain (dragons are existential threats).
+    const lockedMoodsDragon = new Set(['raiding', 'celebrating', 'returning']);
+    if (!lockedMoodsDragon.has(agent.mood)) {
+      const dragonResult = this._tryDragonBehavior(agent, tick, events);
+      if (dragonResult === 'attacking' || dragonResult === 'chasing') {
+        agent.last_action_tick = tick;
+        return;
+      }
+    }
+
     // LOOT DROPS (Phase 1): if there's a ground item nearby and the agent
     // isn't locked into a critical mode, interrupt normal AI to chase/pickup.
     // - Adjacent (|dx|,|dy| <= 1): pick up immediately, done for this tick
@@ -1911,6 +1927,304 @@ class GameLoop {
     return true;
   }
 
+  // ── Agent dragon combat behavior ─────────────────────────────────
+
+  /**
+   * If a dragon is alive and nearby, agents rush toward it and attack.
+   * Returns: 'attacking' | 'chasing' | 'none'
+   *
+   * Damage per attack tick:
+   *   Unarmed = 1       Sword = 4       Bow = 3 (from 3 tiles)
+   *   Spear = 3         With haste buff = +50%
+   */
+  _tryDragonBehavior(agent, tick, events) {
+    const d = this.world.dragon;
+    if (!d || !d.alive) return 'none';
+
+    const SCAN_RADIUS = 25;   // agents notice dragons from far
+    const dist = Math.abs(agent.x - d.x) + Math.abs(agent.y - d.y);
+    if (dist > SCAN_RADIUS) return 'none';
+
+    // Determine attack range (bow can attack from 3 tiles)
+    const weapon = (agent.equipment && agent.equipment.weapon) || null;
+    const attackRange = weapon === 'bow' ? 3 : 1;
+
+    // In attack range → deal damage
+    if (dist <= attackRange + 1) {
+      // Calculate damage
+      let dmg;
+      if (weapon === 'sword') dmg = 4;
+      else if (weapon === 'bow') dmg = 3;
+      else if (weapon === 'spear') dmg = 3;
+      else dmg = 1; // unarmed
+
+      // Haste buff = +50% damage
+      if (GameLoop.hasBuff(agent, 'haste', tick)) dmg = Math.ceil(dmg * 1.5);
+
+      this._takeDragonDamage(agent, dmg, tick, events);
+
+      agent.mood = 'fighting';
+      agent.current_action = { type: 'dragon_attack', dragonId: d.id };
+      agent.idle_ticks = 0;
+      const weaponTag = weapon ? ` [${weapon.toUpperCase()}]` : '';
+      agent.message = `Attacking the Dragon!${weaponTag} (-${dmg} HP)`;
+
+      // Emit attack event (for viewer hit flash)
+      events.push({
+        tick,
+        type: 'dragon_hit',
+        agentId: agent.id,
+        agent: agent.name,
+        weapon: weapon || 'fists',
+        damage: dmg,
+        dragonHp: d.hp,
+        dragonMaxHp: d.maxHp,
+        x: d.x,
+        y: d.y,
+        message: `⚔️ ${agent.name}${weaponTag} hits the Dragon for ${dmg} damage! (HP: ${d.hp}/${d.maxHp})`,
+      });
+      return 'attacking';
+    }
+
+    // Out of range — chase the dragon
+    const dxStep = Math.sign(d.x - agent.x);
+    const dyStep = Math.sign(d.y - agent.y);
+    this._moveAgent(agent, dxStep, dyStep);
+    agent.mood = 'fighting';
+    agent.current_action = { type: 'dragon_chase', dragonId: d.id };
+    agent.idle_ticks = 0;
+    agent.message = 'Charging the Dragon!';
+    return 'chasing';
+  }
+
+  // ═══════════════════════════════════════════════════════════════════
+  // WORLD BOSS: DRAGON
+  // A dragon naturally spawns when the world has enough buildings.
+  // It roams toward dense settlements, breathes fire on buildings,
+  // and agents must chase it and attack to bring it down.
+  // ═══════════════════════════════════════════════════════════════════
+
+  // Tuning constants
+  static DRAGON_MIN_BUILDINGS = 40;    // minimum buildings before first spawn
+  static DRAGON_SPAWN_COOLDOWN = 600;  // ticks between spawns (~30 min at 3s/tick)
+  static DRAGON_HP = 150;              // total HP
+  static DRAGON_FIRE_INTERVAL = 6;     // ticks between fire breaths
+  static DRAGON_FIRE_RADIUS = 12;      // tile radius for fire
+  static DRAGON_FIRE_COUNT = 2;        // max buildings per fire breath
+  static DRAGON_WANDER_INTERVAL = 3;   // ticks between movement
+
+  /**
+   * Spawn a new dragon at the edge of the map, targeting a dense settlement.
+   */
+  _spawnDragon(tick, events) {
+    // Pick spawn edge
+    const edge = Math.floor(Math.random() * 4);
+    let sx, sy;
+    if (edge === 0) { sx = 0; sy = Math.floor(Math.random() * this.world.height); }
+    else if (edge === 1) { sx = this.world.width - 1; sy = Math.floor(Math.random() * this.world.height); }
+    else if (edge === 2) { sx = Math.floor(Math.random() * this.world.width); sy = 0; }
+    else { sx = Math.floor(Math.random() * this.world.width); sy = this.world.height - 1; }
+
+    // Target: densest settlement center (or random building cluster)
+    let targetX = Math.floor(this.world.width / 2);
+    let targetY = Math.floor(this.world.height / 2);
+    const setts = this.world.settlements || [];
+    if (setts.length > 0) {
+      // Pick the biggest settlement
+      const biggest = setts.reduce((best, s) => {
+        const bCount = this.world.buildingsList.filter(b =>
+          b.isComplete() && Math.abs(b.x - s.cx) + Math.abs(b.y - s.cy) < 20
+        ).length;
+        return bCount > (best.count || 0) ? { s, count: bCount } : best;
+      }, {});
+      if (biggest.s) { targetX = biggest.s.cx; targetY = biggest.s.cy; }
+    }
+
+    const dragon = {
+      id: `dragon_${tick}`,
+      x: sx,
+      y: sy,
+      hp: GameLoop.DRAGON_HP,
+      maxHp: GameLoop.DRAGON_HP,
+      alive: true,
+      spawnTick: tick,
+      lastFireTick: 0,
+      lastMoveTick: 0,
+      targetX,
+      targetY,
+      damageLog: {},     // {agentId: totalDamage}
+      kills: 0,
+    };
+
+    this.world.dragon = dragon;
+
+    const ev = {
+      tick,
+      type: 'dragon_spawn',
+      x: sx,
+      y: sy,
+      targetX,
+      targetY,
+      message: `🐉 A DRAGON has appeared at (${sx},${sy})! It's heading for the settlements! All agents — FIGHT IT!`,
+    };
+    events.push(ev);
+    // Also push to pending so it broadcasts if this runs mid-tick
+    if (!Array.isArray(this.world._pendingBroadcastEvents)) this.world._pendingBroadcastEvents = [];
+    this.world._pendingBroadcastEvents.push(ev);
+    console.log(`[DRAGON] Spawned at (${sx},${sy}) → target (${targetX},${targetY}), HP=${dragon.hp}`);
+  }
+
+  /**
+   * Main dragon processing — called every tick.
+   * Handles: spawn check, movement, fire breath, death.
+   * Agent combat is handled in _processAgent via _tryDragonBehavior.
+   */
+  _processDragon(tick, events) {
+    const dragon = this.world.dragon;
+
+    // ── Spawn check ──
+    if (!dragon || !dragon.alive) {
+      const buildingCount = this.world.buildingsList.filter(b => b.isComplete()).length;
+      if (buildingCount < GameLoop.DRAGON_MIN_BUILDINGS) return;
+      const lastDeath = (dragon && dragon.deathTick) || 0;
+      if (tick - lastDeath < GameLoop.DRAGON_SPAWN_COOLDOWN) return;
+      // Random chance each tick after cooldown: ~1/60 per tick ≈ spawns within ~3 min
+      if (Math.random() > 1/60) return;
+      this._spawnDragon(tick, events);
+      return;
+    }
+
+    // Dragon is alive — process behavior
+    const d = this.world.dragon;
+    if (!d.alive) return;
+
+    // ── Movement: wander toward target settlement ──
+    if (tick - d.lastMoveTick >= GameLoop.DRAGON_WANDER_INTERVAL) {
+      d.lastMoveTick = tick;
+      const dx = Math.sign(d.targetX - d.x);
+      const dy = Math.sign(d.targetY - d.y);
+      // Dragons move diagonally — 1 tile per step
+      if (dx !== 0 || dy !== 0) {
+        d.x = Math.max(0, Math.min(this.world.width - 1, d.x + dx));
+        d.y = Math.max(0, Math.min(this.world.height - 1, d.y + dy));
+      } else {
+        // Reached target — pick a new dense area
+        this._dragonRetarget(d);
+      }
+    }
+
+    // ── Fire breath: burn nearby buildings ──
+    if (tick - d.lastFireTick >= GameLoop.DRAGON_FIRE_INTERVAL) {
+      d.lastFireTick = tick;
+      const nearby = this.world.buildingsList.filter(b =>
+        b.isComplete() && !b.burning && b.workCost > 0 &&
+        Math.abs(b.x - d.x) + Math.abs(b.y - d.y) < GameLoop.DRAGON_FIRE_RADIUS
+      );
+      if (nearby.length > 0) {
+        const toFire = Math.min(GameLoop.DRAGON_FIRE_COUNT, nearby.length);
+        const targets = nearby.sort(() => Math.random() - 0.5).slice(0, toFire);
+        for (const t of targets) {
+          t.burning = true;
+          t.hp = t.hp || 1.0;
+          if (!this.world._dirtyTiles) this.world._dirtyTiles = new Set();
+          this.world._dirtyTiles.add(`${t.x},${t.y}`);
+          d.kills++;
+        }
+        events.push({
+          tick,
+          type: 'dragon_fire',
+          x: d.x,
+          y: d.y,
+          targets: targets.map(t => ({ x: t.x, y: t.y, name: t.name })),
+          message: `🔥 The Dragon breathes fire! ${targets.length} building${targets.length > 1 ? 's' : ''} set ablaze!`,
+        });
+      }
+    }
+
+    // Death check is handled in _takeDragonDamage
+  }
+
+  /**
+   * Pick a new wander target for the dragon — aim for the densest
+   * cluster of buildings it hasn't burned yet.
+   */
+  _dragonRetarget(d) {
+    const buildings = this.world.buildingsList.filter(b => b.isComplete() && !b.burning && b.workCost > 0);
+    if (buildings.length === 0) {
+      // Nothing left — wander randomly
+      d.targetX = Math.floor(Math.random() * this.world.width);
+      d.targetY = Math.floor(Math.random() * this.world.height);
+      return;
+    }
+    // Find building clusters — pick a random completed building and aim there
+    const pick = buildings[Math.floor(Math.random() * buildings.length)];
+    d.targetX = pick.x;
+    d.targetY = pick.y;
+  }
+
+  /**
+   * Called when an agent attacks the dragon. Applies damage, logs it,
+   * and checks for death.
+   */
+  _takeDragonDamage(agent, damage, tick, events) {
+    const d = this.world.dragon;
+    if (!d || !d.alive) return;
+
+    d.hp = Math.max(0, d.hp - damage);
+
+    // Log damage for kill credit
+    if (!d.damageLog) d.damageLog = {};
+    d.damageLog[agent.id] = (d.damageLog[agent.id] || 0) + damage;
+
+    // ── Dragon death ──
+    if (d.hp <= 0) {
+      d.alive = false;
+      d.deathTick = tick;
+
+      // Find the MVP (most damage dealt)
+      let mvpId = null;
+      let mvpDmg = 0;
+      for (const [id, dmg] of Object.entries(d.damageLog)) {
+        if (dmg > mvpDmg) { mvpId = id; mvpDmg = dmg; }
+      }
+      const mvpAgent = mvpId ? this.world.agents.get(mvpId) : null;
+      const mvpName = mvpAgent ? mvpAgent.name : 'Unknown';
+
+      // Reward MVP: "Dragon Slayer" perk + gold + WORK
+      if (mvpAgent) {
+        if (!mvpAgent.perks) mvpAgent.perks = {};
+        mvpAgent.perks.dragon_slayer = true;
+        mvpAgent.resources.gold = (mvpAgent.resources.gold || 0) + 100;
+        mvpAgent.earnWork(50);
+      }
+
+      // Reward all fighters with gold proportional to damage
+      const totalDmg = Object.values(d.damageLog).reduce((s, v) => s + v, 0);
+      for (const [id, dmg] of Object.entries(d.damageLog)) {
+        const fighter = this.world.agents.get(id);
+        if (fighter && fighter !== mvpAgent) {
+          const share = Math.floor((dmg / totalDmg) * 50);
+          fighter.resources.gold = (fighter.resources.gold || 0) + share;
+          fighter.earnWork(share / 2);
+        }
+      }
+
+      const fighterCount = Object.keys(d.damageLog).length;
+      events.push({
+        tick,
+        type: 'dragon_death',
+        x: d.x,
+        y: d.y,
+        mvp: mvpName,
+        mvpDmg: Math.round(mvpDmg),
+        totalFighters: fighterCount,
+        buildingsDestroyed: d.kills,
+        message: `🐉💀 THE DRAGON IS SLAIN! ${mvpName} dealt the most damage (${Math.round(mvpDmg)})! ${fighterCount} agents fought. ${d.kills} buildings lost. The Dragon Slayer has been crowned!`,
+      });
+      console.log(`[DRAGON] Killed at (${d.x},${d.y}). MVP: ${mvpName} (${Math.round(mvpDmg)} dmg). Fighters: ${fighterCount}. Buildings destroyed: ${d.kills}`);
+    }
+  }
+
   // ─── Loot Drops (Phase 1) ───────────────────────────────────────────
   // Items sitting on the ground that agents autonomously pick up.
   // Currently supports food_cache. More types in later phases.
@@ -2226,6 +2540,7 @@ class GameLoop {
       leaderboard: this.world.leaderboard || [],
       settlements: this.world.settlements || [],
       groundItems: Array.isArray(this.world.groundItems) ? this.world.groundItems : [],
+      dragon: this.world.dragon || null,
     };
   }
 

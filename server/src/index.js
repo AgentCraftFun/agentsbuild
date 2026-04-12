@@ -63,6 +63,8 @@ function saveWorldState(ws) {
       // Phase 1 of loot drops: persisted ground items (backwards-compatible
       // with v1 saves — absent field loads as [])
       groundItems: Array.isArray(ws.groundItems) ? ws.groundItems : [],
+      // World boss: dragon state (null = no dragon, or full dragon object)
+      dragon: ws.dragon || null,
     };
     fs.writeFileSync(STATE_FILE, JSON.stringify(state));
     console.log(`[Save] Tick:${ws.tick} Agents:${agents.length} Buildings:${buildings.length}`);
@@ -82,7 +84,9 @@ function loadWorldState() {
       tick: state.tick || 0, agents: new Map(), buildingsList: [], events: state.events || [], leaderboard: state.leaderboard || [],
       settlements: state.settlements || [],
       // Loot drops: v1 saves have no groundItems, default to []
-      groundItems: Array.isArray(state.groundItems) ? state.groundItems : [] };
+      groundItems: Array.isArray(state.groundItems) ? state.groundItems : [],
+      // World boss: restore dragon if mid-fight when saved
+      dragon: state.dragon || null };
 
     const Agent = require('./models/Agent');
     const Building = require('./models/Building');
@@ -154,7 +158,7 @@ if (loadedState) {
   const world = WorldGen.generate(WORLD_WIDTH, WORLD_HEIGHT, WORLD_SEED);
   worldState = { tiles: world.tiles, width: world.width, height: world.height, seed: world.seed,
     tick: 0, agents: new Map(), buildingsList: [], events: [], leaderboard: [], settlements: [], _dirtyTiles: new Set(),
-    groundItems: [] };
+    groundItems: [], dragon: null };
   console.log('[Server] Seeding demo agents...');
   seedAgents(worldState);
 }
