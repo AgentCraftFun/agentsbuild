@@ -1108,7 +1108,7 @@ function drawDetail(c,d,fr){
 }
 
 // === State ===
-const S={tick:0,agents:[],tiles:[],buildings:[],events:[],leaderboard:[],connected:false,groundItems:[],pickupFlashes:[]};
+const S={tick:0,agents:[],tiles:[],buildings:[],events:[],leaderboard:[],connected:false,groundItems:[],pickupFlashes:[],dragon:null,dragonHits:[],dragonFireFlashes:[]};
 
 const FC={human:'#4488ff',orc:'#cc4444',dwarf:'#cc8844',elf:'#aa44cc'};
 const FI={human:'\u2694',orc:'\u2620',dwarf:'\u26CF',elf:'\u2727'};
@@ -5520,6 +5520,123 @@ if(S.pickupFlashes&&S.pickupFlashes.length){
   ctx.lineWidth=1;
 }
 
+// === WORLD BOSS: Dragon rendering ===
+// The dragon is drawn above buildings/agents as a dominant world presence.
+if(S.dragon&&S.dragon.alive){
+  const dd=S.dragon;
+  const dx=dd.x*ts+ts/2,dy=dd.y*ts+ts/2;
+  // Cull if offscreen
+  if(dx+40>sx*ts&&dx-40<ex*ts&&dy+40>sy*ts&&dy-40<ey*ts){
+    const bob=Math.sin(frame*0.06)*2;
+    const wingPhase=Math.sin(frame*0.12);
+    // ── Shadow ──
+    ctx.fillStyle='rgba(0,0,0,0.4)';
+    ctx.beginPath();ctx.ellipse(dx,dy+18,22,6,0,0,Math.PI*2);ctx.fill();
+    // ── Wings (behind body) ──
+    ctx.fillStyle='#8b1a1a';
+    // Left wing
+    ctx.save();ctx.translate(dx-8,dy-6+bob);ctx.rotate(-0.3+wingPhase*0.2);
+    ctx.beginPath();ctx.moveTo(0,0);ctx.lineTo(-22,-12);ctx.lineTo(-18,4);ctx.closePath();ctx.fill();
+    ctx.restore();
+    // Right wing
+    ctx.save();ctx.translate(dx+8,dy-6+bob);ctx.rotate(0.3-wingPhase*0.2);
+    ctx.beginPath();ctx.moveTo(0,0);ctx.lineTo(22,-12);ctx.lineTo(18,4);ctx.closePath();ctx.fill();
+    ctx.restore();
+    // ── Body (large red ellipse) ──
+    ctx.fillStyle='#cc2222';
+    ctx.beginPath();ctx.ellipse(dx,dy+bob,14,10,0,0,Math.PI*2);ctx.fill();
+    // Belly
+    ctx.fillStyle='#dd6644';
+    ctx.beginPath();ctx.ellipse(dx,dy+3+bob,8,5,0,0,Math.PI);ctx.fill();
+    // ── Head ──
+    ctx.fillStyle='#cc2222';
+    ctx.beginPath();ctx.arc(dx,dy-14+bob,7,0,Math.PI*2);ctx.fill();
+    // Horns
+    ctx.fillStyle='#661111';
+    ctx.fillRect(dx-7,dy-22+bob,3,6);ctx.fillRect(dx+5,dy-22+bob,3,6);
+    // Eyes (glowing yellow)
+    ctx.fillStyle='#ffdd00';
+    ctx.fillRect(dx-4,dy-16+bob,3,2);ctx.fillRect(dx+2,dy-16+bob,3,2);
+    // ── Tail ──
+    ctx.strokeStyle='#aa1818';ctx.lineWidth=3;
+    ctx.beginPath();
+    ctx.moveTo(dx,dy+10+bob);
+    ctx.quadraticCurveTo(dx+15,dy+20+bob,dx+25,dy+12+bob);
+    ctx.stroke();ctx.lineWidth=1;
+    // Tail spike
+    ctx.fillStyle='#661111';
+    ctx.beginPath();ctx.moveTo(dx+25,dy+12+bob);ctx.lineTo(dx+30,dy+8+bob);ctx.lineTo(dx+28,dy+16+bob);ctx.closePath();ctx.fill();
+    // ── Fire breath particles (when near buildings) ──
+    if(frame%12<6){
+      ctx.fillStyle='rgba(255,120,20,0.7)';
+      for(let fi=0;fi<3;fi++){
+        const fx=dx+Math.cos(frame*0.2+fi*2)*8;
+        const fy=dy-20+bob-fi*4+Math.sin(frame*0.3+fi)*3;
+        ctx.beginPath();ctx.arc(fx,fy,2+Math.random()*2,0,Math.PI*2);ctx.fill();
+      }
+    }
+    // ── Health bar ──
+    const hpPct=dd.hp/dd.maxHp;
+    const barW=40,barH=5,barX=dx-barW/2,barY=dy-30+bob;
+    ctx.fillStyle='rgba(0,0,0,0.7)';ctx.fillRect(barX-1,barY-1,barW+2,barH+2);
+    ctx.fillStyle=hpPct>0.5?'#44cc44':hpPct>0.25?'#ccaa22':'#cc2222';
+    ctx.fillRect(barX,barY,barW*hpPct,barH);
+    // HP text
+    ctx.font='bold 8px Courier New';ctx.textAlign='center';
+    ctx.fillStyle='#ffffff';
+    ctx.fillText(dd.hp+'/'+dd.maxHp,dx,barY-2);
+    // "DRAGON" label
+    ctx.font='bold 9px Courier New';
+    ctx.fillStyle='#ff4444';
+    ctx.fillText('🐉 DRAGON',dx,barY-10);
+    ctx.textAlign='start';
+    // Ambient glow
+    const gr=ctx.createRadialGradient(dx,dy+bob,5,dx,dy+bob,35);
+    gr.addColorStop(0,'rgba(255,50,20,0.2)');gr.addColorStop(1,'rgba(255,50,20,0)');
+    ctx.fillStyle=gr;ctx.fillRect(dx-35,dy+bob-35,70,70);
+  }
+}
+// Dragon fire flashes (buildings being torched by dragon breath)
+if(S.dragonFireFlashes&&S.dragonFireFlashes.length){
+  for(let dfi=S.dragonFireFlashes.length-1;dfi>=0;dfi--){
+    const df=S.dragonFireFlashes[dfi];
+    const age=frame-df.startFrame;
+    if(age>df.life){S.dragonFireFlashes.splice(dfi,1);continue}
+    const t=age/df.life;
+    const cfx=df.x*ts+ts/2,cfy=df.y*ts+ts/2;
+    if(df.death){
+      // Death explosion — big expanding ring
+      ctx.strokeStyle='rgba(255,50,20,'+(1-t)*0.9+')';ctx.lineWidth=4*(1-t);
+      ctx.beginPath();ctx.arc(cfx,cfy,10+t*80,0,Math.PI*2);ctx.stroke();
+      ctx.strokeStyle='rgba(255,220,50,'+(1-t)*0.7+')';ctx.lineWidth=2;
+      ctx.beginPath();ctx.arc(cfx,cfy,5+t*50,0,Math.PI*2);ctx.stroke();
+    }else{
+      // Fire breath flash
+      ctx.fillStyle='rgba(255,100,20,'+(1-t)*0.6+')';
+      ctx.beginPath();ctx.arc(cfx,cfy,8+t*20,0,Math.PI*2);ctx.fill();
+    }
+  }
+  ctx.lineWidth=1;
+}
+// Dragon hit flashes (agents attacking)
+if(S.dragonHits&&S.dragonHits.length){
+  for(let dhi=S.dragonHits.length-1;dhi>=0;dhi--){
+    const dh=S.dragonHits[dhi];
+    const age=frame-dh.startFrame;
+    if(age>dh.life){S.dragonHits.splice(dhi,1);continue}
+    const t=age/dh.life;
+    const hx=dh.x*ts+ts/2,hy2=dh.y*ts+ts/2;
+    // Rising damage number
+    ctx.font='bold 11px Courier New';ctx.textAlign='center';
+    ctx.fillStyle='rgba(255,255,100,'+(1-t)+')';
+    ctx.fillText('-'+dh.damage,hx+Math.sin(age*0.3)*6,hy2-10-t*20);
+    // Hit spark
+    ctx.fillStyle='rgba(255,220,50,'+(1-t)*0.8+')';
+    ctx.beginPath();ctx.arc(hx,hy2,3*(1-t),0,Math.PI*2);ctx.fill();
+    ctx.textAlign='start';
+  }
+}
+
 // === Ambient Particles ===
 updateParticles();
 for(const p of particles){
@@ -6482,8 +6599,8 @@ function syncServerSettlements(serverSettlements){
 }
 function handleMsg(msg){
 if(msg.type==='pong')return;
-if(msg.type==='world_state'&&msg.data){S.tick=msg.data.tick||0;S.agents=msg.data.agents||[];rebuildAgentMap();S.tiles=msg.data.tiles||[];S.buildings=msg.data.buildings||[];S.events=msg.data.events||[];S.leaderboard=msg.data.leaderboard||[];if(Array.isArray(msg.data.groundItems))S.groundItems=msg.data.groundItems;syncServerBuildings(msg.data.buildings||[]);if(msg.data.settlements)syncServerSettlements(msg.data.settlements);updateAll()}
-if(msg.type==='tick'&&msg.data){S.tick=msg.data.tick||S.tick;if(msg.data.agents){S.agents=msg.data.agents;rebuildAgentMap()}if(msg.data.tiles)S.tiles=msg.data.tiles;if(msg.data.buildings){S.buildings=msg.data.buildings;syncServerBuildings(msg.data.buildings)}if(Array.isArray(msg.data.groundItems))S.groundItems=msg.data.groundItems;if(msg.data.events){for(const ev of msg.data.events){handleChaosEvent(ev)}S.events=S.events.concat(msg.data.events);if(S.events.length>200)S.events=S.events.slice(-100)}if(msg.data.leaderboard)S.leaderboard=msg.data.leaderboard;if(msg.data.settlements)syncServerSettlements(msg.data.settlements);updateAll()}}
+if(msg.type==='world_state'&&msg.data){S.tick=msg.data.tick||0;S.agents=msg.data.agents||[];rebuildAgentMap();S.tiles=msg.data.tiles||[];S.buildings=msg.data.buildings||[];S.events=msg.data.events||[];S.leaderboard=msg.data.leaderboard||[];if(Array.isArray(msg.data.groundItems))S.groundItems=msg.data.groundItems;if(msg.data.dragon!==undefined)S.dragon=msg.data.dragon;syncServerBuildings(msg.data.buildings||[]);if(msg.data.settlements)syncServerSettlements(msg.data.settlements);updateAll()}
+if(msg.type==='tick'&&msg.data){S.tick=msg.data.tick||S.tick;if(msg.data.agents){S.agents=msg.data.agents;rebuildAgentMap()}if(msg.data.tiles)S.tiles=msg.data.tiles;if(msg.data.buildings){S.buildings=msg.data.buildings;syncServerBuildings(msg.data.buildings)}if(Array.isArray(msg.data.groundItems))S.groundItems=msg.data.groundItems;if(msg.data.dragon!==undefined)S.dragon=msg.data.dragon;if(msg.data.events){for(const ev of msg.data.events){handleChaosEvent(ev)}S.events=S.events.concat(msg.data.events);if(S.events.length>200)S.events=S.events.slice(-100)}if(msg.data.leaderboard)S.leaderboard=msg.data.leaderboard;if(msg.data.settlements)syncServerSettlements(msg.data.settlements);updateAll()}}
 // Centralized event handler for chaos + war events
 function handleChaosEvent(ev){
   if(!ev||!ev.type)return;
@@ -6537,6 +6654,26 @@ function handleChaosEvent(ev){
       // already fires its own animation. paid_action is just the banner
       // crediting the payer, shown with a prominent style.
       showDramaBanner('💰 '+ev.message); break;
+    // ── WORLD BOSS: DRAGON ──
+    case 'dragon_spawn':
+      showDramaBanner('🐉🐉🐉 '+ev.message+' 🐉🐉🐉');
+      if(typeof panToWorld==='function'&&ev.x!=null) panToWorld(ev.x,ev.y,1.5,60);
+      screenShake=Math.max(screenShake,30);
+      break;
+    case 'dragon_fire':
+      showDramaBanner('🔥🐉 '+ev.message);
+      if(ev.targets){for(const t of ev.targets)S.dragonFireFlashes.push({x:t.x,y:t.y,startFrame:frame,life:40})}
+      break;
+    case 'dragon_hit':
+      S.dragonHits.push({x:ev.x,y:ev.y,damage:ev.damage,startFrame:frame,life:30,agent:ev.agent});
+      break;
+    case 'dragon_death':
+      showDramaBanner('🐉💀 '+ev.message);
+      screenShake=Math.max(screenShake,60);
+      if(ev.x!=null) panToWorld(ev.x,ev.y,2.0,40);
+      // Big flash
+      S.dragonFireFlashes.push({x:ev.x,y:ev.y,startFrame:frame,life:80,death:true});
+      break;
     // ── LOOT DROPS (Phase 1) ──
     case 'item_dropped':
       // A new ground item has spawned — flash the drop location + drama banner
