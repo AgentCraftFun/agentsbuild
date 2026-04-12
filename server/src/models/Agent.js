@@ -31,6 +31,7 @@ class Agent {
     idle_ticks = 0,
     buffs = [],
     perks = {},
+    equipment = {},
   }) {
     if (!Agent.FACTIONS.includes(faction)) {
       throw new Error(`Invalid faction: ${faction}. Must be one of: ${Agent.FACTIONS.join(', ')}`);
@@ -60,6 +61,8 @@ class Agent {
     //   perks — object with permanent flags (golden_pickaxe, golden_axe)
     this.buffs = Array.isArray(buffs) ? [...buffs] : [];
     this.perks = perks && typeof perks === 'object' ? { ...perks } : {};
+    // Phase 3: equipment slots — {weapon: 'sword'|'bow'|'spear'|null, armor: 'leather'|'iron'|'shield'|null}
+    this.equipment = equipment && typeof equipment === 'object' ? { ...equipment } : {};
   }
 
   toJSON() {
@@ -80,6 +83,7 @@ class Agent {
       message: this.message,
       buffs: Array.isArray(this.buffs) ? this.buffs.map(b => ({ type: b.type, expiresTick: b.expiresTick })) : [],
       perks: this.perks && typeof this.perks === 'object' ? { ...this.perks } : {},
+      equipment: this.equipment && typeof this.equipment === 'object' ? { ...this.equipment } : {},
     };
     if (this._raidTarget) data._raidTarget = this._raidTarget;
     return data;

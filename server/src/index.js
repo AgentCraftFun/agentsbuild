@@ -49,6 +49,8 @@ function saveWorldState(ws) {
         // Phase 2: buffs (temporary) + perks (permanent) — absent in v1 saves
         buffs: Array.isArray(agent.buffs) ? agent.buffs : [],
         perks: (agent.perks && typeof agent.perks === 'object') ? agent.perks : {},
+        // Phase 3: equipment (weapon/armor slots)
+        equipment: (agent.equipment && typeof agent.equipment === 'object') ? agent.equipment : {},
       });
     }
     const buildings = ws.buildingsList.map(b => b.toJSON());
@@ -94,7 +96,8 @@ function loadWorldState() {
           mood: ad.mood || 'idle', owned_tiles: ad.owned_tiles || [], buildings: [],
           message: ad.message || '', idle_ticks: ad.idle_ticks || 0, last_action_tick: ad.last_action_tick || 0,
           buffs: Array.isArray(ad.buffs) ? ad.buffs : [],
-          perks: (ad.perks && typeof ad.perks === 'object') ? ad.perks : {} });
+          perks: (ad.perks && typeof ad.perks === 'object') ? ad.perks : {},
+          equipment: (ad.equipment && typeof ad.equipment === 'object') ? ad.equipment : {} });
         agent._settlementId = ad._settlementId || 0;
         ws.agents.set(agent.id, agent);
       } catch (e) { console.warn(`[Load] Agent ${ad.name} failed:`, e.message); }
@@ -800,6 +803,9 @@ app.post('/api/drop/free', (req, res) => {
     food_cache: 50, wood_cache: 50, stone_cache: 50, gold_cache: 25,
     scroll_haste: 0, potion_gather: 0, potion_build: 0,
     golden_pickaxe: 0, golden_axe: 0,
+    // Phase 3: weapons + armor
+    weapon_sword: 0, weapon_bow: 0, weapon_spear: 0,
+    armor_leather: 0, armor_iron: 0, armor_shield: 0,
   };
   if (!(type in FIXED_AMOUNTS)) {
     return res.status(400).json({

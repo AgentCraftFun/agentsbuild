@@ -675,32 +675,80 @@ class GameLoop {
       }
 
       // ATTACK: Set nearby buildings on fire (once on arrival)
+      // Phase 3 — equipment modifies combat:
+      //   Attacker weapon: sword (+50% burns), bow (extra range), spear (+25% + defense)
+      //   Defender armor: leather (25% block), iron (50% block), shield (35% block + reflect)
       if (!raid.attacked) {
         raid.attacked = true;
         raid.attackTick = tick;
-        // Find nearby enemy buildings within 15 tiles
+        // Attacker weapon stats
+        const rWeapon = (raider.equipment && raider.equipment.weapon) || null;
+        const wStats = rWeapon && GameLoop.EQUIP_STATS[rWeapon] ? GameLoop.EQUIP_STATS[rWeapon] : null;
+        const raidRange = 15 + (wStats ? (wStats.raidRange || 0) : 0);
+        const dmgMult = wStats ? (wStats.raidDmg || 1) : 1;
+        // Find nearby enemy buildings within range
         const nearby = this.world.buildingsList.filter(b =>
           b.isComplete() && !b.burning && b.workCost > 0 &&
           b.owner !== raider.id &&
-          Math.abs(b.x - raider.x) + Math.abs(b.y - raider.y) < 15
+          Math.abs(b.x - raider.x) + Math.abs(b.y - raider.y) < raidRange
         );
-        const toFire = Math.min(2 + Math.floor(Math.random() * 3), nearby.length);
-        const targets = nearby.sort(() => Math.random() - 0.5).slice(0, toFire);
-        for (const t of targets) {
+        const baseCount = 2 + Math.floor(Math.random() * 3);
+        const toFire = Math.min(Math.round(baseCount * dmgMult), nearby.length);
+        const candidates = nearby.sort(() => Math.random() - 0.5).slice(0, toFire);
+        // Resolve each target against defender armor
+        const burned = [];
+        const blocked = [];
+        let reflected = false;
+        for (const t of candidates) {
+          // Find the building owner and check their armor
+          const defender = this.world.agents.get(t.owner);
+          const dArmor = (defender && defender.equipment && defender.equipment.armor) || null;
+          const aStats = dArmor && GameLoop.EQUIP_STATS[dArmor] ? GameLoop.EQUIP_STATS[dArmor] : null;
+          // Defender also benefits from spear defense bonus if they have a spear
+          const dWeapon = (defender && defender.equipment && defender.equipment.weapon) || null;
+          const extraDef = (dWeapon === 'spear' && GameLoop.EQUIP_STATS.spear) ? GameLoop.EQUIP_STATS.spear.defenseBonus : 0;
+          const blockChance = (aStats ? aStats.blockChance : 0) + extraDef;
+          if (blockChance > 0 && Math.random() < blockChance) {
+            // BLOCKED!
+            blocked.push({ building: t, defender, armor: dArmor });
+            if (aStats && aStats.reflect) reflected = true;
+            continue;
+          }
+          // Not blocked — building burns
           t.burning = true; t.hp = t.hp || 1.0;
           if (!this.world._dirtyTiles) this.world._dirtyTiles = new Set();
           this.world._dirtyTiles.add(`${t.x},${t.y}`);
+          burned.push(t);
           events.push({ tick, type: 'building_burning', message: `${t.name} at (${t.x}, ${t.y}) is on fire!` });
         }
-        if (targets.length > 0) {
-          raider.x = targets[0].x + 1; raider.y = targets[0].y + 1;
-          events.push({ tick, type: 'raid_success', message: `${raider.name} set ${targets.length} buildings ablaze!` });
+        // Battle report with equipment details
+        const weaponTag = rWeapon ? ` [${rWeapon.toUpperCase()}]` : '';
+        if (burned.length > 0) {
+          raider.x = burned[0].x + 1; raider.y = burned[0].y + 1;
+          let msg = `⚔️ ${raider.name}${weaponTag} set ${burned.length} building${burned.length>1?'s':''} ablaze!`;
+          if (blocked.length > 0) msg += ` (${blocked.length} BLOCKED by armor!)`;
+          events.push({ tick, type: 'raid_success', message: msg });
+        } else if (blocked.length > 0) {
+          events.push({ tick, type: 'raid_blocked', message: `🛡️ ${raider.name}${weaponTag} attacked but ALL ${blocked.length} targets were blocked by armor!` });
         } else {
           events.push({ tick, type: 'raid_failed', message: `${raider.name} found nothing to burn.` });
         }
-        raider.mood = 'celebrating'; raider.message = 'BURN IT ALL!';
+        // Shield REFLECT: attacker loses one of their own buildings
+        if (reflected && burned.length === 0) {
+          const ownBuildings = this.world.buildingsList.filter(b =>
+            b.isComplete() && !b.burning && b.workCost > 0 && b.owner === raider.id
+          );
+          if (ownBuildings.length > 0) {
+            const victim = ownBuildings[Math.floor(Math.random() * ownBuildings.length)];
+            victim.burning = true; victim.hp = victim.hp || 1.0;
+            if (!this.world._dirtyTiles) this.world._dirtyTiles = new Set();
+            this.world._dirtyTiles.add(`${victim.x},${victim.y}`);
+            events.push({ tick, type: 'raid_reflected', message: `🪖 ${raider.name}'s attack was reflected! Their own ${victim.name} is on fire!` });
+          }
+        }
+        raider.mood = 'celebrating'; raider.message = burned.length > 0 ? 'BURN IT ALL!' : 'Foiled...';
         raider._raidTarget = null;
-        console.log(`[War] ATTACK: ${raider.name} burned ${targets.length} buildings at (${raider.x},${raider.y})`);
+        console.log(`[War] ATTACK: ${raider.name}${weaponTag} → ${burned.length} burned, ${blocked.length} blocked at (${raider.x},${raider.y})`);
       }
 
       // CELEBRATING: 12 ticks
@@ -1891,6 +1939,27 @@ class GameLoop {
     // ─── Perks (Phase 2, permanent) ───
     golden_pickaxe: { category: 'perk', label: 'Golden Pickaxe', perk: 'golden_pickaxe', emoji: '⛏️', description: 'Permanent 2× stone yield from all owned tiles.' },
     golden_axe:     { category: 'perk', label: 'Golden Axe',     perk: 'golden_axe',     emoji: '🪓', description: 'Permanent 2× wood yield from all owned tiles.' },
+    // ─── Equipment (Phase 3, permanent, one per slot) ───
+    // Weapons (slot: weapon) — affect raid damage
+    weapon_sword: { category: 'equip', label: 'Sword',    slot: 'weapon', equip: 'sword',   emoji: '⚔️',  description: '+50% raid damage — burns 2 buildings instead of 1.' },
+    weapon_bow:   { category: 'equip', label: 'Bow',      slot: 'weapon', equip: 'bow',     emoji: '🏹', description: 'Ranged — can raid from 3 tiles further away.' },
+    weapon_spear: { category: 'equip', label: 'Spear',    slot: 'weapon', equip: 'spear',   emoji: '🔱', description: '+25% raid damage AND +25% defense.' },
+    // Armor (slot: armor) — affect raid defense
+    armor_leather: { category: 'equip', label: 'Leather Armor', slot: 'armor', equip: 'leather', emoji: '🦺', description: '25% chance to block an incoming raid.' },
+    armor_iron:    { category: 'equip', label: 'Iron Armor',    slot: 'armor', equip: 'iron',    emoji: '🛡️', description: '50% chance to block an incoming raid.' },
+    armor_shield:  { category: 'equip', label: 'War Shield',    slot: 'armor', equip: 'shield',  emoji: '🪖', description: '35% block + reflects damage — attacker loses a building.' },
+  };
+
+  /** Equipment stat table — looked up during combat resolution. */
+  static EQUIP_STATS = {
+    // Weapons: raidDmg = multiplier on buildings burned, raidRange = extra tiles
+    sword:   { raidDmg: 1.5, raidRange: 0 },
+    bow:     { raidDmg: 1.0, raidRange: 3 },
+    spear:   { raidDmg: 1.25, raidRange: 0, defenseBonus: 0.25 },
+    // Armor: blockChance = probability raid is blocked, reflect = attacker loses building
+    leather: { blockChance: 0.25, reflect: false },
+    iron:    { blockChance: 0.50, reflect: false },
+    shield:  { blockChance: 0.35, reflect: true },
   };
 
   /** Returns true if agent currently has an unexpired buff of the given type. */
@@ -2047,6 +2116,8 @@ class GameLoop {
       msgSuffix = '(5 min buff)';
     } else if (def.category === 'perk') {
       msgSuffix = '(permanent perk!)';
+    } else if (def.category === 'equip') {
+      msgSuffix = `(equipped ${def.slot}!)`;
     } else {
       msgSuffix = `(+${item.amount} ${def.resource})`;
     }
@@ -2105,6 +2176,12 @@ class GameLoop {
     if (def.category === 'perk' && def.perk) {
       if (!agent.perks || typeof agent.perks !== 'object') agent.perks = {};
       agent.perks[def.perk] = true;
+      return;
+    }
+
+    if (def.category === 'equip' && def.slot && def.equip) {
+      if (!agent.equipment || typeof agent.equipment !== 'object') agent.equipment = {};
+      agent.equipment[def.slot] = def.equip;
       return;
     }
   }

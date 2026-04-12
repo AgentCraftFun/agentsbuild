@@ -2489,6 +2489,38 @@ function drawAgentPixelArt(c,ax,ay,agent,sel,fr,anim){
   if(t==='dwarf'){c.fillStyle=light;c.fillRect(ax-5,by+3,10,bh-5)}// apron
   if(t==='elf'){c.fillStyle=light;c.fillRect(ax-7,by+bh-3,14,3)}// robe hem
 
+  // ── ARMOR OVERLAY (Phase 3) ──
+  // Draws on top of the body, before the head, so it looks like a chestpiece.
+  const eqArmor=(agent.equipment||{}).armor;
+  if(eqArmor&&!resting){
+    const ay2=by+2,ah=bh-3;
+    if(eqArmor==='leather'){
+      // Brown leather vest with stitches
+      c.fillStyle='#6a4a28';c.fillRect(ax-7,ay2,14,ah);
+      c.strokeStyle='#4a2a10';c.lineWidth=1;
+      c.strokeRect(ax-7,ay2,14,ah);
+      // Stitching
+      c.strokeStyle='#8a6a40';
+      c.beginPath();c.moveTo(ax,ay2);c.lineTo(ax,ay2+ah);c.stroke();
+    }else if(eqArmor==='iron'){
+      // Iron plate — grey with highlight
+      c.fillStyle='#7a7a88';c.fillRect(ax-7,ay2,14,ah);
+      c.fillStyle='#9a9aa8';c.fillRect(ax-6,ay2+1,12,2);// shoulder highlights
+      c.fillStyle='#5a5a68';c.fillRect(ax-7,ay2+Math.floor(ah/2),14,1);// belt line
+      c.strokeStyle='#4a4a58';c.lineWidth=1;c.strokeRect(ax-7,ay2,14,ah);
+    }else if(eqArmor==='shield'){
+      // Shield strapped to back (small disc)
+      c.fillStyle='#5a3a10';c.fillRect(ax-7,ay2,14,ah);// leather base
+      const sx2=ax+(faceLeft?6:-6),sy2=by-2;
+      c.fillStyle='#7a7a88';
+      c.beginPath();c.arc(sx2,sy2+5,6,0,Math.PI*2);c.fill();
+      c.strokeStyle='#4a4a58';c.lineWidth=1;
+      c.beginPath();c.arc(sx2,sy2+5,6,0,Math.PI*2);c.stroke();
+      // Emblem (cross)
+      c.fillStyle='#cc3333';c.fillRect(sx2-1,sy2+2,2,6);c.fillRect(sx2-3,sy2+4,6,2);
+    }
+  }
+
   // HEAD (round circle)
   const hy=by-12;
   c.fillStyle=skin;
@@ -2576,6 +2608,7 @@ function drawAgentPixelArt(c,ax,ay,agent,sel,fr,anim){
     // render it instead of the faction weapon so everyone can SEE which
     // agents have been blessed.
     const perks=agent.perks||{};
+    const equip=agent.equipment||{};
     if(perks.golden_axe){
       // Wooden handle
       c.fillStyle='#6a3a10';c.fillRect(ix,iy-10,2,12);
@@ -2603,6 +2636,28 @@ function drawAgentPixelArt(c,ax,ay,agent,sel,fr,anim){
       // Golden glow
       c.fillStyle='rgba(255,221,68,'+(0.15+Math.sin(fr*0.1)*0.05)+')';
       c.beginPath();c.arc(ix+1,iy-8,7,0,Math.PI*2);c.fill();
+    }else if(equip&&equip.weapon==='sword'){
+      // SWORD — steel blade + crossguard
+      c.fillStyle='#aab0b8';c.fillRect(ix,iy-12,2,12);// blade
+      c.fillStyle='#e0e4ea';c.fillRect(ix,iy-12,2,2);// tip highlight
+      c.fillStyle='#5a3a18';c.fillRect(ix-3,iy-1,8,2);// crossguard
+      c.fillStyle='#6a4a28';c.fillRect(ix,iy+1,2,4);// grip
+      // Steel gleam
+      if(fr%24<12){c.fillStyle='rgba(255,255,255,0.5)';c.fillRect(ix,iy-8,1,4)}
+    }else if(equip&&equip.weapon==='bow'){
+      // BOW — curved wood + string
+      c.strokeStyle='#6a4a20';c.lineWidth=2;
+      c.beginPath();c.arc(ix+1,iy-6,8,Math.PI*0.8,Math.PI*1.7);c.stroke();
+      c.strokeStyle='#c0c0c0';c.lineWidth=1;
+      c.beginPath();c.moveTo(ix-3,iy-12);c.lineTo(ix-1,iy);c.stroke();
+      // Arrow nocked
+      c.fillStyle='#5a3010';c.fillRect(ix-1,iy-14,1,12);
+      c.fillStyle='#aab0b8';c.fillRect(ix-2,iy-14,3,2);// arrowhead
+    }else if(equip&&equip.weapon==='spear'){
+      // SPEAR — long shaft + silver tip
+      c.fillStyle='#5a3a10';c.fillRect(ix,iy-16,2,16);// shaft
+      c.fillStyle='#aab0b8';c.fillRect(ix-1,iy-18,4,3);// head
+      c.fillStyle='#e0e4ea';c.fillRect(ix,iy-18,2,1);// highlight
     }else{
       // Default factional tool
       if(t==='human'){c.fillStyle='#5a3010';c.fillRect(ix,iy-8,2,10);c.fillStyle='#888890';c.fillRect(ix-2,iy-10,6,4)}
@@ -5395,12 +5450,16 @@ if(S.groundItems&&S.groundItems.length){
     const typeColor={
       food_cache:'#ffaa33',wood_cache:'#cc8844',stone_cache:'#aaaaaa',gold_cache:'#ffdd44',
       scroll_haste:'#66eeff',potion_gather:'#aaff66',potion_build:'#ffaaff',
-      golden_pickaxe:'#ffdd44',golden_axe:'#ffdd44'
+      golden_pickaxe:'#ffdd44',golden_axe:'#ffdd44',
+      weapon_sword:'#aab0b8',weapon_bow:'#8a6a30',weapon_spear:'#ccccdd',
+      armor_leather:'#6a4a28',armor_iron:'#7a7a88',armor_shield:'#7a7a88'
     }[gi.type]||'#ffaa33';
     const glowRgba={
       food_cache:'rgba(255,170,51,0.5)',wood_cache:'rgba(204,136,68,0.5)',stone_cache:'rgba(200,200,200,0.5)',gold_cache:'rgba(255,221,68,0.6)',
       scroll_haste:'rgba(102,238,255,0.65)',potion_gather:'rgba(170,255,102,0.65)',potion_build:'rgba(255,170,255,0.65)',
-      golden_pickaxe:'rgba(255,221,68,0.75)',golden_axe:'rgba(255,221,68,0.75)'
+      golden_pickaxe:'rgba(255,221,68,0.75)',golden_axe:'rgba(255,221,68,0.75)',
+      weapon_sword:'rgba(170,176,184,0.7)',weapon_bow:'rgba(138,106,48,0.6)',weapon_spear:'rgba(204,204,221,0.7)',
+      armor_leather:'rgba(106,74,40,0.6)',armor_iron:'rgba(122,122,136,0.7)',armor_shield:'rgba(122,122,136,0.7)'
     }[gi.type]||'rgba(255,170,51,0.5)';
     // Pulsing radial glow
     const glowR=18+Math.sin(frame*0.1)*3;
@@ -5427,7 +5486,9 @@ if(S.groundItems&&S.groundItems.length){
     const emoji={
       food_cache:'🍞',wood_cache:'🪵',stone_cache:'🪨',gold_cache:'💰',
       scroll_haste:'📜',potion_gather:'🧪',potion_build:'⚗️',
-      golden_pickaxe:'⛏️',golden_axe:'🪓'
+      golden_pickaxe:'⛏️',golden_axe:'🪓',
+      weapon_sword:'⚔️',weapon_bow:'🏹',weapon_spear:'🔱',
+      armor_leather:'🦺',armor_iron:'🛡️',armor_shield:'🪖'
     }[gi.type]||'📦';
     ctx.fillText(emoji,gix,giy-12+bounce);
     ctx.textAlign='start';ctx.textBaseline='alphabetic';
@@ -6430,6 +6491,10 @@ function handleChaosEvent(ev){
   switch(ev.type){
     case 'raid_started': case 'raid_success': case 'building_destroyed':
       showDramaBanner(ev.message); break;
+    case 'raid_blocked':
+      showDramaBanner('🛡️ '+ev.message); break;
+    case 'raid_reflected':
+      showDramaBanner('🪖 '+ev.message); break;
     case 'meteor_strike':
       showDramaBanner('☄️ '+ev.message); triggerMeteorAnimation(ev.impactX,ev.impactY); break;
     case 'wildfire_started':
@@ -7510,6 +7575,14 @@ function appendLootDropsSection(listEl) {
     // ── Perks (Phase 2, PERMANENT) ──
     { type:'golden_pickaxe', emoji:'⛏️', label:'Golden Pickaxe',    color:'#ffdd44', desc:'PERMANENT: double stone yield from all owned tiles.' },
     { type:'golden_axe',     emoji:'🪓', label:'Golden Axe',        color:'#ffdd44', desc:'PERMANENT: double wood yield from all owned tiles.' },
+    // ── Weapons (Phase 3, PERMANENT, equip slot) ──
+    { type:'weapon_sword',   emoji:'⚔️',  label:'Sword',            color:'#aab0ff', desc:'+50% raid damage — burns extra buildings.' },
+    { type:'weapon_bow',     emoji:'🏹', label:'Bow',              color:'#cc9944', desc:'Ranged raids — can attack from further away.' },
+    { type:'weapon_spear',   emoji:'🔱', label:'Spear',            color:'#ccccee', desc:'+25% raid damage AND +25% defense. Balanced.' },
+    // ── Armor (Phase 3, PERMANENT, equip slot) ──
+    { type:'armor_leather',  emoji:'🦺', label:'Leather Armor',    color:'#aa8844', desc:'25% chance to BLOCK an incoming raid.' },
+    { type:'armor_iron',     emoji:'🛡️', label:'Iron Armor',       color:'#8888aa', desc:'50% chance to BLOCK an incoming raid.' },
+    { type:'armor_shield',   emoji:'🪖', label:'War Shield',       color:'#8888aa', desc:'35% block + REFLECTS damage back to attacker.' },
   ];
   for (var li = 0; li < loot.length; li++) {
     var L = loot[li];
