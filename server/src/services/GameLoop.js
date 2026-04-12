@@ -2011,33 +2011,45 @@ class GameLoop {
   static DRAGON_FIRE_INTERVAL = 6;     // ticks between fire breaths
   static DRAGON_FIRE_RADIUS = 12;      // tile radius for fire
   static DRAGON_FIRE_COUNT = 2;        // max buildings per fire breath
-  static DRAGON_WANDER_INTERVAL = 3;   // ticks between movement
+  static DRAGON_WANDER_INTERVAL = 1;   // ticks between movement (every tick = fast)
 
   /**
    * Spawn a new dragon at the edge of the map, targeting a dense settlement.
    */
   _spawnDragon(tick, events) {
-    // Pick spawn edge
-    const edge = Math.floor(Math.random() * 4);
-    let sx, sy;
-    if (edge === 0) { sx = 0; sy = Math.floor(Math.random() * this.world.height); }
-    else if (edge === 1) { sx = this.world.width - 1; sy = Math.floor(Math.random() * this.world.height); }
-    else if (edge === 2) { sx = Math.floor(Math.random() * this.world.width); sy = 0; }
-    else { sx = Math.floor(Math.random() * this.world.width); sy = this.world.height - 1; }
-
-    // Target: densest settlement center (or random building cluster)
-    let targetX = Math.floor(this.world.width / 2);
-    let targetY = Math.floor(this.world.height / 2);
+    // Spawn near (or on) the biggest settlement for immediate action.
+    // No more spawning at the edge of the map — dragons arrive with fury.
+    let sx, sy, targetX, targetY;
     const setts = this.world.settlements || [];
     if (setts.length > 0) {
-      // Pick the biggest settlement
-      const biggest = setts.reduce((best, s) => {
-        const bCount = this.world.buildingsList.filter(b =>
+      // Pick the biggest settlement by nearby building count
+      let bestSett = setts[0], bestCount = 0;
+      for (const s of setts) {
+        const cnt = this.world.buildingsList.filter(b =>
           b.isComplete() && Math.abs(b.x - s.cx) + Math.abs(b.y - s.cy) < 20
         ).length;
-        return bCount > (best.count || 0) ? { s, count: bCount } : best;
-      }, {});
-      if (biggest.s) { targetX = biggest.s.cx; targetY = biggest.s.cy; }
+        if (cnt > bestCount) { bestSett = s; bestCount = cnt; }
+      }
+      // Spawn offset from center (5-12 tiles away so it doesn't just sit ON buildings)
+      const angle = Math.random() * Math.PI * 2;
+      const spawnDist = 5 + Math.floor(Math.random() * 8);
+      sx = Math.max(0, Math.min(this.world.width - 1, Math.round(bestSett.cx + Math.cos(angle) * spawnDist)));
+      sy = Math.max(0, Math.min(this.world.height - 1, Math.round(bestSett.cy + Math.sin(angle) * spawnDist)));
+      targetX = bestSett.cx;
+      targetY = bestSett.cy;
+    } else {
+      // No settlements — pick a random building cluster
+      const completed = this.world.buildingsList.filter(b => b.isComplete());
+      if (completed.length > 0) {
+        const pick = completed[Math.floor(Math.random() * completed.length)];
+        sx = pick.x + (Math.floor(Math.random() * 11) - 5);
+        sy = pick.y + (Math.floor(Math.random() * 11) - 5);
+        targetX = pick.x; targetY = pick.y;
+      } else {
+        sx = Math.floor(this.world.width / 2);
+        sy = Math.floor(this.world.height / 2);
+        targetX = sx; targetY = sy;
+      }
     }
 
     const dragon = {
@@ -2103,10 +2115,10 @@ class GameLoop {
       d.lastMoveTick = tick;
       const dx = Math.sign(d.targetX - d.x);
       const dy = Math.sign(d.targetY - d.y);
-      // Dragons move diagonally — 1 tile per step
+      // Dragons fly fast — 2 tiles per step
       if (dx !== 0 || dy !== 0) {
-        d.x = Math.max(0, Math.min(this.world.width - 1, d.x + dx));
-        d.y = Math.max(0, Math.min(this.world.height - 1, d.y + dy));
+        d.x = Math.max(0, Math.min(this.world.width - 1, d.x + dx * 2));
+        d.y = Math.max(0, Math.min(this.world.height - 1, d.y + dy * 2));
       } else {
         // Reached target — pick a new dense area
         this._dragonRetarget(d);
