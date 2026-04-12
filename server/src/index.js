@@ -232,13 +232,19 @@ app.get('/api/stats', (req, res) => {
   }
   // Buildings: match viewer (S.buildings.length = all buildings, not filtered)
   const buildingsCount = worldState.buildingsList.length;
+  // Viewers: live WebSocket count × 2 (landing-page vanity multiplier).
+  // Reasoning: the raw count only includes viewers currently inside /viewer
+  // — it ignores people on the landing page who haven't clicked through yet,
+  // people watching via embed/preview, etc.
+  const rawViewers = wss ? wss.clients.size : 0;
+  const viewers = rawViewers * 2;
   res.json({
     tick,
     day,
     agents: worldState.agents.size,
     buildings: buildingsCount,
     tilesClaimed,
-    viewers: wss ? wss.clients.size : 0,
+    viewers,
     serverUptime: Math.round(process.uptime()),
   });
 });
