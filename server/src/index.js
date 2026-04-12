@@ -215,6 +215,34 @@ app.get('/api/health', (req, res) => {
   });
 });
 
+// ─── Live stats for the landing page ───
+// Lightweight public endpoint that powers the LIVE STATS section.
+// CORS-friendly (same origin anyway) and returns just the 5 metrics.
+app.get('/api/stats', (req, res) => {
+  res.set('Cache-Control', 'no-store');
+  const tick = worldState.tick || 0;
+  // One in-game day = 480 ticks (3s/tick × 480 = 1440s = 24 game minutes).
+  // Tuning: if you want "Day N" to feel like a dramatic milestone, tweak here.
+  const TICKS_PER_DAY = 480;
+  const day = Math.max(1, Math.floor(tick / TICKS_PER_DAY) + 1);
+  // Count tiles claimed across all agents (cheap — just sum owned_tiles.length)
+  let tilesClaimed = 0;
+  for (const agent of worldState.agents.values()) {
+    tilesClaimed += (agent.owned_tiles && agent.owned_tiles.length) || 0;
+  }
+  // Count completed buildings only (not in-progress)
+  const buildingsStanding = worldState.buildingsList.filter(b => b.isComplete && b.isComplete()).length;
+  res.json({
+    tick,
+    day,
+    agents: worldState.agents.size,
+    buildings: buildingsStanding,
+    tilesClaimed,
+    viewers: wss ? wss.clients.size : 0,
+    serverUptime: Math.round(process.uptime()),
+  });
+});
+
 // ─── LLM Brain (autonomous AI for ALL agents) ───
 const llmBrain = new LLMBrain(worldState);
 worldState.llmBrain = llmBrain; // expose to GameLoop

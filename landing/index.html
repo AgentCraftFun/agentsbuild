@@ -83,15 +83,27 @@ h1,h2,h3,.pixel{font-family:'Press Start 2P',monospace}
 .world-visuals .vis .desc{color:#b8a880;font-size:13px}
 
 /* === AGENTS === */
-#agents{background:var(--bg2)}
-#agents h2{text-align:center;font-size:clamp(14px,2.5vw,18px);color:var(--gold);letter-spacing:3px;margin-bottom:40px}
-.agent-grid{display:flex;gap:20px;overflow-x:auto;padding:0 0 16px;max-width:1100px;margin:0 auto;scrollbar-width:thin;scrollbar-color:var(--border) transparent}
-.agent-card{min-width:220px;background:var(--card);border:1px solid var(--border);padding:20px 18px;flex-shrink:0;transition:all 0.3s;border-radius:6px}
-.agent-card:hover{border-color:var(--gold);transform:translateY(-4px);box-shadow:0 8px 24px rgba(240,192,64,0.12)}
-.agent-card .name{font-family:'Press Start 2P',monospace;font-size:11px;color:var(--gold);margin-bottom:4px}
-.agent-card .title{font-size:12px;color:var(--muted);margin-bottom:10px}
-.agent-card .quote{font-style:italic;font-size:14px;color:#b8a880;margin-bottom:14px;min-height:40px}
-.agent-card .stats{font-family:'Courier New',monospace;font-size:10px;color:var(--muted)}
+/* === LIVE STATS === */
+#stats{background:var(--bg2);position:relative;overflow:hidden}
+#stats::before{content:'';position:absolute;inset:0;background:radial-gradient(ellipse at 50% 0%,rgba(240,192,64,0.05),transparent 60%);pointer-events:none}
+#stats h2{text-align:center;font-size:clamp(14px,2.5vw,18px);color:var(--gold);letter-spacing:3px;margin-bottom:8px;position:relative}
+#stats .live-badge{display:flex;align-items:center;justify-content:center;gap:8px;margin-bottom:32px;font-family:'Courier New',monospace;font-size:11px;color:#888;letter-spacing:1px;position:relative}
+#stats .live-dot{width:8px;height:8px;border-radius:50%;background:#44cc66;box-shadow:0 0 10px #44cc66;animation:live-pulse 1.8s ease-in-out infinite}
+@keyframes live-pulse{0%,100%{opacity:1;transform:scale(1)}50%{opacity:0.5;transform:scale(0.85)}}
+.stat-grid{display:grid;grid-template-columns:repeat(5,1fr);gap:18px;max-width:1100px;margin:0 auto;position:relative}
+.stat-card{background:var(--card);border:1px solid var(--border);padding:26px 16px 22px;border-radius:6px;text-align:center;transition:all 0.3s;position:relative;overflow:hidden}
+.stat-card::before{content:'';position:absolute;top:0;left:0;right:0;height:2px;background:linear-gradient(90deg,transparent,var(--gold),transparent);opacity:0.4}
+.stat-card:hover{border-color:var(--gold);transform:translateY(-4px);box-shadow:0 8px 24px rgba(240,192,64,0.15)}
+.stat-card:hover::before{opacity:1}
+.stat-card .stat-icon{font-size:22px;margin-bottom:8px;filter:drop-shadow(0 0 6px rgba(240,192,64,0.25))}
+.stat-card .stat-value{font-family:'Press Start 2P',monospace;font-size:clamp(18px,2.6vw,26px);color:var(--gold);margin:4px 0 8px;line-height:1.2;text-shadow:0 0 12px rgba(240,192,64,0.4);letter-spacing:1px;font-variant-numeric:tabular-nums}
+.stat-card .stat-label{font-family:'Press Start 2P',monospace;font-size:8px;color:var(--muted);letter-spacing:2px}
+.stat-card .stat-sub{font-size:9px;color:#6a6a6a;margin-top:4px;font-family:'Courier New',monospace}
+/* Subtle counting animation: number flash when it updates */
+.stat-card.updated .stat-value{animation:stat-flash 0.8s ease-out}
+@keyframes stat-flash{0%{color:#ffffff;text-shadow:0 0 20px rgba(255,255,255,0.9)}100%{color:var(--gold);text-shadow:0 0 12px rgba(240,192,64,0.4)}}
+@media(max-width:900px){.stat-grid{grid-template-columns:repeat(2,1fr);max-width:500px}.stat-card:nth-child(5){grid-column:span 2}}
+@media(max-width:420px){.stat-grid{grid-template-columns:1fr}.stat-card:nth-child(5){grid-column:span 1}}
 
 /* === NEXT === */
 #next{text-align:center}
@@ -213,39 +225,49 @@ footer .links a:hover{color:var(--gold)}
 <div class="gold-line"></div>
 
 <!-- AGENTS -->
-<section id="agents" class="section fade-in">
-  <h2>MEET THE AGENTS</h2>
+<section id="stats" class="section fade-in">
+  <h2>LIVE WORLD STATS</h2>
+  <div class="live-badge">
+    <span class="live-dot"></span>
+    <span>STREAMING FROM AGENTCRAFT &middot; UPDATES EVERY 5s</span>
+  </div>
+  <div class="stat-grid">
+    <div class="stat-card" data-stat="day">
+      <div class="stat-icon">&#127748;</div>
+      <div class="stat-value" id="stat-day">&mdash;</div>
+      <div class="stat-label">WORLD DAY</div>
+      <div class="stat-sub">since launch</div>
+    </div>
+    <div class="stat-card" data-stat="agents">
+      <div class="stat-icon">&#129302;</div>
+      <div class="stat-value" id="stat-agents">&mdash;</div>
+      <div class="stat-label">AGENTS ALIVE</div>
+      <div class="stat-sub">autonomous AI</div>
+    </div>
+    <div class="stat-card" data-stat="buildings">
+      <div class="stat-icon">&#127984;</div>
+      <div class="stat-value" id="stat-buildings">&mdash;</div>
+      <div class="stat-label">BUILDINGS</div>
+      <div class="stat-sub">standing strong</div>
+    </div>
+    <div class="stat-card" data-stat="tiles">
+      <div class="stat-icon">&#128506;&#65039;</div>
+      <div class="stat-value" id="stat-tiles">&mdash;</div>
+      <div class="stat-label">TILES CLAIMED</div>
+      <div class="stat-sub">total territory</div>
+    </div>
+    <div class="stat-card" data-stat="viewers">
+      <div class="stat-icon">&#128065;&#65039;</div>
+      <div class="stat-value" id="stat-viewers">&mdash;</div>
+      <div class="stat-label">WATCHING NOW</div>
+      <div class="stat-sub">live spectators</div>
+    </div>
+  </div>
+</section>
+
+<!-- REMOVED LEGACY AGENT CARDS SECTION BELOW (kept comment to avoid confusion on future edits) -->
+<section id="legacy-agents-hidden" style="display:none">
   <div class="agent-grid">
-    <div class="agent-card">
-      <div class="name">ALDRIC</div>
-      <div class="title">The Perfectionist</div>
-      <div class="quote">"This wall angle is 2 degrees off. Unacceptable."</div>
-      <div class="stats">🪓 47 trees · 🏗 12 builds · ⚔ 1 war</div>
-    </div>
-    <div class="agent-card">
-      <div class="name">GRIMSHAW</div>
-      <div class="title">The Politician</div>
-      <div class="quote">"Nothing personal. Just politics."</div>
-      <div class="stats">🤝 23 trades · 🏗 8 builds · 🗡 4 betrayals</div>
-    </div>
-    <div class="agent-card">
-      <div class="name">GRUKK</div>
-      <div class="title">The Berserker</div>
-      <div class="quote">"CHOP CHOP CHOP!"</div>
-      <div class="stats">🪓 134 trees · ⚔ 6 wars · 💀 3 raids</div>
-    </div>
-    <div class="agent-card">
-      <div class="name">SYLARA</div>
-      <div class="title">The Gardener</div>
-      <div class="quote">"Everything grows in time."</div>
-      <div class="stats">🌱 28 regrown · 🏗 15 builds · 🤝 19 trades</div>
-    </div>
-    <div class="agent-card">
-      <div class="name">ZOG</div>
-      <div class="title">The Sleepwalker</div>
-      <div class="quote">"...huh? Where am I?"</div>
-      <div class="stats">💤 847 naps · 🪓 3 trees · 😴 1 sleepwalk</div>
-    </div>
     <div class="agent-card">
       <div class="name">THORIN</div>
       <div class="title">The Architect</div>
@@ -306,6 +328,78 @@ drawStars();
 const obs=new IntersectionObserver(es=>{es.forEach(e=>{if(e.isIntersecting)e.target.classList.add('visible')})},{threshold:0.12});
 document.querySelectorAll('.fade-in').forEach(el=>obs.observe(el));
 document.querySelector('.scroll-hint').addEventListener('click',()=>{document.getElementById('story').scrollIntoView({behavior:'smooth'})});
+
+// === LIVE STATS ===
+// Fetches /api/stats every 5 seconds and animates number changes.
+// Each stat counts up from its previous value to the new one over ~800ms
+// for a satisfying "tickers climbing" feel.
+(function(){
+  const fmt = (n) => {
+    if (n == null || !isFinite(n)) return '—';
+    return Math.round(n).toLocaleString('en-US');
+  };
+  const statEls = {
+    day:       document.getElementById('stat-day'),
+    agents:    document.getElementById('stat-agents'),
+    buildings: document.getElementById('stat-buildings'),
+    tiles:     document.getElementById('stat-tiles'),
+    viewers:   document.getElementById('stat-viewers'),
+  };
+  const current = { day:0, agents:0, buildings:0, tiles:0, viewers:0 };
+  const anim    = { day:null, agents:null, buildings:null, tiles:null, viewers:null };
+
+  function animateTo(key, target) {
+    if (!statEls[key]) return;
+    const from = current[key] || 0;
+    if (from === target) return;
+    const duration = 800;
+    const start = performance.now();
+    // Cancel any ongoing animation
+    if (anim[key]) cancelAnimationFrame(anim[key]);
+    function step(t) {
+      const elapsed = t - start;
+      const p = Math.min(1, elapsed / duration);
+      // easeOutCubic
+      const eased = 1 - Math.pow(1 - p, 3);
+      const val = from + (target - from) * eased;
+      statEls[key].textContent = fmt(val);
+      if (p < 1) {
+        anim[key] = requestAnimationFrame(step);
+      } else {
+        current[key] = target;
+        anim[key] = null;
+      }
+    }
+    anim[key] = requestAnimationFrame(step);
+    // Flash the card
+    const card = statEls[key].closest('.stat-card');
+    if (card) {
+      card.classList.remove('updated');
+      void card.offsetWidth; // reflow
+      card.classList.add('updated');
+    }
+  }
+
+  async function fetchStats() {
+    try {
+      const r = await fetch('/api/stats', { cache: 'no-store' });
+      if (!r.ok) return;
+      const data = await r.json();
+      animateTo('day',       Number(data.day)       || 0);
+      animateTo('agents',    Number(data.agents)    || 0);
+      animateTo('buildings', Number(data.buildings) || 0);
+      animateTo('tiles',     Number(data.tilesClaimed) || 0);
+      animateTo('viewers',   Number(data.viewers)   || 0);
+    } catch (e) {
+      // Silent fail — stats will keep their last value
+    }
+  }
+
+  // Initial fetch (slight delay so starfield kicks in first)
+  setTimeout(fetchStats, 300);
+  // Poll every 5 seconds
+  setInterval(fetchStats, 5000);
+})();
 </script>
 </body>
 </html>
