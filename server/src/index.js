@@ -69,6 +69,8 @@ function saveWorldState(ws) {
       dragon: ws.dragon || null,
       // Week 2 teaser: powering-up portals
       portals: Array.isArray(ws.portals) ? ws.portals : [],
+      // Cyber Phase 2: Neo-Kyoto settlements (village clustering)
+      cyberSettlements: Array.isArray(ws.cyberSettlements) ? ws.cyberSettlements : [],
     };
     fs.writeFileSync(STATE_FILE, JSON.stringify(state));
     console.log(`[Save] Tick:${ws.tick} Agents:${agents.length} Buildings:${buildings.length}`);
@@ -92,7 +94,9 @@ function loadWorldState() {
       // World boss: restore dragon if mid-fight when saved
       dragon: state.dragon || null,
       // Week 2 teaser: portals persist across restarts
-      portals: Array.isArray(state.portals) ? state.portals : [] };
+      portals: Array.isArray(state.portals) ? state.portals : [],
+      // Cyber settlements (village clustering)
+      cyberSettlements: Array.isArray(state.cyberSettlements) ? state.cyberSettlements : [] };
 
     const Agent = require('./models/Agent');
     const Building = require('./models/Building');
@@ -159,13 +163,15 @@ if (loadedState) {
     agent.current_action = null;
     agent.action_queue = [];
   }
+  // Defensive: cyberSettlements may not exist in old saves
+  if (!Array.isArray(worldState.cyberSettlements)) worldState.cyberSettlements = [];
   console.log('[Server] All agents reset to idle — will pick new tasks on first tick');
 } else {
   console.log('[Server] Generating new world...');
   const world = WorldGen.generate(WORLD_WIDTH, WORLD_HEIGHT, WORLD_SEED);
   worldState = { tiles: world.tiles, width: world.width, height: world.height, seed: world.seed,
     tick: 0, agents: new Map(), buildingsList: [], events: [], leaderboard: [], settlements: [], _dirtyTiles: new Set(),
-    groundItems: [], dragon: null };
+    groundItems: [], dragon: null, cyberSettlements: [] };
   console.log('[Server] Seeding demo agents...');
   seedAgents(worldState);
 }
@@ -985,12 +991,25 @@ app.post('/api/cyber/reset', (req, res) => {
       returnedAgents++;
     }
   }
+  // 3. Also wipe cyber settlements so the next agents through a portal
+  //    start a fresh village.
+  if (Array.isArray(worldState.cyberSettlements)) {
+    worldState.cyberSettlements.length = 0;
+  }
+  // 4. Save state immediately so the reset persists through restarts.
+  try {
+    saveWorldState(worldState);
+    console.log('[CYBER RESET] State saved to disk.');
+  } catch (e) {
+    console.error('[CYBER RESET] Save failed:', e.message);
+  }
   console.log(`[CYBER RESET] Removed ${removedBuildings} buildings, returned ${returnedAgents} agents to grassland`);
   return res.json({
     ok: true,
     removedBuildings,
     returnedAgents,
-    message: `Cyber world wiped. ${removedBuildings} buildings removed, ${returnedAgents} agents returned to grassland.`,
+    saved: true,
+    message: `Cyber world wiped. ${removedBuildings} buildings removed, ${returnedAgents} agents returned to grassland. State saved.`,
   });
 });
 

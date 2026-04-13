@@ -376,16 +376,36 @@ class AgentBrain {
   }
 
   /**
-   * Find a build site for a CYBER agent. No settlement model — agents
-   * just build wherever they can fit within ~12 tiles of their current
-   * position. Won't collide with existing cyber buildings or other
-   * agents' targets. Returns {x, y} or null.
+   * Find a build site for a CYBER agent — settlement-clustered, matching
+   * the grassland village-style aesthetic.
+   *
+   * Strategy (same priority as grassland):
+   *   1. Look up the agent's cyber settlement center (set on portal entry)
+   *   2. Pick a random tile within that settlement's radius
+   *   3. Reject if too close to another cyber building (MIN_DIST=4)
+   *   4. Reject if another agent is already building there
+   *   5. Fall back to agent position if no settlement exists
    */
   _findCyberBuildSite(buildingType) {
     const { buildingsList, width, height } = this.world;
     const def = Building.CATALOG[buildingType];
     const w = def.width || 1, h = def.height || 1;
-    const MIN_DIST = 3;
+    const MIN_DIST = 4; // Tighter clustering looks more village-like
+
+    // Resolve settlement center
+    const setts = this.world.cyberSettlements || [];
+    const settId = this.agent._cyberSettlementId;
+    let cx, cy, settRadius = 15;
+    if (settId != null && setts[settId]) {
+      cx = setts[settId].cx;
+      cy = setts[settId].cy;
+      settRadius = setts[settId].radius || 15;
+    } else {
+      // Fallback: use agent position (shouldn't normally happen)
+      cx = this.agent.x;
+      cy = this.agent.y;
+    }
+
     // Tiles being built on by other agents
     const busy = new Set();
     for (const a of this.world.agents.values()) {
@@ -393,15 +413,17 @@ class AgentBrain {
         busy.add(`${a._buildingTarget.x},${a._buildingTarget.y}`);
       }
     }
-    // Existing cyber buildings to avoid
+    // Existing cyber buildings to space against
     const cyberBlds = buildingsList.filter(b => b.world === 'cyber');
-    // Try random spots near the agent
-    const cx = this.agent.x, cy = this.agent.y;
-    for (let attempt = 0; attempt < 30; attempt++) {
-      const rx = cx + Math.floor(Math.random() * 25) - 12;
-      const ry = cy + Math.floor(Math.random() * 25) - 12;
+
+    // Try random spots within the settlement radius
+    for (let attempt = 0; attempt < 40; attempt++) {
+      // Pick a point inside a disk of radius settRadius centered on (cx, cy)
+      const angle = Math.random() * Math.PI * 2;
+      const r = Math.sqrt(Math.random()) * settRadius;
+      const rx = Math.round(cx + Math.cos(angle) * r);
+      const ry = Math.round(cy + Math.sin(angle) * r);
       if (rx < 2 || ry < 2 || rx + w >= width - 2 || ry + h >= height - 2) continue;
-      // Already busy?
       if (busy.has(`${rx},${ry}`)) continue;
       // Too close to another cyber building?
       let tooClose = false;

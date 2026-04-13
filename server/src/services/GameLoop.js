@@ -2051,19 +2051,63 @@ class GameLoop {
 
   /**
    * Teleport an agent from grassland into Neo-Kyoto.
-   * They appear at a plaza or random walkable position in the cyber world,
-   * with currentWorld flipped. They keep their resources, equipment, etc.
+   * On arrival, they either join the nearest existing cyber settlement
+   * (within 30 tiles) or found a brand new one at their landing spot.
+   * This gives Neo-Kyoto the same village-clustering aesthetic as grassland.
    */
   _traverseToCyber(agent, portal, tick, events) {
-    // Spawn point: random position in the cyber world avoiding edges.
-    // Plazas are at avenue intersections (every 24 tiles).
-    const plazaCols = Math.floor(this.world.width / 24);
-    const plazaRows = Math.floor(this.world.height / 24);
-    const px = (1 + Math.floor(Math.random() * (plazaCols - 1))) * 24;
-    const py = (1 + Math.floor(Math.random() * (plazaRows - 1))) * 24;
+    if (!Array.isArray(this.world.cyberSettlements)) this.world.cyberSettlements = [];
+
+    // Landing spot: near a random center-ish position in the cyber world
+    const lx = Math.max(15, Math.min(this.world.width - 15,
+      Math.floor(this.world.width / 2) + Math.floor((Math.random() - 0.5) * 80)));
+    const ly = Math.max(15, Math.min(this.world.height - 15,
+      Math.floor(this.world.height / 2) + Math.floor((Math.random() - 0.5) * 60)));
+
+    // Find the nearest cyber settlement within 30 tiles
+    let joinId = -1;
+    let joinDist = 30;
+    for (let i = 0; i < this.world.cyberSettlements.length; i++) {
+      const s = this.world.cyberSettlements[i];
+      const d = Math.abs(s.cx - lx) + Math.abs(s.cy - ly);
+      if (d < joinDist) { joinDist = d; joinId = i; }
+    }
+
+    if (joinId >= 0) {
+      // Join existing settlement — land near its center
+      const sett = this.world.cyberSettlements[joinId];
+      const angle = Math.random() * Math.PI * 2;
+      const radius = 3 + Math.random() * 6;
+      agent.x = Math.round(sett.cx + Math.cos(angle) * radius);
+      agent.y = Math.round(sett.cy + Math.sin(angle) * radius);
+      agent._cyberSettlementId = joinId;
+    } else {
+      // Found a new settlement at the landing spot
+      const name = `Neo-${['Kyoto','Tokyo','Akira','Chiba','Shibuya','Osaka','Meta','Zero'][this.world.cyberSettlements.length % 8]}-${this.world.cyberSettlements.length + 1}`;
+      const newSett = {
+        cx: lx,
+        cy: ly,
+        name,
+        radius: 18,
+        clearRadius: 3,
+        foundedTick: tick,
+        buildings: [],
+        groupId: 100 + this.world.cyberSettlements.length,
+      };
+      this.world.cyberSettlements.push(newSett);
+      agent._cyberSettlementId = this.world.cyberSettlements.length - 1;
+      agent.x = lx;
+      agent.y = ly;
+      events.push({
+        tick,
+        type: 'cyber_settlement_founded',
+        x: lx, y: ly, name,
+        message: `🌆 ${agent.name} founded ${name} — the first Neo-Kyoto settlement!`,
+      });
+    }
+    agent.x = Math.max(2, Math.min(this.world.width - 3, agent.x));
+    agent.y = Math.max(2, Math.min(this.world.height - 3, agent.y));
     agent.currentWorld = 'cyber';
-    agent.x = Math.max(2, Math.min(this.world.width - 3, px + (Math.floor(Math.random() * 5) - 2)));
-    agent.y = Math.max(2, Math.min(this.world.height - 3, py + (Math.floor(Math.random() * 5) - 2)));
     agent.mood = 'idle';
     agent.current_action = null;
     agent.idle_ticks = 0;
@@ -2714,6 +2758,7 @@ class GameLoop {
       groundItems: Array.isArray(this.world.groundItems) ? this.world.groundItems : [],
       dragon: this.world.dragon || null,
       portals: Array.isArray(this.world.portals) ? this.world.portals : [],
+      cyberSettlements: Array.isArray(this.world.cyberSettlements) ? this.world.cyberSettlements : [],
     };
   }
 
