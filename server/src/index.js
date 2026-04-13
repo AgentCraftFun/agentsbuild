@@ -51,8 +51,9 @@ function saveWorldState(ws) {
         perks: (agent.perks && typeof agent.perks === 'object') ? agent.perks : {},
         // Phase 3: equipment (weapon/armor slots)
         equipment: (agent.equipment && typeof agent.equipment === 'object') ? agent.equipment : {},
-        // Cyber Phase 2: which world the agent is in
+        // Cyber Phase 2: which world the agent is in + their cyber village
         currentWorld: agent.currentWorld || 'grassland',
+        _cyberSettlementId: (agent._cyberSettlementId != null) ? agent._cyberSettlementId : null,
       });
     }
     const buildings = ws.buildingsList.map(b => b.toJSON());
@@ -71,6 +72,8 @@ function saveWorldState(ws) {
       portals: Array.isArray(ws.portals) ? ws.portals : [],
       // Cyber Phase 2: Neo-Kyoto settlements (village clustering)
       cyberSettlements: Array.isArray(ws.cyberSettlements) ? ws.cyberSettlements : [],
+      // One-time cyber wipe migration marker
+      _cyberWipedAt: ws._cyberWipedAt || null,
     };
     fs.writeFileSync(STATE_FILE, JSON.stringify(state));
     console.log(`[Save] Tick:${ws.tick} Agents:${agents.length} Buildings:${buildings.length}`);
@@ -96,7 +99,9 @@ function loadWorldState() {
       // Week 2 teaser: portals persist across restarts
       portals: Array.isArray(state.portals) ? state.portals : [],
       // Cyber settlements (village clustering)
-      cyberSettlements: Array.isArray(state.cyberSettlements) ? state.cyberSettlements : [] };
+      cyberSettlements: Array.isArray(state.cyberSettlements) ? state.cyberSettlements : [],
+      // One-time cyber wipe migration marker
+      _cyberWipedAt: state._cyberWipedAt || null };
 
     const Agent = require('./models/Agent');
     const Building = require('./models/Building');
@@ -113,6 +118,8 @@ function loadWorldState() {
           perks: (ad.perks && typeof ad.perks === 'object') ? ad.perks : {},
           equipment: (ad.equipment && typeof ad.equipment === 'object') ? ad.equipment : {},
           currentWorld: ad.currentWorld || 'grassland' });
+        // Restore cyber settlement id (outside constructor — instance field)
+        agent._cyberSettlementId = (ad._cyberSettlementId != null) ? ad._cyberSettlementId : null;
         agent._settlementId = ad._settlementId || 0;
         ws.agents.set(agent.id, agent);
       } catch (e) { console.warn(`[Load] Agent ${ad.name} failed:`, e.message); }
@@ -220,6 +227,98 @@ if (!Array.isArray(worldState.portals) || worldState.portals.length === 0) {
 // ─── Spatial Index (performance: O(1) building proximity checks) ───
 const SpatialIndex = require('./services/SpatialIndex');
 worldState._spatialIndex = new SpatialIndex();
+worldState._spatialIndex.rebuild(worldState.buildingsList);
+
+// ═══════════════════════════════════════════════════════════════════
+// ONE-TIME CYBER WIPE MIGRATION
+// Runs once per version bump. Safely removes pre-existing cyber state
+// so Neo-Kyoto starts empty, and force-activates the first portal so
+// agents can begin arriving immediately. Does NOT touch grassland
+// buildings, grassland agents, or anything that lives in grassland.
+// ═══════════════════════════════════════════════════════════════════
+const CYBER_WIPE_VERSION = 'v3-neo-kyoto-reset';
+if (worldState._cyberWipedAt !== CYBER_WIPE_VERSION) {
+  console.log(`[MIGRATION] Running cyber wipe (${CYBER_WIPE_VERSION})`);
+
+  // 1. Remove all CYBER buildings (safeguard: explicitly filter world === 'cyber')
+  let removedBuildings = 0;
+  const keepBuildings = [];
+  for (const b of worldState.buildingsList) {
+    if (b.world === 'cyber') {
+      const tile = worldState.tiles.get(`${b.x},${b.y}`);
+      if (tile && tile.building === b) tile.building = null;
+      if (worldState._spatialIndex) worldState._spatialIndex.remove(b);
+      removedBuildings++;
+    } else {
+      keepBuildings.push(b);
+    }
+  }
+  worldState.buildingsList = keepBuildings;
+
+  // 2. Purge cyber buildings from each agent's per-agent buildings[] array
+  for (const agent of worldState.agents.values()) {
+    if (Array.isArray(agent.buildings)) {
+      agent.buildings = agent.buildings.filter(b => b.world !== 'cyber');
+    }
+  }
+
+  // 3. Return all CYBER agents back to grassland, near the center.
+  //    Grassland agents (currentWorld==='grassland' or undefined) are NOT touched.
+  let returnedAgents = 0;
+  for (const agent of worldState.agents.values()) {
+    if (agent.currentWorld === 'cyber') {
+      agent.currentWorld = 'grassland';
+      agent.x = Math.floor(worldState.width / 2) + Math.floor(Math.random() * 30 - 15);
+      agent.y = Math.floor(worldState.height / 2) + Math.floor(Math.random() * 30 - 15);
+      agent.mood = 'idle';
+      agent._buildingTarget = null;
+      agent._cyberSettlementId = null;
+      agent.current_action = null;
+      agent.action_queue = [];
+      returnedAgents++;
+    }
+  }
+
+  // 4. Wipe cyber settlements so new arrivals found fresh villages
+  worldState.cyberSettlements = [];
+
+  // 5. Force-activate the first portal so agents can start entering IMMEDIATELY.
+  //    Other portals stay charging.
+  if (Array.isArray(worldState.portals) && worldState.portals.length > 0) {
+    // Deactivate any active portal first (safety)
+    for (const p of worldState.portals) {
+      p.active = false;
+      if (p.label === 'OPEN') p.label = 'POWERING UP';
+    }
+    // Pick the portal closest to map center so it feels central
+    const mcx = worldState.width / 2, mcy = worldState.height / 2;
+    let best = worldState.portals[0], bestD = Infinity;
+    for (const p of worldState.portals) {
+      const d = Math.abs(p.x - mcx) + Math.abs(p.y - mcy);
+      if (d < bestD) { bestD = d; best = p; }
+    }
+    best.charge = 0.95;
+    best.active = true;
+    best.label = 'OPEN';
+    console.log(`[MIGRATION] Portal ${best.id} activated at (${best.x},${best.y})`);
+  }
+
+  // 6. Rebuild spatial index from the cleaned buildings list
+  worldState._spatialIndex.rebuild(worldState.buildingsList);
+
+  // 7. Mark migration complete so it never runs again
+  worldState._cyberWipedAt = CYBER_WIPE_VERSION;
+
+  // 8. Save immediately so it persists through restarts
+  try {
+    saveWorldState(worldState);
+    console.log(`[MIGRATION] Complete. Removed: ${removedBuildings} buildings, ${returnedAgents} agents returned to grassland. State saved.`);
+  } catch (e) {
+    console.error('[MIGRATION] Save failed:', e.message);
+  }
+} else {
+  console.log(`[MIGRATION] Cyber already wiped (${CYBER_WIPE_VERSION}) — skipping`);
+}
 worldState._spatialIndex.rebuild(worldState.buildingsList);
 console.log(`[Server] Spatial index built: ${worldState._spatialIndex.size()} buildings`);
 
