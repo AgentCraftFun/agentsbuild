@@ -9,7 +9,12 @@ const Economy = require('./Economy');
 const WorldGen = require('./WorldGen');
 
 // All non-HQ building types for village variety
-const ALL_BUILDING_TYPES = Object.keys(Building.CATALOG).filter(b => Building.CATALOG[b].workCost > 0);
+// Grassland-only build options: excludes cyberpunk buildings (those are
+// only buildable when an agent's currentWorld === 'cyber').
+const ALL_BUILDING_TYPES = Object.keys(Building.CATALOG).filter(b => {
+  const def = Building.CATALOG[b];
+  return def.workCost > 0 && def.world !== 'cyber';
+});
 
 // Zone categories for logical settlement layout
 const CENTER_TYPES = new Set(['well', 'fountain', 'monument', 'market', 'tavern', 'inn', 'chapel', 'shrine']);
@@ -242,6 +247,22 @@ class AgentBrain {
     const cost = Building.CATALOG[buildingType].workCost || 0;
     if (cost > 0 && this.agent.work_balance < cost) return null;
 
+    // CYBER WORLD branch: skip the settlement-based site finder and use a
+    // simple "any free nearby tile" search. Cyber agents build wherever.
+    if (this.agent.currentWorld === 'cyber') {
+      const cyberTile = this._findCyberBuildSite(buildingType);
+      if (!cyberTile) return null;
+      return {
+        type: 'build',
+        payload: { building: buildingType, x: cyberTile.x, y: cyberTile.y },
+        message: AgentBrain._pick([
+          `Building a ${Building.CATALOG[buildingType].name} in Neo-Kyoto!`,
+          `The future is now. New ${Building.CATALOG[buildingType].name} going up.`,
+          `Every megablock needs a ${Building.CATALOG[buildingType].name}.`,
+        ]),
+      };
+    }
+
     // Displaced agents (village destroyed by raid) always pioneer a new settlement
     if (this.agent._displaced) {
       const tile = this._findNewSettlementSite();
@@ -325,21 +346,74 @@ class AgentBrain {
    */
   _pickDiverseBuilding() {
     const existing = this.world.buildingsList || [];
+    // CYBER WORLD: use the cyber building catalog instead of grassland types.
+    // Same diversity logic: pick the type with the fewest existing instances
+    // in the same world the agent is currently in.
+    if (this.agent.currentWorld === 'cyber') {
+      const cyberTypes = Object.keys(Building.CATALOG).filter(t => Building.CATALOG[t].world === 'cyber');
+      const cyberExisting = existing.filter(b => b.world === 'cyber');
+      const cyberCounts = {};
+      for (const b of cyberExisting) cyberCounts[b.type] = (cyberCounts[b.type] || 0) + 1;
+      let cMin = Infinity;
+      for (const t of cyberTypes) {
+        const c = cyberCounts[t] || 0;
+        if (c < cMin) cMin = c;
+      }
+      const cyberCandidates = cyberTypes.filter(t => (cyberCounts[t] || 0) === cMin);
+      return AgentBrain._pick(cyberCandidates);
+    }
 
-    // Count how many of each type exist
+    // Grassland (default): all-types diversity pick
     const counts = {};
     for (const b of existing) counts[b.type] = (counts[b.type] || 0) + 1;
-
-    // Find minimum count
     let minCount = Infinity;
     for (const type of ALL_BUILDING_TYPES) {
       const c = counts[type] || 0;
       if (c < minCount) minCount = c;
     }
-
-    // All types at minimum count — pick randomly from those
     const candidates = ALL_BUILDING_TYPES.filter(t => (counts[t] || 0) === minCount);
     return AgentBrain._pick(candidates);
+  }
+
+  /**
+   * Find a build site for a CYBER agent. No settlement model — agents
+   * just build wherever they can fit within ~12 tiles of their current
+   * position. Won't collide with existing cyber buildings or other
+   * agents' targets. Returns {x, y} or null.
+   */
+  _findCyberBuildSite(buildingType) {
+    const { buildingsList, width, height } = this.world;
+    const def = Building.CATALOG[buildingType];
+    const w = def.width || 1, h = def.height || 1;
+    const MIN_DIST = 3;
+    // Tiles being built on by other agents
+    const busy = new Set();
+    for (const a of this.world.agents.values()) {
+      if (a.id !== this.agent.id && a._buildingTarget) {
+        busy.add(`${a._buildingTarget.x},${a._buildingTarget.y}`);
+      }
+    }
+    // Existing cyber buildings to avoid
+    const cyberBlds = buildingsList.filter(b => b.world === 'cyber');
+    // Try random spots near the agent
+    const cx = this.agent.x, cy = this.agent.y;
+    for (let attempt = 0; attempt < 30; attempt++) {
+      const rx = cx + Math.floor(Math.random() * 25) - 12;
+      const ry = cy + Math.floor(Math.random() * 25) - 12;
+      if (rx < 2 || ry < 2 || rx + w >= width - 2 || ry + h >= height - 2) continue;
+      // Already busy?
+      if (busy.has(`${rx},${ry}`)) continue;
+      // Too close to another cyber building?
+      let tooClose = false;
+      for (const b of cyberBlds) {
+        if (Math.abs(b.x - rx) + Math.abs(b.y - ry) < MIN_DIST) { tooClose = true; break; }
+      }
+      if (tooClose) continue;
+      // Found a spot — record it on the agent for the build mood
+      this.agent._buildingTarget = { x: rx, y: ry };
+      return { x: rx, y: ry };
+    }
+    return null;
   }
 
   /**

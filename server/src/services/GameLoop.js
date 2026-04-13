@@ -129,12 +129,29 @@ class GameLoop {
       // and agents must fight to kill. One dragon at a time.
       this._processDragon(tick, events);
 
-      // 5e. PORTALS (Week 2 teaser) — slow fake charge, capped below 100%.
-      // Portals never actually finish until we flip them manually.
+      // 5e. PORTALS — charge + activation.
+      // Portals charge slowly. The FIRST portal to hit 95% becomes active
+      // (only ONE active portal at a time for now — the gateway to cyber).
       if (Array.isArray(this.world.portals)) {
+        let alreadyActive = this.world.portals.some(p => p.active);
         for (const p of this.world.portals) {
           if (p.charge < 0.95) {
-            p.charge = Math.min(0.95, p.charge + 0.0002);
+            p.charge = Math.min(0.95, p.charge + 0.001); // 5x faster than v1
+          } else if (p.charge >= 0.95 && !p.active && !alreadyActive) {
+            // First portal to charge fully wins activation
+            p.active = true;
+            p.label = 'OPEN';
+            alreadyActive = true;
+            events.push({
+              tick,
+              type: 'portal_active',
+              portalId: p.id,
+              x: p.x,
+              y: p.y,
+              tint: p.tint,
+              message: `🌌 PORTAL ACTIVATED at (${p.x},${p.y})! Agents who reach it will enter NEO-KYOTO!`,
+            });
+            console.log(`[PORTAL] Activated ${p.id} at (${p.x},${p.y})`);
           }
         }
       }
@@ -192,6 +209,18 @@ class GameLoop {
     if (!lockedMoodsDragon.has(agent.mood)) {
       const dragonResult = this._tryDragonBehavior(agent, tick, events);
       if (dragonResult === 'attacking' || dragonResult === 'chasing') {
+        agent.last_action_tick = tick;
+        return;
+      }
+    }
+
+    // PORTAL TRAVERSAL: if there's an active portal nearby and the agent
+    // is in grassland, they're drawn to it (curiosity). If they reach it,
+    // they get teleported to Neo-Kyoto. Agents in cyber world don't get
+    // pulled back automatically — they have to explore.
+    if (agent.currentWorld === 'grassland' && !lockedMoodsDragon.has(agent.mood)) {
+      const portalResult = this._tryPortalBehavior(agent, tick, events);
+      if (portalResult === 'traversed' || portalResult === 'approaching') {
         agent.last_action_tick = tick;
         return;
       }
@@ -490,6 +519,9 @@ class GameLoop {
       owner: agent.id,
       progress: 0,
       startTick: tick,
+      // Tag with the agent's current world so cyber buildings get filtered
+      // separately in the viewer
+      world: agent.currentWorld || 'grassland',
     });
 
     tile.building = building;
@@ -1935,6 +1967,90 @@ class GameLoop {
     // Clear burning state (in case it was burning)
     bld.burning = false;
     return true;
+  }
+
+  // ── Agent portal behavior ────────────────────────────────────────
+
+  /**
+   * If there's an active portal nearby and the agent is in grassland,
+   * they're drawn to it. On contact, they teleport to Neo-Kyoto.
+   * Returns: 'traversed' | 'approaching' | 'none'
+   */
+  _tryPortalBehavior(agent, tick, events) {
+    const portals = this.world.portals;
+    if (!Array.isArray(portals) || portals.length === 0) return 'none';
+
+    // Find the nearest ACTIVE portal
+    let best = null;
+    let bestDist = Infinity;
+    const SCAN_RADIUS = 30;
+    for (const p of portals) {
+      if (!p.active) continue;
+      const dist = Math.abs(agent.x - p.x) + Math.abs(agent.y - p.y);
+      if (dist <= SCAN_RADIUS && dist < bestDist) {
+        best = p;
+        bestDist = dist;
+      }
+    }
+    if (!best) return 'none';
+
+    // Adjacent → step into the portal
+    if (Math.abs(agent.x - best.x) <= 1 && Math.abs(agent.y - best.y) <= 1) {
+      this._traverseToCyber(agent, best, tick, events);
+      return 'traversed';
+    }
+
+    // Not every agent is curious — only ~30% chance per tick to actually move
+    // toward the portal so the world doesn't drain instantly
+    if (Math.random() > 0.3) return 'none';
+
+    // Walk one step toward the portal
+    const dxStep = Math.sign(best.x - agent.x);
+    const dyStep = Math.sign(best.y - agent.y);
+    this._moveAgent(agent, dxStep, dyStep);
+    agent.mood = 'moving';
+    agent.current_action = { type: 'portal_chase', target_x: best.x, target_y: best.y, portalId: best.id };
+    agent.idle_ticks = 0;
+    agent.message = 'Drawn to the portal...';
+    return 'approaching';
+  }
+
+  /**
+   * Teleport an agent from grassland into Neo-Kyoto.
+   * They appear at a plaza or random walkable position in the cyber world,
+   * with currentWorld flipped. They keep their resources, equipment, etc.
+   */
+  _traverseToCyber(agent, portal, tick, events) {
+    // Spawn point: random position in the cyber world avoiding edges.
+    // Plazas are at avenue intersections (every 24 tiles).
+    const plazaCols = Math.floor(this.world.width / 24);
+    const plazaRows = Math.floor(this.world.height / 24);
+    const px = (1 + Math.floor(Math.random() * (plazaCols - 1))) * 24;
+    const py = (1 + Math.floor(Math.random() * (plazaRows - 1))) * 24;
+    agent.currentWorld = 'cyber';
+    agent.x = Math.max(2, Math.min(this.world.width - 3, px + (Math.floor(Math.random() * 5) - 2)));
+    agent.y = Math.max(2, Math.min(this.world.height - 3, py + (Math.floor(Math.random() * 5) - 2)));
+    agent.mood = 'idle';
+    agent.current_action = null;
+    agent.idle_ticks = 0;
+    agent.message = 'Stepped through the portal!';
+    // Reset any grassland-specific state
+    agent.action_queue = [];
+    agent._buildingTarget = null;
+    // Event for the viewer (drama banner + flash)
+    events.push({
+      tick,
+      type: 'portal_traversal',
+      agentId: agent.id,
+      agent: agent.name,
+      portalId: portal.id,
+      fromX: portal.x,
+      fromY: portal.y,
+      toX: agent.x,
+      toY: agent.y,
+      message: `🌌 ${agent.name} stepped through the portal into NEO-KYOTO!`,
+    });
+    console.log(`[PORTAL] ${agent.name} traversed to cyber at (${agent.x},${agent.y})`);
   }
 
   // ── Agent dragon combat behavior ─────────────────────────────────
