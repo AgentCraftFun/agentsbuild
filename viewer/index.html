@@ -178,6 +178,11 @@ setTimeout(function(){var io=document.getElementById('intro-overlay');if(io)io.r
     <div id="tooltip"></div>
     <div id="drama-banner" onclick="this.style.bottom='-50px';this.style.opacity='0'" style="position:absolute;bottom:-50px;left:20%;width:60%;padding:10px 16px;background:rgba(10,10,30,0.92);border:2px solid #f0c040;border-radius:8px;text-align:center;color:#f0c040;font:bold 13px 'Courier New',monospace;z-index:300;transition:bottom 0.3s ease,opacity 0.4s;letter-spacing:1px;text-shadow:0 0 8px rgba(240,192,64,0.3);cursor:pointer;opacity:0"></div>
     <div id="tracking-indicator" style="position:absolute;top:8px;left:8px;background:rgba(10,10,30,0.7);padding:3px 8px;border-radius:3px;color:#f0c040;font:bold 10px 'Courier New',monospace;display:none;z-index:200"></div>
+    <!-- BIOME TOGGLE — cycles between grassland and Neo-Kyoto cyberpunk view -->
+    <div id="biome-toggle" style="position:absolute;top:8px;left:8px;display:flex;gap:4px;background:rgba(10,10,30,0.82);padding:4px;border:1px solid #3a3a5e;border-radius:4px;z-index:210;font-family:'Courier New',monospace;backdrop-filter:blur(4px)">
+      <button data-mode="grassland" class="biome-btn biome-btn--active" style="padding:5px 10px;background:#2a3a1a;border:1px solid #5a8a3a;color:#9acc66;font:bold 10px 'Courier New',monospace;border-radius:3px;cursor:pointer;letter-spacing:0.5px;transition:all 0.15s">🌲 GRASSLAND</button>
+      <button data-mode="cyber" class="biome-btn" style="padding:5px 10px;background:#1a0a24;border:1px solid #5a2a7a;color:#cc88ff;font:bold 10px 'Courier New',monospace;border-radius:3px;cursor:pointer;letter-spacing:0.5px;transition:all 0.15s">🌆 NEO-KYOTO</button>
+    </div>
     <div id="conn-overlay" style="display:none"><h2>Connecting...</h2><p>Waiting for game server...</p></div>
     <script>setTimeout(function(){var o=document.getElementById('conn-overlay');if(o)o.style.display='none'},5000)</script>
   </div>
@@ -628,6 +633,403 @@ function renderTBuf(){
 
   // Pass 6: Dirt path trails between buildings (drawn after terrain settles)
   // Will be called after buildings exist — see drawPaths()
+}
+
+// ══════════════════════════════════════════════════════════════════
+// CYBERPUNK BIOME (Neo-Kyoto) — Phase 1: visual framework only
+// Parallel tile grid + offscreen canvas. Toggle between grassland and
+// cyber via viewMode. Agents/buildings still only exist in grassland.
+// ══════════════════════════════════════════════════════════════════
+
+// Cyber biome ID → [base, dark variant] color pairs
+const CYBER_BC = {
+  data_pool:    ['#081228','#06102a'],  // coolant pools (was deep_water)
+  neon_flow:    ['#0e2548','#0b1f3e'],  // energy streams (was shallow_water/river)
+  rust_sand:    ['#2a1828','#251525'],  // wasteland (was sand)
+  neon_grass:   ['#1a2a18','#152216'],  // dark cyberpunk "grass" with magenta flecks
+  neon_district:['#0e0820','#0a0418'],  // dense neon zone (was forest)
+  cyber_core:   ['#140820','#100418'],  // deep cyber district (was dense_forest)
+  cyber_hills:  ['#201830','#1a1428'],  // circuit-etched hills
+  megablock:    ['#2a2038','#241a32'],  // megastructure foundations (was mountain)
+  chrome_snow:  ['#c8d0e8','#c0c8e0'],  // chrome/glass rooftops (was snow)
+  gold_data:    ['#c8a840','#a88830'],  // gold data vault
+};
+// Cyber biome name lookup by ID — MUST match grassland BL indices so
+// the Uint8Array can be reused between modes
+const CYBER_BL = ['data_pool','neon_flow','rust_sand','neon_grass','neon_district','cyber_core','cyber_hills','megablock','chrome_snow','gold_data','neon_flow'];
+
+let cyberTiles = null, cyberCanvas = null;
+
+// Generate the cyberpunk tile grid. Uses the SAME noise function + seed as
+// grassland so the overall topology stays consistent — the world layout is
+// the same, just re-skinned. Plus we add a grid of neon streets on top.
+function genCyberTerrain() {
+  cyberTiles = new Uint8Array(WW * WH);
+  // Same fBm as grassland so the landmass/water shapes match
+  for (let y = 0; y < WH; y++) {
+    for (let x = 0; x < WW; x++) {
+      const n = fbm(x * 0.02, y * 0.02, 6, 2, 0.5, WSEED);
+      let bi = 9;
+      for (const t of BT) { if (n < t.m) { bi = BL.indexOf(t.b); break; } }
+      cyberTiles[y * WW + x] = bi;
+    }
+  }
+  // Same rivers become "neon flows" via biome ID 10 which maps to neon_flow
+  for (let y = 0; y < WH; y++) {
+    const rx = Math.floor(WW * 0.45 + Math.sin(y * 0.08) * 6);
+    for (let dx = -1; dx <= 1; dx++) {
+      const xx = rx + dx;
+      if (xx >= 0 && xx < WW) cyberTiles[y * WW + xx] = 10;
+    }
+  }
+  for (let x = 0; x < WW; x++) {
+    const ry = Math.floor(WH * 0.55 + Math.sin(x * 0.06) * 5);
+    for (let dy = -1; dy <= 1; dy++) {
+      const yy = ry + dy;
+      if (yy >= 0 && yy < WH) cyberTiles[yy * WW + x] = 10;
+    }
+  }
+}
+
+// Render cyberpunk terrain into an offscreen canvas.
+// Mirrors renderTBuf structure but uses CYBER_BC colors and adds
+// neon grid streets + circuit traces.
+function renderCyberBuf() {
+  const isMobile = window.innerWidth <= 768;
+  const tTS = isMobile ? Math.floor(TS / 2) : TS;
+  cyberCanvas = document.createElement('canvas');
+  cyberCanvas.width = WW * tTS;
+  cyberCanvas.height = WH * tTS;
+  cyberCanvas._tileSize = tTS;
+  const c = cyberCanvas.getContext('2d');
+  if (!c) { console.error('Failed to create cyber canvas context'); return; }
+  const ts = tTS;
+
+  // Pass 1: Base biome colors
+  for (let y = 0; y < WH; y++) {
+    for (let x = 0; x < WW; x++) {
+      const idx = y * WW + x;
+      const bi = cyberTiles[idx];
+      const bName = CYBER_BL[bi] || 'neon_grass';
+      const col = CYBER_BC[bName] || CYBER_BC.neon_grass;
+      const variant = ((x + y) % 2 === 0) ? 0 : 1;
+      c.fillStyle = col[variant];
+      c.fillRect(x * ts, y * ts, ts, ts);
+    }
+  }
+
+  // Pass 2: Per-biome micro-detail
+  for (let y = 0; y < WH; y++) {
+    for (let x = 0; x < WW; x++) {
+      const idx = y * WW + x;
+      const bi = cyberTiles[idx];
+      const bName = CYBER_BL[bi] || 'neon_grass';
+      const px = x * ts, py = y * ts;
+      const h = tileHash(x, y);
+
+      if (bName === 'neon_grass') {
+        // Dark grass with scattered magenta + cyan neon flecks
+        c.fillStyle = 'rgba(255,77,210,0.4)';
+        c.fillRect(px + (h % (ts - 2)), py + ((h >> 8) % (ts - 2)), 1, 1);
+        if ((h >> 16) % 5 === 0) {
+          c.fillStyle = 'rgba(77,243,255,0.45)';
+          c.fillRect(px + ((h >> 4) % (ts - 2)), py + ((h >> 12) % (ts - 2)), 1, 1);
+        }
+        // Occasional dark patch
+        if ((h >> 20) % 9 === 0) {
+          c.fillStyle = 'rgba(0,0,0,0.25)';
+          c.fillRect(px + ((h >> 6) % (ts - 4)), py + ((h >> 14) % (ts - 4)), 3, 2);
+        }
+      } else if (bName === 'neon_district' || bName === 'cyber_core') {
+        // Dense neon zone — purple + cyan accent dots
+        c.fillStyle = 'rgba(166,77,255,0.5)';
+        c.fillRect(px + (h % (ts - 2)), py + ((h >> 8) % (ts - 2)), 1, 1);
+        c.fillStyle = 'rgba(77,243,255,0.35)';
+        c.fillRect(px + ((h >> 4) % (ts - 2)), py + ((h >> 12) % (ts - 2)), 1, 1);
+        if ((h >> 16) % 4 === 0) {
+          c.fillStyle = 'rgba(255,77,210,0.4)';
+          c.fillRect(px + ((h >> 10) % (ts - 2)), py + ((h >> 18) % (ts - 2)), 2, 1);
+        }
+      } else if (bName === 'cyber_hills' || bName === 'megablock') {
+        // Circuit-etched stone — grey with blue circuit traces
+        c.strokeStyle = 'rgba(77,243,255,0.25)';
+        c.lineWidth = 1;
+        if ((h >> 4) % 3 === 0) {
+          c.beginPath();
+          c.moveTo(px + 4, py + (h % (ts - 8)) + 4);
+          c.lineTo(px + ts - 4, py + ((h >> 10) % (ts - 8)) + 4);
+          c.stroke();
+        }
+        c.fillStyle = 'rgba(255,77,210,0.35)';
+        c.fillRect(px + ((h >> 8) % (ts - 2)), py + ((h >> 16) % (ts - 2)), 1, 1);
+      } else if (bName === 'data_pool') {
+        // Coolant — deep navy with cyan shimmer
+        c.fillStyle = 'rgba(77,243,255,0.25)';
+        if (((x + y + Math.floor(Date.now() / 100)) % 3) === 0) {
+          c.fillRect(px + (h % (ts - 4)), py + ((h >> 8) % (ts - 4)), 2, 1);
+        }
+        // Static blue glow spots
+        c.fillStyle = 'rgba(120,200,255,0.35)';
+        c.fillRect(px + ((h >> 4) % (ts - 2)), py + ((h >> 12) % (ts - 2)), 1, 1);
+      } else if (bName === 'neon_flow') {
+        // Flowing energy streams — bright cyan + magenta
+        c.fillStyle = 'rgba(77,243,255,0.6)';
+        c.fillRect(px + (h % (ts - 2)), py + ((h >> 8) % (ts - 2)), 2, 1);
+        c.fillStyle = 'rgba(255,77,210,0.3)';
+        c.fillRect(px + ((h >> 4) % (ts - 2)), py + ((h >> 14) % (ts - 2)), 1, 1);
+      } else if (bName === 'rust_sand') {
+        // Rusty wasteland — dark purple-brown
+        c.fillStyle = 'rgba(90,40,60,0.4)';
+        c.fillRect(px + (h % (ts - 3)), py + ((h >> 8) % (ts - 3)), 2, 1);
+        if ((h >> 12) % 6 === 0) {
+          c.fillStyle = 'rgba(255,77,210,0.35)';
+          c.fillRect(px + ((h >> 4) % (ts - 2)), py + ((h >> 10) % (ts - 2)), 1, 1);
+        }
+      } else if (bName === 'chrome_snow') {
+        // Chrome/glass rooftop — reflective white with blue tint
+        c.fillStyle = 'rgba(255,255,255,0.6)';
+        c.fillRect(px + (h % (ts - 2)), py + ((h >> 8) % (ts - 2)), 1, 1);
+        c.fillStyle = 'rgba(77,243,255,0.3)';
+        c.fillRect(px + ((h >> 4) % (ts - 2)), py + ((h >> 12) % (ts - 2)), 1, 1);
+      } else if (bName === 'gold_data') {
+        // Gold data vault — yellow gleam
+        c.fillStyle = 'rgba(255,230,80,0.6)';
+        c.fillRect(px + (h % (ts - 2)), py + ((h >> 8) % (ts - 2)), 1, 1);
+        if ((h >> 12) % 4 === 0) {
+          c.fillStyle = 'rgba(255,255,200,0.8)';
+          c.fillRect(px + ((h >> 4) % (ts - 2)), py + ((h >> 16) % (ts - 2)), 1, 1);
+        }
+      }
+    }
+  }
+
+  // Pass 3: Neon street grid — horizontal + vertical lines every 10 tiles
+  // Only on walkable biomes (not water) so the grid doesn't cross pools
+  c.strokeStyle = 'rgba(77,243,255,0.18)';
+  c.lineWidth = 1;
+  for (let y = 0; y < WH; y += 10) {
+    for (let x = 0; x < WW; x++) {
+      const bi = cyberTiles[y * WW + x];
+      const bName = CYBER_BL[bi] || 'neon_grass';
+      if (bName === 'data_pool' || bName === 'neon_flow') continue;
+      c.fillStyle = 'rgba(77,243,255,0.35)';
+      c.fillRect(x * ts, y * ts + Math.floor(ts / 2) - 1, ts, 2);
+    }
+  }
+  for (let x = 0; x < WW; x += 10) {
+    for (let y = 0; y < WH; y++) {
+      const bi = cyberTiles[y * WW + x];
+      const bName = CYBER_BL[bi] || 'neon_grass';
+      if (bName === 'data_pool' || bName === 'neon_flow') continue;
+      c.fillStyle = 'rgba(255,77,210,0.3)';
+      c.fillRect(x * ts + Math.floor(ts / 2) - 1, y * ts, 2, ts);
+    }
+  }
+
+  // Pass 4: Magenta glow nodes at street intersections
+  for (let y = 0; y < WH; y += 10) {
+    for (let x = 0; x < WW; x += 10) {
+      const bi = cyberTiles[y * WW + x];
+      const bName = CYBER_BL[bi] || 'neon_grass';
+      if (bName === 'data_pool' || bName === 'neon_flow') continue;
+      c.fillStyle = 'rgba(255,77,210,0.7)';
+      c.fillRect(x * ts + Math.floor(ts / 2) - 2, y * ts + Math.floor(ts / 2) - 2, 4, 4);
+      c.fillStyle = 'rgba(255,200,255,0.9)';
+      c.fillRect(x * ts + Math.floor(ts / 2) - 1, y * ts + Math.floor(ts / 2) - 1, 2, 2);
+    }
+  }
+}
+
+// View mode — cycles between 'grassland' and 'cyber'
+let viewMode = 'grassland';
+
+// Wire the biome toggle buttons (top-left of canvas)
+function setupBiomeToggle() {
+  const btns = document.querySelectorAll('#biome-toggle .biome-btn');
+  btns.forEach(b => {
+    b.addEventListener('click', () => {
+      const mode = b.dataset.mode;
+      if (mode === viewMode) return;
+      viewMode = mode;
+      // Update active styles
+      btns.forEach(x => {
+        const active = x.dataset.mode === mode;
+        x.classList.toggle('biome-btn--active', active);
+        if (x.dataset.mode === 'grassland') {
+          x.style.background = active ? '#3a5a1a' : '#2a3a1a';
+          x.style.borderColor = active ? '#8acc4a' : '#5a8a3a';
+          x.style.color = active ? '#ddffaa' : '#9acc66';
+          x.style.boxShadow = active ? '0 0 12px rgba(138,204,74,0.5)' : 'none';
+        } else {
+          x.style.background = active ? '#3a0a54' : '#1a0a24';
+          x.style.borderColor = active ? '#aa44ff' : '#5a2a7a';
+          x.style.color = active ? '#eebbff' : '#cc88ff';
+          x.style.boxShadow = active ? '0 0 12px rgba(170,68,255,0.6)' : 'none';
+        }
+      });
+    });
+  });
+}
+// Defer until DOM is ready (the script block runs mid-body but the element above us exists)
+setupBiomeToggle();
+
+// ── CYBERPUNK DETAILS ─────────────────────────────────────────────
+// Deterministically generated from cyberTiles grid via tileHash.
+// Detail types: neon_palm, data_spire, street_lamp, holo_billboard,
+// vending, antenna, drone_pad, flux_pylon
+function getCyberDetails(sx2, sy2, ex2, ey2) {
+  const D = [];
+  if (!cyberTiles) return D;
+  for (let y = sy2; y < ey2; y++) {
+    for (let x = sx2; x < ex2; x++) {
+      const idx = y * WW + x;
+      const bi = cyberTiles[idx];
+      const bName = CYBER_BL[bi] || 'neon_grass';
+      const h = tileHash(x, y);
+      // Skip water-equivalents
+      if (bName === 'data_pool' || bName === 'neon_flow') continue;
+      // ── Neon palms in neon_grass + neon_district ──
+      if (bName === 'neon_grass' && (h % 17) === 0) {
+        D.push({ t: 'neon_palm', x: x * TS + (h % TS), y: y * TS + ((h >> 8) % TS), s: (h & 1) ? 1.0 : 0.85 });
+      }
+      if (bName === 'neon_district' && (h % 9) === 0) {
+        D.push({ t: 'neon_palm', x: x * TS + (h % TS), y: y * TS + ((h >> 8) % TS), s: 1.1 });
+      }
+      // ── Data spires (rocks) in cyber_hills + megablock ──
+      if ((bName === 'cyber_hills' || bName === 'megablock') && (h % 8) === 0) {
+        D.push({ t: 'data_spire', x: x * TS + (h % TS), y: y * TS + ((h >> 8) % TS), s: 0.9 + ((h >> 4) & 3) * 0.15 });
+      }
+      // ── Street lamps along the neon grid (every 10 tiles) ──
+      if ((x % 10 === 5) && (y % 10 === 5) && bName !== 'megablock' && bName !== 'data_pool') {
+        D.push({ t: 'street_lamp', x: x * TS + TS / 2, y: y * TS + TS / 2 });
+      }
+      // ── Holographic billboards in dense neon zones (rare) ──
+      if (bName === 'cyber_core' && (h % 23) === 0) {
+        D.push({ t: 'holo_billboard', x: x * TS + (h % TS), y: y * TS + ((h >> 8) % TS) });
+      }
+      // ── Vending machines on streets ──
+      if (bName === 'neon_district' && (h % 19) === 0) {
+        D.push({ t: 'vending', x: x * TS + (h % TS), y: y * TS + ((h >> 8) % TS) });
+      }
+      // ── Antennas on chrome rooftops ──
+      if (bName === 'chrome_snow' && (h % 6) === 0) {
+        D.push({ t: 'antenna', x: x * TS + (h % TS), y: y * TS + ((h >> 8) % TS) });
+      }
+      // ── Flux pylons on rust_sand ──
+      if (bName === 'rust_sand' && (h % 13) === 0) {
+        D.push({ t: 'flux_pylon', x: x * TS + (h % TS), y: y * TS + ((h >> 8) % TS) });
+      }
+    }
+  }
+  // Y-sort for proper layering
+  D.sort((a, b) => a.y - b.y);
+  return D;
+}
+
+function drawCyberDetail(c, d, fr) {
+  const px = d.x, py = d.y;
+  const s = d.s || 1;
+  if (d.t === 'neon_palm') {
+    // Trunk
+    c.fillStyle = '#1a0820'; c.fillRect(px - 1, py - 14 * s, 2, 14 * s);
+    c.fillStyle = '#2a1838'; c.fillRect(px - 1, py - 14 * s, 1, 14 * s);
+    // Pink glow
+    const glowR = 12 * s + Math.sin(fr * 0.07 + px * 0.1) * 1.5;
+    const grad = c.createRadialGradient(px, py - 16 * s, 1, px, py - 16 * s, glowR);
+    grad.addColorStop(0, 'rgba(255,77,210,0.45)'); grad.addColorStop(1, 'rgba(255,77,210,0)');
+    c.fillStyle = grad; c.fillRect(px - glowR, py - 16 * s - glowR, glowR * 2, glowR * 2);
+    // Pink fronds (6 blades)
+    const sway = Math.sin(fr * 0.04 + px * 0.05) * 0.08;
+    c.fillStyle = '#ff4dd2';
+    for (let fi = 0; fi < 6; fi++) {
+      const ang = (fi / 6) * Math.PI * 2 + sway;
+      const fx = px + Math.cos(ang) * 6 * s;
+      const fy = py - 16 * s + Math.sin(ang) * 4 * s;
+      c.beginPath(); c.ellipse(fx, fy, 5 * s, 2.2 * s, ang, 0, Math.PI * 2); c.fill();
+    }
+    // Hot-pink highlights
+    c.fillStyle = '#ff8cec';
+    for (let fi = 0; fi < 6; fi++) {
+      const ang = (fi / 6) * Math.PI * 2 + sway;
+      const fx = px + Math.cos(ang) * 5 * s;
+      const fy = py - 16 * s + Math.sin(ang) * 3 * s;
+      c.fillRect(fx - 1, fy - 1, 2, 2);
+    }
+  } else if (d.t === 'data_spire') {
+    // Vertical crystal — angular cyan rock
+    c.fillStyle = 'rgba(0,0,0,0.4)';
+    c.beginPath(); c.ellipse(px, py + 2, 6 * s, 2, 0, 0, Math.PI * 2); c.fill();
+    // Spire body
+    const h2 = 14 * s;
+    c.fillStyle = '#1a2a4a';
+    c.beginPath(); c.moveTo(px - 4 * s, py); c.lineTo(px, py - h2); c.lineTo(px + 4 * s, py); c.closePath(); c.fill();
+    // Bright edge
+    c.fillStyle = '#4df3ff';
+    c.beginPath(); c.moveTo(px, py - h2); c.lineTo(px + 4 * s, py); c.lineTo(px + 1, py); c.lineTo(px + 1, py - h2 + 2); c.closePath(); c.fill();
+    // Glow
+    if ((fr + px) % 30 < 15) {
+      c.fillStyle = 'rgba(77,243,255,0.6)';
+      c.fillRect(px - 1, py - h2, 2, 2);
+    }
+  } else if (d.t === 'street_lamp') {
+    // Pole
+    c.fillStyle = '#0a0418'; c.fillRect(px - 1, py - 18, 2, 18);
+    // Head
+    c.fillStyle = '#4df3ff'; c.fillRect(px - 3, py - 20, 6, 2);
+    // Glow
+    const lr = 10 + Math.sin(fr * 0.09 + px) * 1;
+    const gg = c.createRadialGradient(px, py - 20, 1, px, py - 20, lr);
+    gg.addColorStop(0, 'rgba(77,243,255,0.55)'); gg.addColorStop(1, 'rgba(77,243,255,0)');
+    c.fillStyle = gg; c.fillRect(px - lr, py - 20 - lr, lr * 2, lr * 2);
+  } else if (d.t === 'holo_billboard') {
+    // Stand
+    c.fillStyle = '#1a0a28'; c.fillRect(px - 1, py - 4, 2, 4);
+    // Hologram screen (cyan with flicker)
+    const flick = (fr + px) % 60 < 56;
+    if (flick) {
+      c.fillStyle = 'rgba(77,243,255,0.6)';
+      c.fillRect(px - 6, py - 18, 12, 12);
+      // Scanlines
+      c.fillStyle = 'rgba(255,255,255,0.4)';
+      const sl = (fr * 0.4 + px) % 12;
+      c.fillRect(px - 6, py - 18 + sl, 12, 1);
+      // Glyph (random pixel pattern)
+      c.fillStyle = '#fff';
+      c.fillRect(px - 3, py - 14, 1, 1);
+      c.fillRect(px + 1, py - 14, 1, 1);
+      c.fillRect(px - 2, py - 11, 4, 1);
+    }
+  } else if (d.t === 'vending') {
+    // Body
+    c.fillStyle = '#0a0418'; c.fillRect(px - 4, py - 10, 8, 10);
+    c.strokeStyle = '#ff4dd2'; c.lineWidth = 1; c.strokeRect(px - 4, py - 10, 8, 10);
+    // Screen
+    if ((fr + px) % 40 < 30) {
+      c.fillStyle = '#ff4dd2'; c.fillRect(px - 3, py - 9, 6, 3);
+    }
+    // Slot
+    c.fillStyle = '#2a1838'; c.fillRect(px - 3, py - 4, 6, 1);
+  } else if (d.t === 'antenna') {
+    // Tall thin antenna with blinking tip
+    c.fillStyle = '#0a0418'; c.fillRect(px, py - 16, 1, 16);
+    c.fillStyle = ((fr + px) % 30 < 15) ? '#ff4dd2' : '#660033';
+    c.fillRect(px - 1, py - 17, 3, 2);
+    // Crossbeams
+    c.fillStyle = '#1a0a28';
+    c.fillRect(px - 3, py - 12, 7, 1);
+    c.fillRect(px - 2, py - 8, 5, 1);
+  } else if (d.t === 'flux_pylon') {
+    // Glowing magenta pylon
+    c.fillStyle = '#1a0a28';
+    c.beginPath(); c.moveTo(px, py - 12); c.lineTo(px - 4, py); c.lineTo(px + 4, py); c.closePath(); c.fill();
+    // Glow core
+    const pulse = 0.5 + Math.sin(fr * 0.1 + px) * 0.4;
+    c.fillStyle = 'rgba(255,77,210,' + pulse + ')';
+    c.fillRect(px - 1, py - 10, 2, 8);
+    // Glow halo
+    c.fillStyle = 'rgba(255,77,210,0.25)';
+    c.fillRect(px - 3, py - 10, 6, 2);
+  }
 }
 
 // === Path Trails between buildings ===
@@ -4437,12 +4839,20 @@ const _pad=5;// tiles of padding beyond viewport edges
 const sx=Math.max(0,Math.floor(-vpX/ts-_pad)),sy=Math.max(0,Math.floor(-vpY/ts-_pad));
 const ex=Math.min(WW,Math.ceil((-vpX+cw/zoom)/ts+_pad)),ey=Math.min(WH,Math.ceil((-vpY+ch/zoom)/ts+_pad));
 
-// Terrain — terrain canvas may be at reduced resolution on mobile
-if(tCanvas&&ex>sx&&ey>sy&&isFinite(sx)&&isFinite(sy)){
-  var tts=tCanvas._tileSize||ts;// terrain buffer tile size (may be smaller on mobile)
-  try{ctx.drawImage(tCanvas,sx*tts,sy*tts,Math.max(1,(ex-sx)*tts),Math.max(1,(ey-sy)*tts),sx*ts,sy*ts,Math.max(1,(ex-sx)*ts),Math.max(1,(ey-sy)*ts))}
+// Terrain — terrain canvas may be at reduced resolution on mobile.
+// Switch source canvas based on viewMode (grassland vs cyber).
+var _terrainSource = (viewMode === 'cyber' && cyberCanvas) ? cyberCanvas : tCanvas;
+if(_terrainSource&&ex>sx&&ey>sy&&isFinite(sx)&&isFinite(sy)){
+  var tts=_terrainSource._tileSize||ts;// terrain buffer tile size (may be smaller on mobile)
+  try{ctx.drawImage(_terrainSource,sx*tts,sy*tts,Math.max(1,(ex-sx)*tts),Math.max(1,(ey-sy)*tts),sx*ts,sy*ts,Math.max(1,(ex-sx)*ts),Math.max(1,(ey-sy)*ts))}
   catch(te){console.warn('Terrain draw error:',te,{sx,sy,ex,ey,ts,tts})}
 }else if(!tCanvas){console.warn('tCanvas is null — terrain not generated')}
+
+// CYBER DETAILS — drawn on top of cyber terrain (palms/spires/lamps/etc)
+if(viewMode==='cyber'){
+  const cyberDetails=getCyberDetails(sx,sy,ex,ey);
+  for(const d of cyberDetails){drawCyberDetail(ctx,d,frame)}
+}
 
 // Clan territory borders + war zones
 for(const clan of clans){
@@ -5014,6 +5424,9 @@ for(const t of S.tiles){if(t.x<sx||t.x>=ex||t.y<sy||t.y>=ey)continue;if(t.owner)
 // Building progress now driven by agent AI state machine
 
 // Layer 4-6: UNIFIED Y-SORT — all standing objects in one list
+// In CYBER mode the world is empty: skip agents/buildings/details/animals.
+// Show only the cyberpunk terrain + cyber details (already drawn above).
+const _hideEntities = (viewMode === 'cyber');
 const renderItems=[];
 // Standing details with proper sort keys (bottom/ground contact point)
 const treeLikeTypes=new Set(['deciduous','oak','pine','birch','deadtree','willow','fruittree']);
@@ -5101,6 +5514,10 @@ for(const item of renderItems){
   }
   // Tree/rock shadows are baked into drawDeciduous etc — no extra pass needed
 }
+
+// In CYBER MODE: clear renderItems so PASS 2 below renders nothing
+// (no agents, no buildings, no details, no animals — empty cyber world)
+if(_hideEntities){renderItems.length=0}
 
 // PASS 2: Draw all items in Y-sorted order
 for(const item of renderItems){
@@ -5479,6 +5896,9 @@ if(stumps.length>15)stumps.splice(0,5);
 
 // Impact text REMOVED — particles only (no visual noise)
 
+// In CYBER MODE: skip all entity-layer renders (ground items, portals,
+// dragon, hits, ambient particles, birds, animals). Cyber world is empty.
+if(!_hideEntities){
 // === Loot Drops: ground items + pickup flashes ===
 // Ground items are drawn inside the camera transform so they scale/pan
 // with the rest of the world. Each item is a glowing crate with a
@@ -6345,6 +6765,8 @@ for(var pgi=activePlagues.length-1;pgi>=0;pgi--){
     ctx.fillRect(skx-1,sky-1,1,1);ctx.fillRect(skx+1,sky-1,1,1);
   }
 }
+
+} // end if(!_hideEntities) — entity-layer renders skipped in cyber mode
 
 ctx.restore();
 
@@ -8952,7 +9374,7 @@ function showOfflineSummary(summary){
 window.addEventListener('resize',()=>{resize()});
 let didLoad=false;
 try{
-  resize();genTerrain();renderTBuf();generateBoulders();initHarvestables();initCreatures();
+  resize();genTerrain();renderTBuf();genCyberTerrain();renderCyberBuf();generateBoulders();initHarvestables();initCreatures();
   try{initCursors()}catch(e){console.warn('Cursor init failed:',e)}
   try{initWildlife()}catch(e){console.warn('Wildlife init failed:',e)}
   try{initInfluence()}catch(e){console.warn('Influence init failed:',e)}
