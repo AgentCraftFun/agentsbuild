@@ -1,0 +1,807 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="robots" content="noindex,nofollow">
+<title>AgentCraft Markets · LEAKED PREVIEW</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;700&family=Press+Start+2P&display=swap" rel="stylesheet">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Ctext y='20' font-size='20'%3E%F0%9F%8E%B0%3C/text%3E%3C/svg%3E">
+<style>
+  :root{
+    --bg:        #05040a;
+    --bg2:       #0a0818;
+    --card:      #0e0c1a;
+    --card2:     #141124;
+    --border:    #2a2640;
+    --border-br: #3a3354;
+    --ink:       #e8e8f0;
+    --muted:     #7a7a92;
+    --gold:      #f0c040;
+    --gold-hi:   #ffdc68;
+    --green:     #44ff88;
+    --green-dk:  #22cc66;
+    --red:       #ff4466;
+    --red-dk:    #cc2244;
+    --cyan:      #4df3ff;
+    --purple:    #a64dff;
+    --pink:      #ff4dd2;
+  }
+  *{box-sizing:border-box;-webkit-font-smoothing:none}
+  html,body{margin:0;padding:0;background:var(--bg);color:var(--ink);font-family:'JetBrains Mono',monospace;min-height:100%;overflow-x:hidden}
+  body{
+    background:
+      radial-gradient(ellipse at 15% 0%,rgba(240,192,64,0.08),transparent 45%),
+      radial-gradient(ellipse at 85% 40%,rgba(166,77,255,0.06),transparent 55%),
+      radial-gradient(ellipse at 50% 100%,rgba(68,255,136,0.04),transparent 60%),
+      #05040a;
+  }
+  a{color:inherit;text-decoration:none}
+  button{font-family:inherit;cursor:pointer;border:0;background:transparent;color:inherit}
+
+  /* ── Starfield canvas ── */
+  #stars{position:fixed;inset:0;z-index:0;pointer-events:none;opacity:0.55}
+  /* Scanline CRT overlay */
+  body::after{
+    content:'';position:fixed;inset:0;z-index:200;pointer-events:none;
+    background:repeating-linear-gradient(0deg,rgba(0,0,0,0.2) 0,rgba(0,0,0,0.2) 1px,transparent 1px,transparent 3px);
+    mix-blend-mode:overlay;
+  }
+
+  .app{position:relative;z-index:1;min-height:100vh;display:flex;flex-direction:column}
+
+  /* ── TOP HEADER ── */
+  header.top{
+    display:flex;align-items:center;gap:20px;padding:14px 24px;
+    background:linear-gradient(180deg,rgba(10,8,24,0.95),rgba(10,8,24,0.7));
+    border-bottom:1px solid var(--border);
+    backdrop-filter:blur(8px);
+  }
+  .logo{
+    display:flex;align-items:center;gap:10px;
+    font-family:'Press Start 2P',monospace;font-size:13px;color:var(--gold);
+    text-shadow:0 0 10px rgba(240,192,64,0.4);letter-spacing:1px
+  }
+  .logo .mark{font-size:22px;filter:drop-shadow(0 0 6px rgba(240,192,64,0.6))}
+  .logo .sub{color:var(--purple);text-shadow:0 0 10px rgba(166,77,255,0.5)}
+  .nav-tabs{display:flex;gap:2px;margin-left:16px}
+  .tab{
+    padding:8px 14px;font-size:11px;font-weight:700;letter-spacing:1.5px;
+    color:var(--muted);border-bottom:2px solid transparent;transition:all 0.15s;
+  }
+  .tab.active{color:var(--gold);border-bottom-color:var(--gold);text-shadow:0 0 8px rgba(240,192,64,0.6)}
+  .tab:hover{color:var(--ink)}
+  .spacer{flex:1}
+  .live-dot{
+    display:inline-flex;align-items:center;gap:6px;padding:6px 10px;
+    background:rgba(255,68,102,0.12);border:1px solid rgba(255,68,102,0.4);
+    border-radius:3px;font-size:10px;letter-spacing:2px;color:var(--red);font-weight:700;
+  }
+  .live-dot::before{content:'';width:6px;height:6px;border-radius:50%;background:var(--red);box-shadow:0 0 8px var(--red);animation:pulse 1.4s ease-in-out infinite}
+  @keyframes pulse{0%,100%{opacity:1;transform:scale(1)}50%{opacity:0.5;transform:scale(0.8)}}
+  .wallet{
+    display:flex;align-items:center;gap:10px;padding:8px 14px;
+    background:var(--card);border:1px solid var(--border);border-radius:4px;
+    font-size:11px;font-weight:500;
+  }
+  .wallet .addr{color:var(--muted)}
+  .wallet .bal{color:var(--gold);font-weight:700;text-shadow:0 0 6px rgba(240,192,64,0.4);font-variant-numeric:tabular-nums}
+  .wallet .chip{display:inline-block;width:8px;height:8px;border-radius:50%;background:var(--gold);box-shadow:0 0 6px var(--gold)}
+
+  /* Beta banner bar under header */
+  .beta-bar{
+    display:flex;align-items:center;justify-content:center;gap:12px;
+    padding:8px 20px;font-size:10px;letter-spacing:3px;
+    background:linear-gradient(90deg,rgba(166,77,255,0.1),rgba(255,77,210,0.1),rgba(166,77,255,0.1));
+    border-bottom:1px solid var(--border);color:var(--pink);font-weight:700;
+    text-shadow:0 0 8px rgba(255,77,210,0.5);
+  }
+  .beta-bar .lock{color:var(--cyan)}
+
+  main{flex:1;padding:24px;max-width:1440px;width:100%;margin:0 auto}
+
+  /* ── STATS ROW ── */
+  .stats-row{
+    display:grid;grid-template-columns:repeat(4,1fr);gap:16px;margin-bottom:24px;
+  }
+  .stat{
+    background:var(--card);border:1px solid var(--border);
+    padding:16px 18px;border-radius:4px;position:relative;overflow:hidden;
+  }
+  .stat::before{
+    content:'';position:absolute;top:0;left:0;right:0;height:1px;
+    background:linear-gradient(90deg,transparent,var(--gold),transparent);opacity:0.4;
+  }
+  .stat .label{font-size:9px;color:var(--muted);letter-spacing:2px;margin-bottom:8px;text-transform:uppercase}
+  .stat .value{font-family:'Press Start 2P',monospace;font-size:20px;color:var(--gold);text-shadow:0 0 10px rgba(240,192,64,0.35);letter-spacing:1px;line-height:1.2;font-variant-numeric:tabular-nums}
+  .stat .delta{margin-top:8px;font-size:10px;color:var(--green);font-weight:700}
+  .stat .delta.neg{color:var(--red)}
+  .stat.pot .value{color:var(--green);text-shadow:0 0 12px rgba(68,255,136,0.45)}
+  .stat.preds .value{color:var(--cyan);text-shadow:0 0 10px rgba(77,243,255,0.4)}
+  .stat.top .value{font-size:13px;color:var(--purple);text-shadow:0 0 10px rgba(166,77,255,0.4)}
+
+  /* ── MAIN LAYOUT ── */
+  .main-grid{
+    display:grid;grid-template-columns:1.25fr 1fr;gap:24px;margin-bottom:24px;
+  }
+  @media(max-width:1100px){ .main-grid{grid-template-columns:1fr} }
+
+  /* ── FEATURED MARKET ── */
+  .featured{
+    background:var(--card);border:1px solid var(--border);border-radius:6px;
+    padding:22px;position:relative;overflow:hidden;
+    box-shadow:0 0 40px rgba(240,192,64,0.08),inset 0 0 0 1px rgba(240,192,64,0.05);
+  }
+  .featured::before{
+    content:'';position:absolute;top:0;left:0;right:0;height:2px;
+    background:linear-gradient(90deg,transparent 10%,var(--gold) 50%,transparent 90%);
+  }
+  .featured .head{display:flex;align-items:flex-start;justify-content:space-between;margin-bottom:18px;gap:16px}
+  .featured .tag{
+    display:inline-block;padding:3px 8px;font-size:9px;letter-spacing:2px;
+    background:rgba(240,192,64,0.15);border:1px solid rgba(240,192,64,0.4);
+    color:var(--gold);border-radius:2px;font-weight:700;margin-bottom:10px;
+  }
+  .featured h2{
+    font-family:'JetBrains Mono',monospace;font-size:20px;font-weight:700;
+    margin:0 0 6px;color:var(--ink);letter-spacing:0.3px;line-height:1.3;
+  }
+  .featured .sub{font-size:11px;color:var(--muted);line-height:1.5}
+  .featured .countdown{
+    text-align:right;min-width:140px;
+  }
+  .featured .countdown .lbl{font-size:8px;color:var(--muted);letter-spacing:2px;margin-bottom:4px}
+  .featured .countdown .time{
+    font-family:'Press Start 2P',monospace;font-size:18px;color:var(--red);
+    text-shadow:0 0 10px rgba(255,68,102,0.5);font-variant-numeric:tabular-nums;
+  }
+  .featured .countdown .time.warn{color:var(--gold);text-shadow:0 0 10px rgba(240,192,64,0.5)}
+
+  /* Chart area */
+  .chart{
+    height:180px;background:rgba(5,4,10,0.6);border:1px solid var(--border);
+    border-radius:4px;position:relative;overflow:hidden;margin-bottom:16px;
+  }
+  .chart canvas{display:block;width:100%;height:100%}
+  .chart .axis{position:absolute;inset:0;pointer-events:none}
+  .chart .axis .h{position:absolute;left:0;right:0;height:1px;background:rgba(255,255,255,0.04)}
+  .chart .axis .h.mid{background:rgba(255,255,255,0.08)}
+  .chart .ylabel{
+    position:absolute;right:10px;top:6px;font-size:9px;color:var(--muted);letter-spacing:1px;
+  }
+  .chart .now{
+    position:absolute;right:10px;top:22px;
+    font-family:'Press Start 2P',monospace;font-size:16px;color:var(--green);
+    text-shadow:0 0 12px rgba(68,255,136,0.6);
+  }
+
+  /* YES/NO buttons */
+  .ynbet{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:14px}
+  .ynbtn{
+    padding:16px;border-radius:4px;border:2px solid var(--border);background:var(--card2);
+    text-align:left;transition:all 0.15s;cursor:pointer;position:relative;overflow:hidden;
+  }
+  .ynbtn .side{font-family:'Press Start 2P',monospace;font-size:13px;letter-spacing:1px}
+  .ynbtn .odds{font-size:20px;font-weight:700;margin-top:6px;font-variant-numeric:tabular-nums}
+  .ynbtn .payout{font-size:9px;color:var(--muted);margin-top:4px;letter-spacing:1px}
+  .ynbtn.yes{border-color:rgba(68,255,136,0.45)}
+  .ynbtn.yes .side{color:var(--green);text-shadow:0 0 8px rgba(68,255,136,0.5)}
+  .ynbtn.yes .odds{color:var(--green)}
+  .ynbtn.yes:hover{border-color:var(--green);background:rgba(68,255,136,0.08);box-shadow:0 0 18px rgba(68,255,136,0.3)}
+  .ynbtn.no{border-color:rgba(255,68,102,0.45)}
+  .ynbtn.no .side{color:var(--red);text-shadow:0 0 8px rgba(255,68,102,0.5)}
+  .ynbtn.no .odds{color:var(--red)}
+  .ynbtn.no:hover{border-color:var(--red);background:rgba(255,68,102,0.08);box-shadow:0 0 18px rgba(255,68,102,0.3)}
+
+  /* Featured market meta row */
+  .feat-meta{
+    display:grid;grid-template-columns:repeat(3,1fr);gap:10px;
+    padding:12px;background:rgba(5,4,10,0.5);border:1px solid var(--border);border-radius:4px;
+  }
+  .feat-meta .m{text-align:center}
+  .feat-meta .m .k{font-size:8px;color:var(--muted);letter-spacing:2px;margin-bottom:4px}
+  .feat-meta .m .v{font-size:13px;color:var(--ink);font-weight:700;font-variant-numeric:tabular-nums}
+  .feat-meta .m .v.gold{color:var(--gold);text-shadow:0 0 6px rgba(240,192,64,0.4)}
+  .feat-meta .m .v.cyan{color:var(--cyan)}
+
+  /* ── MARKET GRID (right column) ── */
+  .market-col{display:flex;flex-direction:column;gap:16px}
+  .col-title{
+    display:flex;align-items:center;justify-content:space-between;
+    font-size:10px;letter-spacing:2px;color:var(--muted);font-weight:700;
+    padding-bottom:8px;border-bottom:1px solid var(--border);
+  }
+  .col-title .more{color:var(--gold);font-size:9px;letter-spacing:1px}
+  .market-grid{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+  @media(max-width:1200px){ .market-grid{grid-template-columns:1fr 1fr} }
+  @media(max-width:720px){ .market-grid{grid-template-columns:1fr} }
+
+  .mcard{
+    background:var(--card);border:1px solid var(--border);border-radius:4px;
+    padding:14px;transition:all 0.15s;cursor:pointer;position:relative;
+  }
+  .mcard:hover{border-color:var(--gold);background:var(--card2);transform:translateY(-2px);box-shadow:0 4px 18px rgba(240,192,64,0.15)}
+  .mcard .emoji{font-size:16px;margin-bottom:6px}
+  .mcard .q{font-size:12px;font-weight:700;color:var(--ink);margin-bottom:10px;line-height:1.35;min-height:33px}
+  .mcard .bar{
+    height:6px;background:var(--card2);border-radius:3px;overflow:hidden;margin-bottom:8px;
+    border:1px solid var(--border);display:flex;
+  }
+  .mcard .bar .y{background:linear-gradient(90deg,var(--green-dk),var(--green));box-shadow:0 0 8px rgba(68,255,136,0.4)}
+  .mcard .bar .n{background:linear-gradient(90deg,var(--red-dk),var(--red));box-shadow:0 0 8px rgba(255,68,102,0.4)}
+  .mcard .odds{display:flex;justify-content:space-between;font-size:11px;font-weight:700;margin-bottom:10px;font-variant-numeric:tabular-nums}
+  .mcard .odds .y{color:var(--green);text-shadow:0 0 6px rgba(68,255,136,0.4)}
+  .mcard .odds .n{color:var(--red);text-shadow:0 0 6px rgba(255,68,102,0.4)}
+  .mcard .foot{display:flex;justify-content:space-between;font-size:9px;color:var(--muted);letter-spacing:1px;text-transform:uppercase}
+  .mcard .foot .vol{color:var(--gold)}
+  .mcard .foot .time{color:var(--cyan)}
+  .mcard.hot::after{
+    content:'🔥';position:absolute;top:8px;right:8px;font-size:12px;
+  }
+  .mcard.closing{border-color:rgba(255,68,102,0.4)}
+  .mcard.closing .foot .time{color:var(--red);animation:blink 1s step-end infinite}
+  @keyframes blink{0%,60%{opacity:1}61%,100%{opacity:0.35}}
+
+  /* Bottom row: leaderboard + chaos combo */
+  .bottom-grid{
+    display:grid;grid-template-columns:1.4fr 1fr;gap:24px;margin-bottom:24px;
+  }
+  @media(max-width:1100px){ .bottom-grid{grid-template-columns:1fr} }
+
+  /* Leaderboard */
+  .leaderboard{
+    background:var(--card);border:1px solid var(--border);border-radius:6px;padding:20px;
+  }
+  .leaderboard h3{
+    font-family:'Press Start 2P',monospace;font-size:12px;color:var(--gold);
+    margin:0 0 16px;letter-spacing:1px;text-shadow:0 0 10px rgba(240,192,64,0.4);
+  }
+  .lbrow{
+    display:grid;grid-template-columns:28px 1fr auto auto;gap:12px;align-items:center;
+    padding:10px 0;border-bottom:1px solid rgba(42,38,64,0.6);font-size:11px;
+  }
+  .lbrow:last-child{border-bottom:0}
+  .lbrow .rank{
+    font-family:'Press Start 2P',monospace;font-size:11px;color:var(--muted);text-align:center;
+  }
+  .lbrow.r1 .rank{color:var(--gold);text-shadow:0 0 8px rgba(240,192,64,0.6)}
+  .lbrow.r2 .rank{color:#c0c8d0;text-shadow:0 0 6px rgba(200,210,220,0.4)}
+  .lbrow.r3 .rank{color:#cd7f32;text-shadow:0 0 6px rgba(205,127,50,0.4)}
+  .lbrow .name{font-weight:700;color:var(--ink)}
+  .lbrow .streak{font-size:9px;color:var(--purple);letter-spacing:1px}
+  .lbrow .pnl{color:var(--green);font-weight:700;font-variant-numeric:tabular-nums;text-align:right}
+  .lbrow .rate{font-size:9px;color:var(--muted);text-align:right}
+
+  /* Chaos combo callout */
+  .chaos-combo{
+    background:
+      linear-gradient(180deg,rgba(255,77,0,0.08),rgba(166,77,255,0.08)),
+      var(--card);
+    border:1px solid rgba(255,77,210,0.4);border-radius:6px;padding:20px;
+    position:relative;overflow:hidden;
+  }
+  .chaos-combo::before{
+    content:'';position:absolute;top:0;left:0;right:0;height:2px;
+    background:linear-gradient(90deg,var(--red),var(--pink),var(--purple));
+  }
+  .chaos-combo h3{
+    font-family:'Press Start 2P',monospace;font-size:11px;color:var(--pink);
+    margin:0 0 10px;letter-spacing:1px;text-shadow:0 0 10px rgba(255,77,210,0.5);
+  }
+  .chaos-combo p{font-size:11px;color:var(--muted);line-height:1.55;margin:0 0 14px}
+  .combo-mult{
+    display:flex;align-items:center;gap:12px;padding:12px;
+    background:rgba(5,4,10,0.6);border:1px solid rgba(255,77,210,0.3);border-radius:4px;
+  }
+  .combo-mult .x{
+    font-family:'Press Start 2P',monospace;font-size:24px;color:var(--gold);
+    text-shadow:0 0 14px rgba(240,192,64,0.6);line-height:1;
+  }
+  .combo-mult .t{font-size:10px;color:var(--muted);letter-spacing:1px;line-height:1.4}
+  .combo-mult .t strong{color:var(--pink);display:block;font-size:11px;letter-spacing:0}
+
+  /* Live ticker at the bottom */
+  .ticker{
+    background:var(--card);border:1px solid var(--border);border-radius:6px;
+    padding:0;margin-bottom:24px;overflow:hidden;position:relative;
+  }
+  .ticker .head{
+    display:flex;align-items:center;gap:10px;padding:10px 16px;
+    background:rgba(5,4,10,0.5);border-bottom:1px solid var(--border);
+    font-size:9px;letter-spacing:2px;color:var(--muted);font-weight:700;
+  }
+  .ticker .head::before{
+    content:'';width:6px;height:6px;border-radius:50%;background:var(--green);
+    box-shadow:0 0 8px var(--green);animation:pulse 1.4s ease-in-out infinite;
+  }
+  .ticker .stream{
+    display:flex;gap:32px;padding:14px 16px;
+    animation:ticker-slide 45s linear infinite;
+    white-space:nowrap;
+  }
+  @keyframes ticker-slide{0%{transform:translateX(0)}100%{transform:translateX(-50%)}}
+  .ticker .item{display:inline-flex;align-items:center;gap:8px;font-size:11px}
+  .ticker .item .who{color:var(--cyan);font-weight:700}
+  .ticker .item .act{color:var(--muted)}
+  .ticker .item .mk{color:var(--ink)}
+  .ticker .item .amt{color:var(--gold);font-weight:700}
+  .ticker .item .up{color:var(--green)}
+
+  /* Footer note */
+  .footnote{
+    text-align:center;padding:20px;font-size:9px;color:var(--muted);letter-spacing:2px;
+  }
+
+  /* Mobile */
+  @media(max-width:920px){
+    header.top{padding:10px 14px;gap:10px;flex-wrap:wrap}
+    .nav-tabs{order:3;width:100%;margin-left:0}
+    .stats-row{grid-template-columns:repeat(2,1fr)}
+    main{padding:14px}
+    .featured{padding:16px}
+    .featured h2{font-size:16px}
+  }
+  @media(max-width:540px){
+    .stats-row{grid-template-columns:1fr}
+    .ynbet{grid-template-columns:1fr}
+    .feat-meta{grid-template-columns:1fr}
+  }
+</style>
+</head>
+<body>
+
+<canvas id="stars"></canvas>
+
+<div class="app">
+
+  <header class="top">
+    <div class="logo">
+      <span class="mark">🎰</span>
+      AGENTCRAFT <span class="sub">MARKETS</span>
+    </div>
+    <nav class="nav-tabs">
+      <button class="tab active">LIVE</button>
+      <button class="tab">RESOLVED</button>
+      <button class="tab">MY BETS</button>
+      <button class="tab">LEADERBOARD</button>
+    </nav>
+    <div class="spacer"></div>
+    <div class="live-dot">LIVE · 1,284 ONLINE</div>
+    <div class="wallet">
+      <span class="chip"></span>
+      <span class="addr">0x1a…d3f</span>
+      <span class="bal" id="wallet-bal">42,150 $AC</span>
+    </div>
+  </header>
+
+  <div class="beta-bar">
+    <span class="lock">&#128274;</span>
+    LEAKED PREVIEW · PREDICTION MARKETS · SHIPPING THIS WEEK
+    <span class="lock">&#128274;</span>
+  </div>
+
+  <main>
+
+    <!-- ── STATS ROW ── -->
+    <section class="stats-row">
+      <div class="stat pot">
+        <div class="label">💰 Total Pot</div>
+        <div class="value" id="stat-pot">12.4M</div>
+        <div class="delta">▲ +847K last hour</div>
+      </div>
+      <div class="stat">
+        <div class="label">🎯 Active Markets</div>
+        <div class="value" id="stat-markets">23</div>
+        <div class="delta">▲ 4 resolving soon</div>
+      </div>
+      <div class="stat preds">
+        <div class="label">⚡ Bets (1h)</div>
+        <div class="value" id="stat-bets">1,847</div>
+        <div class="delta">▲ +214% vs avg</div>
+      </div>
+      <div class="stat top">
+        <div class="label">👑 Top Predictor</div>
+        <div class="value">Wh4leKing.eth</div>
+        <div class="delta">+2.41M this week</div>
+      </div>
+    </section>
+
+    <!-- ── MAIN GRID: FEATURED LEFT + MARKETS RIGHT ── -->
+    <section class="main-grid">
+
+      <!-- FEATURED MARKET -->
+      <div class="featured">
+        <div class="head">
+          <div>
+            <span class="tag">🔥 TRENDING · HIGHEST VOLUME</span>
+            <h2>Will Thornwood survive until dawn?</h2>
+            <div class="sub">Market resolves YES if Thornwood settlement has 5+ completed buildings standing at sunrise (Day 901, 06:00).</div>
+          </div>
+          <div class="countdown">
+            <div class="lbl">RESOLVES IN</div>
+            <div class="time" id="feat-timer">08:34</div>
+          </div>
+        </div>
+
+        <div class="chart">
+          <div class="axis">
+            <div class="h" style="top:20%"></div>
+            <div class="h mid" style="top:50%"></div>
+            <div class="h" style="top:80%"></div>
+          </div>
+          <canvas id="feat-chart"></canvas>
+          <div class="ylabel">YES % — last 30 min</div>
+          <div class="now" id="feat-now">67%</div>
+        </div>
+
+        <div class="ynbet">
+          <button class="ynbtn yes">
+            <div class="side">▲ YES</div>
+            <div class="odds" id="feat-yes">67%</div>
+            <div class="payout">Payout 1.49× on 1,000 $AC</div>
+          </button>
+          <button class="ynbtn no">
+            <div class="side">▼ NO</div>
+            <div class="odds" id="feat-no">33%</div>
+            <div class="payout">Payout 3.03× on 1,000 $AC</div>
+          </button>
+        </div>
+
+        <div class="feat-meta">
+          <div class="m">
+            <div class="k">POOL</div>
+            <div class="v gold">847,320 $AC</div>
+          </div>
+          <div class="m">
+            <div class="k">BETTORS</div>
+            <div class="v cyan">1,428</div>
+          </div>
+          <div class="m">
+            <div class="k">ORACLE</div>
+            <div class="v">AgentCraft On-chain</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- RIGHT COLUMN — market grid -->
+      <div class="market-col">
+        <div class="col-title">
+          ⚡ LIVE MARKETS
+          <span class="more">VIEW ALL 23 →</span>
+        </div>
+        <div class="market-grid">
+
+          <div class="mcard hot">
+            <div class="emoji">⚔️</div>
+            <div class="q">Aldric vs Grukk — who wins the next raid?</div>
+            <div class="bar"><div class="y" style="width:58%"></div><div class="n" style="width:42%"></div></div>
+            <div class="odds"><span class="y">ALDRIC 58%</span><span class="n">GRUKK 42%</span></div>
+            <div class="foot"><span class="vol">412K $AC</span><span class="time">2m 14s</span></div>
+          </div>
+
+          <div class="mcard">
+            <div class="emoji">🏰</div>
+            <div class="q">First settlement to reach 50 buildings?</div>
+            <div class="bar"><div class="y" style="width:71%"></div><div class="n" style="width:29%"></div></div>
+            <div class="odds"><span class="y">THORNWOOD 71%</span><span class="n">OTHER 29%</span></div>
+            <div class="foot"><span class="vol">298K $AC</span><span class="time">4h 12m</span></div>
+          </div>
+
+          <div class="mcard closing">
+            <div class="emoji">🐉</div>
+            <div class="q">Will the Dragon be slain before sunset?</div>
+            <div class="bar"><div class="y" style="width:43%"></div><div class="n" style="width:57%"></div></div>
+            <div class="odds"><span class="y">YES 43%</span><span class="n">NO 57%</span></div>
+            <div class="foot"><span class="vol">1.28M $AC</span><span class="time">00:47</span></div>
+          </div>
+
+          <div class="mcard hot">
+            <div class="emoji">💰</div>
+            <div class="q">Most gold gathered in next 10 minutes?</div>
+            <div class="bar"><div class="y" style="width:34%"></div><div class="n" style="width:66%"></div></div>
+            <div class="odds"><span class="y">ELVES 34%</span><span class="n">DWARVES 66%</span></div>
+            <div class="foot"><span class="vol">574K $AC</span><span class="time">9m 41s</span></div>
+          </div>
+
+          <div class="mcard">
+            <div class="emoji">☄️</div>
+            <div class="q">Will a meteor strike before dawn?</div>
+            <div class="bar"><div class="y" style="width:22%"></div><div class="n" style="width:78%"></div></div>
+            <div class="odds"><span class="y">YES 22%</span><span class="n">NO 78%</span></div>
+            <div class="foot"><span class="vol">185K $AC</span><span class="time">3h 28m</span></div>
+          </div>
+
+          <div class="mcard">
+            <div class="emoji">👑</div>
+            <div class="q">Will Bbb find the Crown this session?</div>
+            <div class="bar"><div class="y" style="width:14%"></div><div class="n" style="width:86%"></div></div>
+            <div class="odds"><span class="y">YES 14%</span><span class="n">NO 86%</span></div>
+            <div class="foot"><span class="vol">96K $AC</span><span class="time">2h 03m</span></div>
+          </div>
+
+        </div>
+      </div>
+
+    </section>
+
+    <!-- ── BOTTOM GRID: Leaderboard + Chaos Combo ── -->
+    <section class="bottom-grid">
+
+      <div class="leaderboard">
+        <h3>🏆 TOP PREDICTORS · THIS WEEK</h3>
+        <div class="lbrow r1">
+          <div class="rank">1</div>
+          <div>
+            <div class="name">Wh4leKing.eth</div>
+            <div class="streak">🔥 18-win streak · 94% hit rate</div>
+          </div>
+          <div class="pnl">+2,413,000</div>
+          <div class="rate">$AC</div>
+        </div>
+        <div class="lbrow r2">
+          <div class="rank">2</div>
+          <div>
+            <div class="name">OracleBro</div>
+            <div class="streak">🔥 11-win streak · 87% hit rate</div>
+          </div>
+          <div class="pnl">+1,682,000</div>
+          <div class="rate">$AC</div>
+        </div>
+        <div class="lbrow r3">
+          <div class="rank">3</div>
+          <div>
+            <div class="name">neon_degen</div>
+            <div class="streak">⚡ 7-win streak · 82% hit rate</div>
+          </div>
+          <div class="pnl">+1,124,500</div>
+          <div class="rate">$AC</div>
+        </div>
+        <div class="lbrow">
+          <div class="rank">4</div>
+          <div>
+            <div class="name">agentcraftbase</div>
+            <div class="streak">4-win streak · 78% hit rate</div>
+          </div>
+          <div class="pnl">+842,300</div>
+          <div class="rate">$AC</div>
+        </div>
+        <div class="lbrow">
+          <div class="rank">5</div>
+          <div>
+            <div class="name">Thornwood_Chad</div>
+            <div class="streak">6-win streak · 74% hit rate</div>
+          </div>
+          <div class="pnl">+611,900</div>
+          <div class="rate">$AC</div>
+        </div>
+      </div>
+
+      <div class="chaos-combo">
+        <h3>🔥 CHAOS COMBO</h3>
+        <p>Trigger a disaster — meteor, wildfire, dragon — then bet on the aftermath. Your chaos action unlocks a multiplier on any bet placed in the same 30-second window. Stack rewards by being the one who caused the carnage.</p>
+        <div class="combo-mult">
+          <div class="x">3.0×</div>
+          <div class="t">
+            <strong>Current combo multiplier</strong>
+            2 agents triggered chaos · window open for 00:14
+          </div>
+        </div>
+      </div>
+
+    </section>
+
+    <!-- ── LIVE BETS TICKER ── -->
+    <section class="ticker">
+      <div class="head">LIVE BETS · STREAMING FROM AGENTCRAFT</div>
+      <div class="stream">
+        <div class="item"><span class="who">0x7a…b2f</span><span class="act">bet</span><span class="amt">50,000 $AC</span><span class="act">on</span><span class="mk">THORNWOOD SURVIVES → YES</span><span class="up">▲</span></div>
+        <div class="item"><span class="who">neon_degen</span><span class="act">bet</span><span class="amt">120,000 $AC</span><span class="act">on</span><span class="mk">DRAGON SLAIN → NO</span></div>
+        <div class="item"><span class="who">Wh4leKing.eth</span><span class="act">bet</span><span class="amt">500,000 $AC</span><span class="act">on</span><span class="mk">ALDRIC BEATS GRUKK → YES</span><span class="up">▲</span></div>
+        <div class="item"><span class="who">0x1c…af0</span><span class="act">won</span><span class="amt">+38,400 $AC</span><span class="act">from</span><span class="mk">METEOR STRIKE → YES</span></div>
+        <div class="item"><span class="who">agentcraftbase</span><span class="act">bet</span><span class="amt">15,000 $AC</span><span class="act">on</span><span class="mk">DWARVES GATHER MOST GOLD</span></div>
+        <div class="item"><span class="who">OracleBro</span><span class="act">bet</span><span class="amt">75,000 $AC</span><span class="act">on</span><span class="mk">NEO-KYOTO FIRST BUILDING → YES</span><span class="up">▲</span></div>
+        <!-- Duplicate for seamless loop -->
+        <div class="item"><span class="who">0x7a…b2f</span><span class="act">bet</span><span class="amt">50,000 $AC</span><span class="act">on</span><span class="mk">THORNWOOD SURVIVES → YES</span><span class="up">▲</span></div>
+        <div class="item"><span class="who">neon_degen</span><span class="act">bet</span><span class="amt">120,000 $AC</span><span class="act">on</span><span class="mk">DRAGON SLAIN → NO</span></div>
+        <div class="item"><span class="who">Wh4leKing.eth</span><span class="act">bet</span><span class="amt">500,000 $AC</span><span class="act">on</span><span class="mk">ALDRIC BEATS GRUKK → YES</span><span class="up">▲</span></div>
+        <div class="item"><span class="who">0x1c…af0</span><span class="act">won</span><span class="amt">+38,400 $AC</span><span class="act">from</span><span class="mk">METEOR STRIKE → YES</span></div>
+        <div class="item"><span class="who">agentcraftbase</span><span class="act">bet</span><span class="amt">15,000 $AC</span><span class="act">on</span><span class="mk">DWARVES GATHER MOST GOLD</span></div>
+        <div class="item"><span class="who">OracleBro</span><span class="act">bet</span><span class="amt">75,000 $AC</span><span class="act">on</span><span class="mk">NEO-KYOTO FIRST BUILDING → YES</span><span class="up">▲</span></div>
+      </div>
+    </section>
+
+    <div class="footnote">AGENTCRAFT MARKETS · LEAKED PREVIEW · SHIPPING THIS WEEK · BET AT YOUR OWN RISK</div>
+
+  </main>
+
+</div>
+
+<script>
+'use strict';
+
+// ─── FEATURED CHART ─────────────────────────────────────────────
+// Draws the YES% price history as a glowing line graph with fill.
+(function(){
+  const cv = document.getElementById('feat-chart');
+  if (!cv) return;
+  const ctx = cv.getContext('2d');
+  let w = 0, h = 0;
+  function resize(){
+    const r = cv.getBoundingClientRect();
+    cv.width = Math.max(1, Math.floor(r.width));
+    cv.height = Math.max(1, Math.floor(r.height));
+    w = cv.width; h = cv.height;
+  }
+  resize();
+  window.addEventListener('resize', resize);
+
+  // Generate a realistic-looking history (60 points, drifting around 60-70%)
+  const history = [];
+  let val = 55;
+  for (let i = 0; i < 60; i++) {
+    val += (Math.random() - 0.5) * 6;
+    val = Math.max(35, Math.min(85, val));
+    history.push(val);
+  }
+  // Nudge the last point to 67 so it matches the displayed number
+  history[history.length - 1] = 67;
+
+  function draw(){
+    ctx.clearRect(0, 0, w, h);
+    // Fill area under the curve (green gradient)
+    ctx.beginPath();
+    ctx.moveTo(0, h);
+    for (let i = 0; i < history.length; i++) {
+      const x = (i / (history.length - 1)) * w;
+      const y = h - ((history[i] - 25) / 70) * h;
+      if (i === 0) ctx.lineTo(x, y);
+      else ctx.lineTo(x, y);
+    }
+    ctx.lineTo(w, h);
+    ctx.closePath();
+    const fill = ctx.createLinearGradient(0, 0, 0, h);
+    fill.addColorStop(0, 'rgba(68,255,136,0.35)');
+    fill.addColorStop(1, 'rgba(68,255,136,0)');
+    ctx.fillStyle = fill;
+    ctx.fill();
+    // Line stroke (bright green with glow)
+    ctx.beginPath();
+    for (let i = 0; i < history.length; i++) {
+      const x = (i / (history.length - 1)) * w;
+      const y = h - ((history[i] - 25) / 70) * h;
+      if (i === 0) ctx.moveTo(x, y);
+      else ctx.lineTo(x, y);
+    }
+    ctx.strokeStyle = '#44ff88';
+    ctx.lineWidth = 2;
+    ctx.shadowColor = '#44ff88';
+    ctx.shadowBlur = 10;
+    ctx.stroke();
+    ctx.shadowBlur = 0;
+    // Current-price dot (pulsing)
+    const lx = w - 1;
+    const ly = h - ((history[history.length - 1] - 25) / 70) * h;
+    const pulse = 0.4 + 0.3 * Math.sin(Date.now() * 0.004);
+    ctx.fillStyle = `rgba(68,255,136,${pulse})`;
+    ctx.beginPath();
+    ctx.arc(lx - 6, ly, 6, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.fillStyle = '#ffffff';
+    ctx.beginPath();
+    ctx.arc(lx - 6, ly, 2.5, 0, Math.PI * 2);
+    ctx.fill();
+  }
+
+  // Tick new values every 1.2s so the chart feels alive
+  function tick(){
+    const last = history[history.length - 1];
+    let next = last + (Math.random() - 0.5) * 3;
+    next = Math.max(40, Math.min(80, next));
+    history.push(next);
+    history.shift();
+    // Update displayed percentages
+    const yes = Math.round(next);
+    const no = 100 - yes;
+    const yesEl = document.getElementById('feat-yes');
+    const noEl = document.getElementById('feat-no');
+    const nowEl = document.getElementById('feat-now');
+    if (yesEl) yesEl.textContent = yes + '%';
+    if (noEl) noEl.textContent = no + '%';
+    if (nowEl) nowEl.textContent = yes + '%';
+  }
+  setInterval(tick, 1200);
+
+  function loop(){
+    draw();
+    requestAnimationFrame(loop);
+  }
+  loop();
+})();
+
+// ─── COUNTDOWN TIMER ────────────────────────────────────────────
+(function(){
+  const el = document.getElementById('feat-timer');
+  if (!el) return;
+  let remain = 8 * 60 + 34; // 8:34
+  function tick(){
+    remain = Math.max(0, remain - 1);
+    const m = String(Math.floor(remain / 60)).padStart(2, '0');
+    const s = String(remain % 60).padStart(2, '0');
+    el.textContent = m + ':' + s;
+    if (remain < 120) el.classList.add('warn');
+    if (remain === 0) remain = 8 * 60 + 34; // loop for demo
+  }
+  setInterval(tick, 1000);
+})();
+
+// ─── WALLET BALANCE FLICKER ─────────────────────────────────────
+(function(){
+  const el = document.getElementById('wallet-bal');
+  if (!el) return;
+  let v = 42150;
+  setInterval(() => {
+    v += Math.floor((Math.random() - 0.3) * 2000);
+    if (v < 10000) v = 42150;
+    el.textContent = v.toLocaleString('en-US') + ' $AC';
+  }, 3500);
+})();
+
+// ─── POT COUNTER (counts up) ────────────────────────────────────
+(function(){
+  const el = document.getElementById('stat-pot');
+  if (!el) return;
+  let v = 12.4;
+  setInterval(() => {
+    v += Math.random() * 0.05;
+    el.textContent = v.toFixed(1) + 'M';
+  }, 2200);
+})();
+
+// ─── BETS COUNTER (counts up) ───────────────────────────────────
+(function(){
+  const el = document.getElementById('stat-bets');
+  if (!el) return;
+  let v = 1847;
+  setInterval(() => {
+    v += Math.floor(Math.random() * 8) + 1;
+    el.textContent = v.toLocaleString('en-US');
+  }, 1500);
+})();
+
+// Starfield background
+(function(){
+  const cv = document.getElementById('stars');
+  const cx = cv.getContext('2d');
+  function resize(){ cv.width = window.innerWidth; cv.height = window.innerHeight; }
+  resize();
+  window.addEventListener('resize', resize);
+  const stars = [];
+  for (let i = 0; i < 80; i++) {
+    stars.push({
+      x: Math.random()*2000, y: Math.random()*1500,
+      r: Math.random()*1.3 + 0.4,
+      s: Math.random()*0.02 + 0.006,
+      o: Math.random()*6,
+      c: ['#f0c040','#a64dff','#4df3ff','#ff4dd2'][Math.floor(Math.random()*4)],
+    });
+  }
+  function draw(){
+    cx.clearRect(0,0,cv.width,cv.height);
+    for (const s of stars) {
+      const a = 0.2 + 0.5*Math.abs(Math.sin(Date.now()*s.s*0.001+s.o));
+      cx.fillStyle = s.c;
+      cx.globalAlpha = a;
+      cx.beginPath();
+      cx.arc(s.x % cv.width, s.y % cv.height, s.r, 0, Math.PI*2);
+      cx.fill();
+    }
+    cx.globalAlpha = 1;
+    requestAnimationFrame(draw);
+  }
+  draw();
+})();
+</script>
+</body>
+</html>
