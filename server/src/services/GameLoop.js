@@ -202,6 +202,28 @@ class GameLoop {
   }
 
   async _processAgent(agent, tick, events) {
+    // STAY AT BUILDING — highest priority. Must run BEFORE dragon/portal/loot
+    // overrides so mid-build agents actually finish what they're making.
+    // Without this, cyber agents get pulled to portals or dragons and never
+    // stand still long enough to advance the build bar.
+    if (agent.mood === 'building' && agent._buildingTarget) {
+      const bld = this.world.buildingsList.find(b => b.x === agent._buildingTarget.x && b.y === agent._buildingTarget.y);
+      if (bld && !bld.isComplete()) {
+        // Stay building — don't pick a new action. Ensure owner is at the site.
+        if (Math.abs(agent.x - bld.x) > 1 || Math.abs(agent.y - bld.y) > 1) {
+          // Walk one step toward the site
+          const dx = Math.sign(bld.x - agent.x);
+          const dy = Math.sign(bld.y - agent.y);
+          this._moveAgent(agent, dx, dy);
+          agent.message = 'Heading to build site...';
+        }
+        return;
+      }
+      // Building done or gone — clear target, fall through
+      agent._buildingTarget = null;
+      agent.mood = 'idle';
+    }
+
     // DRAGON COMBAT: if a dragon is alive and nearby, armed agents rush to
     // fight it. Unarmed agents will also fight but deal less damage.
     // Priority: dragon > loot > normal brain (dragons are existential threats).
@@ -252,18 +274,7 @@ class GameLoop {
       agent.mood = 'idle';
       agent.message = '';
     }
-
-    // STAY AT BUILDING: if agent is building, keep them there until it's done
-    if (agent.mood === 'building' && agent._buildingTarget) {
-      const bld = this.world.buildingsList.find(b => b.x === agent._buildingTarget.x && b.y === agent._buildingTarget.y);
-      if (bld && !bld.isComplete()) {
-        // Stay building — don't pick a new action
-        return;
-      }
-      // Building done or gone — clear target
-      agent._buildingTarget = null;
-      agent.mood = 'idle';
-    }
+    // (STAY AT BUILDING now runs at top of function)
 
     // Check if agent has a queued action from the API
     let decision;
@@ -280,16 +291,29 @@ class GameLoop {
           decision = { type: 'move', payload: { dx: Math.floor(Math.random()*3)-1, dy: Math.floor(Math.random()*3)-1 }, message: llmMessage };
         } else if (llmAction === 'build') {
           const brain = new AgentBrain(agent, this.world);
-          const buildDecision = brain._pickBuildingForFaction();
-          if (buildDecision) {
-            const tile = brain._findOwnedTileWithoutBuilding();
-            if (tile) {
-              decision = { type: 'build', payload: { building: buildDecision, x: tile.x, y: tile.y }, message: llmMessage };
+          // CYBER agents use cyber build logic (different catalog + site finder)
+          if (agent.currentWorld === 'cyber') {
+            // Route through the cyber branch of _tryBuild
+            brain._canBuild = true;
+            const cyberDecision = brain._tryBuild();
+            if (cyberDecision) {
+              decision = cyberDecision;
+              if (llmMessage) decision.message = llmMessage;
             } else {
-              decision = { type: 'claim', payload: brain._findNearbyUnclaimed(8) || { x: agent.x+1, y: agent.y }, message: llmMessage };
+              decision = { type: 'idle', payload: {}, message: llmMessage };
             }
           } else {
-            decision = { type: 'idle', payload: {}, message: llmMessage };
+            const buildDecision = brain._pickBuildingForFaction();
+            if (buildDecision) {
+              const tile = brain._findOwnedTileWithoutBuilding();
+              if (tile) {
+                decision = { type: 'build', payload: { building: buildDecision, x: tile.x, y: tile.y }, message: llmMessage };
+              } else {
+                decision = { type: 'claim', payload: brain._findNearbyUnclaimed(8) || { x: agent.x+1, y: agent.y }, message: llmMessage };
+              }
+            } else {
+              decision = { type: 'idle', payload: {}, message: llmMessage };
+            }
           }
         } else if (llmAction === 'explore') {
           decision = { type: 'move', payload: { dx: Math.floor(Math.random()*5)-2, dy: Math.floor(Math.random()*5)-2 }, message: llmMessage };
