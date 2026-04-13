@@ -555,10 +555,20 @@ class GameLoop {
     if (!this.world._dirtyTiles) this.world._dirtyTiles = new Set();
     this.world._dirtyTiles.add(tileId);
 
+    // Snap the builder onto the build site so construction begins immediately.
+    // Without this, cyber agents walk to random spots and leave their building
+    // orphaned — progress can't advance because the owner isn't within 1 tile.
+    // Grassland buildings also need this occasionally (e.g. if the picked site
+    // is a few tiles away from the current agent position).
+    agent.x = x;
+    agent.y = y;
     agent.mood = 'building';
     agent.current_action = { type: 'build', building: buildingType, tileId };
     agent.idle_ticks = 0;
     agent._lastBuildTick = tick; // cooldown tracking for AgentBrain
+    // Ensure _buildingTarget is set for the STAY AT BUILDING check so they
+    // don't wander off mid-construction.
+    agent._buildingTarget = { x, y };
     agent._buildingTarget = { x, y }; // stay at building until complete
     agent.x = x; agent.y = y + 1; // position agent in front of (below) building so they're visible
     agent.message = decision.message || '';

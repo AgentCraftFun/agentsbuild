@@ -983,28 +983,27 @@ function getCyberDetails(sx2, sy2, ex2, ey2) {
       const px = x * TS + (h % TS);
       const py = y * TS + ((h >> 8) % TS);
 
+      // Detail density MUST be sparse — too many = hectic zoom-out.
+      // These moduli match grassland detail density roughly.
       if (bName === 'cyber_grass') {
-        if ((h >> 4) % 5 === 0) D.push({ t: 'neon_tuft', x: px, y: py });
-        if ((h >> 12) % 17 === 0) D.push({ t: 'neon_palm', x: px, y: py, s: 0.85 });
-        if ((h >> 20) % 23 === 0) D.push({ t: 'holo_flower', x: px, y: py });
+        if ((h >> 4) % 12 === 0) D.push({ t: 'neon_tuft', x: px, y: py });
+        if ((h >> 12) % 40 === 0) D.push({ t: 'neon_palm', x: px, y: py, s: 0.85 });
+        if ((h >> 20) % 60 === 0) D.push({ t: 'holo_flower', x: px, y: py });
       } else if (bName === 'neon_forest') {
-        if ((h >> 4) % 4 === 0) D.push({ t: 'neon_palm', x: px, y: py, s: 1.0 });
-        if ((h >> 12) % 7 === 0) D.push({ t: 'neon_tuft', x: px, y: py });
+        if ((h >> 4) % 5 === 0) D.push({ t: 'neon_palm', x: px, y: py, s: 1.0 });
       } else if (bName === 'dense_neon') {
-        if ((h >> 4) % 3 === 0) D.push({ t: 'neon_palm', x: px, y: py, s: 1.15 });
-        if ((h >> 12) % 9 === 0) D.push({ t: 'cyber_fungus', x: px, y: py });
+        if ((h >> 4) % 4 === 0) D.push({ t: 'neon_palm', x: px, y: py, s: 1.15 });
+        if ((h >> 12) % 20 === 0) D.push({ t: 'cyber_fungus', x: px, y: py });
       } else if (bName === 'circuit_hills') {
-        if ((h >> 4) % 5 === 0) D.push({ t: 'data_spire', x: px, y: py, s: 0.85 });
-        if ((h >> 12) % 8 === 0) D.push({ t: 'tech_cube', x: px, y: py });
+        if ((h >> 4) % 10 === 0) D.push({ t: 'data_spire', x: px, y: py, s: 0.85 });
       } else if (bName === 'data_spires') {
-        if ((h >> 4) % 4 === 0) D.push({ t: 'data_spire', x: px, y: py, s: 1.3 });
-        if ((h >> 12) % 6 === 0) D.push({ t: 'tech_cube', x: px, y: py });
+        if ((h >> 4) % 6 === 0) D.push({ t: 'data_spire', x: px, y: py, s: 1.3 });
       } else if (bName === 'chrome_sand') {
-        if ((h >> 4) % 6 === 0) D.push({ t: 'chrome_shard', x: px, y: py });
+        if ((h >> 4) % 15 === 0) D.push({ t: 'chrome_shard', x: px, y: py });
       } else if (bName === 'core_vein') {
-        if ((h >> 4) % 2 === 0) D.push({ t: 'core_crystal', x: px, y: py });
+        if ((h >> 4) % 4 === 0) D.push({ t: 'core_crystal', x: px, y: py });
       } else if (bName === 'chrome_peaks') {
-        if ((h >> 4) % 4 === 0) D.push({ t: 'chrome_shard', x: px, y: py });
+        if ((h >> 4) % 12 === 0) D.push({ t: 'chrome_shard', x: px, y: py });
       }
     }
   }
