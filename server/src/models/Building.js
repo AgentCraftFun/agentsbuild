@@ -62,9 +62,20 @@ class Building {
     cottage:          { faction: 'human', name: 'Cottage',          width: 1, height: 1, tall: true,  workCost: 5,   tier: 1, yields: { food: 1, wood: 0, stone: 0, gold: 0 }, description: 'Cozy small home' },
     storehouse:       { faction: 'dwarf', name: 'Storehouse',       width: 2, height: 1, tall: false, workCost: 7,   tier: 1, yields: { food: 1, wood: 1, stone: 1, gold: 0 }, description: 'Keeps goods safe' },
     training_ground:  { faction: 'orc',   name: 'Training Ground',  width: 2, height: 2, tall: false, workCost: 10,  tier: 1, yields: { food: 0, wood: 0, stone: 0, gold: 1 }, description: 'Warriors practice here' },
+
+    // === CYBERPUNK BUILDINGS (Neo-Kyoto biome) ===
+    // These can only be built when an agent's currentWorld === 'cyber'.
+    // The 'world' field on the Building instance distinguishes which
+    // biome a building lives in. faction stays the agent's original.
+    data_center:      { world: 'cyber', name: 'Data Center',      width: 2, height: 2, tall: true,  workCost: 12,  tier: 2, yields: { food: 0, wood: 0, stone: 0, gold: 4 }, description: 'Mines digital currency from the grid' },
+    neon_bar:         { world: 'cyber', name: 'Neon Noodle Bar',  width: 2, height: 1, tall: true,  workCost: 6,   tier: 1, yields: { food: 4, wood: 0, stone: 0, gold: 1 }, description: 'Synthetic ramen for the masses' },
+    server_farm:      { world: 'cyber', name: 'Server Farm',      width: 2, height: 2, tall: false, workCost: 15,  tier: 2, yields: { food: 0, wood: 0, stone: 0, gold: 5 }, description: 'Racks of humming servers' },
+    hover_garage:     { world: 'cyber', name: 'Hover Garage',     width: 2, height: 1, tall: false, workCost: 8,   tier: 1, yields: { food: 0, wood: 0, stone: 1, gold: 2 }, description: 'Vehicle bay for hovercraft' },
+    holo_arcade:      { world: 'cyber', name: 'Holo Arcade',      width: 2, height: 2, tall: true,  workCost: 10,  tier: 1, yields: { food: 0, wood: 0, stone: 0, gold: 3 }, description: 'Synthwave entertainment dome' },
+    mega_tower:       { world: 'cyber', name: 'Mega Tower',       width: 3, height: 3, tall: true,  workCost: 60,  tier: 3, yields: { food: 0, wood: 0, stone: 0, gold: 8 }, description: 'A corporate skyscraper anchoring the district' },
   };
 
-  constructor({ type, x, y, owner, progress = 0, startTick = 0, burning = false, hp = 1.0 }) {
+  constructor({ type, x, y, owner, progress = 0, startTick = 0, burning = false, hp = 1.0, world }) {
     const info = Building.CATALOG[type];
     if (!info) throw new Error(`Unknown building type: ${type}`);
 
@@ -75,7 +86,9 @@ class Building {
     this.progress = progress;
     this.startTick = startTick;
     this.name = info.name;
-    this.faction = info.faction;
+    // Cyber buildings are world-scoped, not faction-scoped — keep the
+    // builder's faction on the instance instead of inheriting from catalog
+    this.faction = info.faction || 'cyber';
     this.width = info.width;
     this.height = info.height;
     this.tall = info.tall;
@@ -84,6 +97,9 @@ class Building {
     this.yields = { ...info.yields };
     this.burning = burning;
     this.hp = hp; // 1.0 = full health, 0 = destroyed
+    // Which biome this building lives in. Default 'grassland' for backwards
+    // compat with all existing Day 500 buildings.
+    this.world = (world === 'cyber' || info.world === 'cyber') ? 'cyber' : 'grassland';
   }
 
   isComplete() {
@@ -120,6 +136,7 @@ class Building {
       complete: this.isComplete(),
       burning: this.burning || false,
       hp: this.hp != null ? this.hp : 1.0,
+      world: this.world || 'grassland',
     };
   }
 

@@ -32,6 +32,7 @@ class Agent {
     buffs = [],
     perks = {},
     equipment = {},
+    currentWorld = 'grassland',
   }) {
     if (!Agent.FACTIONS.includes(faction)) {
       throw new Error(`Invalid faction: ${faction}. Must be one of: ${Agent.FACTIONS.join(', ')}`);
@@ -63,6 +64,10 @@ class Agent {
     this.perks = perks && typeof perks === 'object' ? { ...perks } : {};
     // Phase 3: equipment slots — {weapon: 'sword'|'bow'|'spear'|null, armor: 'leather'|'iron'|'shield'|null}
     this.equipment = equipment && typeof equipment === 'object' ? { ...equipment } : {};
+    // Cyber Phase 2: which world the agent is currently in
+    //   'grassland' (default) — the original Day 1 world
+    //   'cyber' — Neo-Kyoto, reachable only by walking through an active portal
+    this.currentWorld = (currentWorld === 'cyber') ? 'cyber' : 'grassland';
   }
 
   toJSON() {
@@ -84,6 +89,7 @@ class Agent {
       buffs: Array.isArray(this.buffs) ? this.buffs.map(b => ({ type: b.type, expiresTick: b.expiresTick })) : [],
       perks: this.perks && typeof this.perks === 'object' ? { ...this.perks } : {},
       equipment: this.equipment && typeof this.equipment === 'object' ? { ...this.equipment } : {},
+      currentWorld: this.currentWorld || 'grassland',
     };
     if (this._raidTarget) data._raidTarget = this._raidTarget;
     return data;

@@ -51,6 +51,8 @@ function saveWorldState(ws) {
         perks: (agent.perks && typeof agent.perks === 'object') ? agent.perks : {},
         // Phase 3: equipment (weapon/armor slots)
         equipment: (agent.equipment && typeof agent.equipment === 'object') ? agent.equipment : {},
+        // Cyber Phase 2: which world the agent is in
+        currentWorld: agent.currentWorld || 'grassland',
       });
     }
     const buildings = ws.buildingsList.map(b => b.toJSON());
@@ -105,7 +107,8 @@ function loadWorldState() {
           message: ad.message || '', idle_ticks: ad.idle_ticks || 0, last_action_tick: ad.last_action_tick || 0,
           buffs: Array.isArray(ad.buffs) ? ad.buffs : [],
           perks: (ad.perks && typeof ad.perks === 'object') ? ad.perks : {},
-          equipment: (ad.equipment && typeof ad.equipment === 'object') ? ad.equipment : {} });
+          equipment: (ad.equipment && typeof ad.equipment === 'object') ? ad.equipment : {},
+          currentWorld: ad.currentWorld || 'grassland' });
         agent._settlementId = ad._settlementId || 0;
         ws.agents.set(agent.id, agent);
       } catch (e) { console.warn(`[Load] Agent ${ad.name} failed:`, e.message); }
@@ -114,7 +117,7 @@ function loadWorldState() {
     // Restore buildings and re-link to tiles/agents
     for (const bd of (state.buildings || [])) {
       try {
-        const building = new Building({ type: bd.type, x: bd.x, y: bd.y, owner: bd.owner, progress: bd.progress || 0, startTick: bd.startTick || 0, burning: bd.burning || false, hp: bd.hp != null ? bd.hp : 1.0 });
+        const building = new Building({ type: bd.type, x: bd.x, y: bd.y, owner: bd.owner, progress: bd.progress || 0, startTick: bd.startTick || 0, burning: bd.burning || false, hp: bd.hp != null ? bd.hp : 1.0, world: bd.world || 'grassland' });
         if (bd.complete || bd.progress >= 1) building.progress = 1;
         ws.buildingsList.push(building);
         const tileId = `${bd.x},${bd.y}`;
