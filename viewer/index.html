@@ -2922,6 +2922,8 @@ function drawTrainingGround(c,bx,by,bw,bh,fr){
 
 function drawBuilding(c,b,bx,by,bw,bh,fr){
   if(!isFinite(bx)||!isFinite(by)||!isFinite(bw)||!isFinite(bh)||bw<=0||bh<=0)return;
+  // CYBER buildings get their own pixel-art renderer
+  if(b.world==='cyber'){drawCyberBuilding(c,b,bx,by,bw,bh,fr);return}
   const p=b.progress!=null?b.progress:1;
   const type=b.type||'';
   // AI-generated custom building
@@ -2983,9 +2985,238 @@ function drawBuilding(c,b,bx,by,bw,bh,fr){
   drawBuildingPixelArt(c,b,bx,by,bw,bh,fr);
 }
 
+// ── CYBERPUNK BUILDING RENDERER ──────────────────────────────────
+// Pixel-art for the 6 cyber building types. Common visual language:
+// - Dark base (#0a0418 → #1a0a30)
+// - Magenta/cyan/yellow neon accents
+// - Flickering window grids
+// - Glowing rooftop signs
+// - Pink ground glow halo
+// During construction, fade in from the ground up.
+function drawCyberBuilding(c, b, bx, by, bw, bh, fr) {
+  const p = b.progress != null ? b.progress : 1;
+  const type = b.type || '';
+  // ── Construction phase: fade in bottom-up ──
+  if (p < 0.95) {
+    // Scaffolding base
+    c.fillStyle = '#1a0a28';
+    c.fillRect(bx - 2, by + bh - 4, bw + 4, 6);
+    if (p > 0.05) {
+      const revealH = (bh + 8) * Math.min(1, p / 0.95);
+      const clipTop = by + bh - revealH + 4;
+      c.save();
+      c.beginPath(); c.rect(bx - 4, clipTop, bw + 8, revealH + 12); c.clip();
+      drawCyberBuildingComplete(c, b, bx, by, bw, bh, fr, type);
+      c.restore();
+    }
+    // Floating "BUILDING..." holo text + scan line
+    if (p < 0.85) {
+      c.font = 'bold 7px Courier New';
+      c.textAlign = 'center';
+      c.fillStyle = 'rgba(77,243,255,' + (0.6 + Math.sin(fr * 0.2) * 0.3) + ')';
+      c.fillText('BUILDING ' + Math.floor(p * 100) + '%', bx + bw / 2, by - 4);
+      c.textAlign = 'start';
+    }
+    return;
+  }
+  drawCyberBuildingComplete(c, b, bx, by, bw, bh, fr, type);
+}
+
+function drawCyberBuildingComplete(c, b, bx, by, bw, bh, fr, type) {
+  // Pink ground glow halo
+  const glowR = Math.max(bw, bh) * 0.7;
+  const gg = c.createRadialGradient(bx + bw / 2, by + bh, 4, bx + bw / 2, by + bh, glowR);
+  gg.addColorStop(0, 'rgba(255,77,210,0.18)');
+  gg.addColorStop(1, 'rgba(255,77,210,0)');
+  c.fillStyle = gg;
+  c.fillRect(bx + bw / 2 - glowR, by + bh - glowR, glowR * 2, glowR * 2);
+
+  // Drop shadow
+  c.fillStyle = 'rgba(0,0,0,0.4)';
+  c.fillRect(bx + 2, by + bh - 2, bw, 4);
+
+  // Per-type rendering
+  if (type === 'data_center') {
+    // Blocky tower with pulsing data lines
+    c.fillStyle = '#0c0420';
+    c.fillRect(bx, by, bw, bh);
+    c.fillStyle = '#1a0a30';
+    c.fillRect(bx + 2, by + 2, bw - 4, bh - 4);
+    // Server rack windows (cyan)
+    for (let dy = 4; dy < bh - 4; dy += 5) {
+      for (let dx = 3; dx < bw - 3; dx += 4) {
+        const flick = ((fr + dx * 7 + dy * 11) % 60) > 6;
+        c.fillStyle = flick ? 'rgba(77,243,255,0.85)' : 'rgba(77,243,255,0.3)';
+        c.fillRect(bx + dx, by + dy, 2, 2);
+      }
+    }
+    // Roof antenna
+    c.fillStyle = '#0a0418'; c.fillRect(bx + bw / 2 - 1, by - 6, 2, 6);
+    if ((fr + bx) % 20 < 10) { c.fillStyle = '#ff4dd2'; c.fillRect(bx + bw / 2 - 1, by - 8, 3, 2); }
+    // Magenta outline
+    c.strokeStyle = 'rgba(255,77,210,0.7)'; c.lineWidth = 1; c.strokeRect(bx + 0.5, by + 0.5, bw - 1, bh - 1);
+  }
+
+  else if (type === 'neon_bar') {
+    // Wide neon noodle bar — pink/orange facade
+    c.fillStyle = '#1a0820';
+    c.fillRect(bx, by + 2, bw, bh - 2);
+    // Roof
+    c.fillStyle = '#2a1438';
+    c.fillRect(bx - 1, by, bw + 2, 4);
+    // Big neon sign
+    const signFlick = ((fr + bx) % 45) > 4;
+    c.fillStyle = signFlick ? '#ff4dd2' : '#5a1828';
+    c.fillRect(bx + 2, by + 4, bw - 4, 4);
+    c.fillStyle = signFlick ? '#ffaaff' : '#3a1018';
+    c.fillRect(bx + 3, by + 5, bw - 6, 1);
+    // Window lights
+    c.fillStyle = 'rgba(255,200,80,0.75)';
+    for (let dx = 3; dx < bw - 3; dx += 5) {
+      c.fillRect(bx + dx, by + 11, 2, 3);
+    }
+    // Door
+    c.fillStyle = '#0a0418'; c.fillRect(bx + bw / 2 - 2, by + bh - 6, 4, 6);
+    // Cyan trim
+    c.fillStyle = 'rgba(77,243,255,0.7)';
+    c.fillRect(bx, by + bh - 1, bw, 1);
+  }
+
+  else if (type === 'server_farm') {
+    // Squat industrial — dark with cyan vents
+    c.fillStyle = '#0a0420';
+    c.fillRect(bx, by, bw, bh);
+    // Roof vents
+    c.fillStyle = '#1a0a30';
+    for (let dx = 2; dx < bw - 2; dx += 4) {
+      c.fillRect(bx + dx, by + 2, 3, 3);
+    }
+    // Glowing vents (heat exhaust)
+    c.fillStyle = 'rgba(77,243,255,0.6)';
+    if (fr % 20 < 10) {
+      for (let dx = 2; dx < bw - 2; dx += 4) {
+        c.fillRect(bx + dx + 1, by + 2, 1, 1);
+      }
+    }
+    // Big body
+    c.fillStyle = '#140828';
+    c.fillRect(bx + 2, by + 6, bw - 4, bh - 8);
+    // Small cyan window grid
+    c.fillStyle = 'rgba(77,243,255,0.7)';
+    for (let dy = 8; dy < bh - 4; dy += 4) {
+      for (let dx = 4; dx < bw - 4; dx += 4) {
+        c.fillRect(bx + dx, by + dy, 2, 1);
+      }
+    }
+    // Magenta outline
+    c.strokeStyle = 'rgba(255,77,210,0.6)'; c.lineWidth = 1;
+    c.strokeRect(bx + 0.5, by + 0.5, bw - 1, bh - 1);
+  }
+
+  else if (type === 'hover_garage') {
+    // Low garage with bay door
+    c.fillStyle = '#1a0a28';
+    c.fillRect(bx, by + 2, bw, bh - 2);
+    // Roof slope
+    c.fillStyle = '#2a1438';
+    c.fillRect(bx, by, bw, 3);
+    // Big bay door
+    c.fillStyle = '#0a0418';
+    c.fillRect(bx + 3, by + 6, bw - 6, bh - 8);
+    c.strokeStyle = '#ff4dd2'; c.lineWidth = 1;
+    c.strokeRect(bx + 3, by + 6, bw - 6, bh - 8);
+    // Door panel lines
+    c.fillStyle = 'rgba(255,77,210,0.4)';
+    for (let dy = 8; dy < bh - 4; dy += 3) {
+      c.fillRect(bx + 4, by + dy, bw - 8, 1);
+    }
+    // GARAGE sign
+    c.fillStyle = 'rgba(77,243,255,0.8)';
+    c.font = 'bold 5px Courier New'; c.textAlign = 'center';
+    c.fillText('HOVER', bx + bw / 2, by + 4);
+    c.textAlign = 'start';
+  }
+
+  else if (type === 'holo_arcade') {
+    // Domed arcade with rotating hologram
+    c.fillStyle = '#0a0418';
+    c.fillRect(bx, by + 4, bw, bh - 4);
+    // Dome roof
+    c.fillStyle = '#1a0a30';
+    c.beginPath();
+    c.ellipse(bx + bw / 2, by + 4, bw / 2, 6, 0, Math.PI, Math.PI * 2);
+    c.fill();
+    // Hologram projection on dome (cyan)
+    const phase = Math.sin(fr * 0.1) * 0.5 + 0.5;
+    c.fillStyle = 'rgba(77,243,255,' + (0.4 + phase * 0.4) + ')';
+    c.fillRect(bx + bw / 2 - 1, by - 4, 2, 8);
+    c.fillStyle = 'rgba(255,77,210,' + (0.5 + phase * 0.4) + ')';
+    c.fillRect(bx + bw / 2 - 3, by - 2, 6, 2);
+    // Pink window strip
+    c.fillStyle = 'rgba(255,77,210,0.7)';
+    c.fillRect(bx + 2, by + bh - 8, bw - 4, 3);
+    // Cyan accent strip
+    c.fillStyle = 'rgba(77,243,255,0.6)';
+    c.fillRect(bx + 2, by + bh - 4, bw - 4, 1);
+    // Door
+    c.fillStyle = '#1a0a30';
+    c.fillRect(bx + bw / 2 - 2, by + bh - 4, 4, 4);
+  }
+
+  else if (type === 'mega_tower') {
+    // Tall corporate skyscraper
+    c.fillStyle = '#0a0418';
+    c.fillRect(bx, by, bw, bh);
+    // Dense window grid
+    for (let dy = 4; dy < bh - 4; dy += 4) {
+      for (let dx = 3; dx < bw - 3; dx += 4) {
+        const wh = ((bx * 7 + dx * 13 + by * 11 + dy * 17) | 0);
+        if ((wh + Math.floor(fr / 90)) % 7 === 0) continue;
+        const col = (wh % 4 === 0) ? 'rgba(77,243,255,0.75)'
+                  : (wh % 4 === 1) ? 'rgba(255,200,80,0.7)'
+                  : (wh % 4 === 2) ? 'rgba(255,77,210,0.7)'
+                                   : 'rgba(170,255,77,0.6)';
+        c.fillStyle = col;
+        c.fillRect(bx + dx, by + dy, 2, 2);
+      }
+    }
+    // Dual-tone vertical stripes
+    c.fillStyle = 'rgba(255,77,210,0.5)';
+    c.fillRect(bx, by, 1, bh);
+    c.fillRect(bx + bw - 1, by, 1, bh);
+    c.fillStyle = 'rgba(77,243,255,0.5)';
+    c.fillRect(bx + bw / 2 - 1, by, 2, bh);
+    // Roof spire
+    c.fillStyle = '#0a0418';
+    c.fillRect(bx + bw / 2 - 1, by - 10, 2, 10);
+    c.fillStyle = '#1a0a30';
+    c.fillRect(bx + bw / 2 - 3, by - 4, 6, 2);
+    // Blinking magenta beacon
+    if ((fr + bx) % 24 < 12) {
+      c.fillStyle = '#ff4dd2';
+      c.fillRect(bx + bw / 2 - 1, by - 12, 2, 2);
+    }
+    // Big company logo on facade
+    c.font = 'bold 6px Courier New'; c.textAlign = 'center';
+    c.fillStyle = 'rgba(255,200,80,0.85)';
+    c.fillText('CORP', bx + bw / 2, by + 14);
+    c.textAlign = 'start';
+  }
+
+  else {
+    // Unknown cyber type — generic dark box
+    c.fillStyle = '#0a0418';
+    c.fillRect(bx, by, bw, bh);
+    c.strokeStyle = 'rgba(255,77,210,0.6)'; c.lineWidth = 1;
+    c.strokeRect(bx + 0.5, by + 0.5, bw - 1, bh - 1);
+  }
+}
+
 // Environmental props drawn around completed buildings
 function drawBuildingProps(c,b,bx,by,bw,bh,fr){
   if(!b.complete&&(b.progress==null||b.progress<0.95))return;
+  // Cyber buildings don't get grassland props (no flowers/grass tufts)
+  if(b.world==='cyber')return;
   const h=tileHash(b.x||0,b.y||0);
   // Each building gets 0-3 props based on hash — deterministic per building
   const propCount=h%4;
@@ -5658,25 +5889,34 @@ for(const t of S.tiles){if(t.x<sx||t.x>=ex||t.y<sy||t.y>=ey)continue;if(t.owner)
 // Show only the cyberpunk terrain + cyber details (already drawn above).
 const _hideEntities = (viewMode === 'cyber');
 const renderItems=[];
-// Standing details with proper sort keys (bottom/ground contact point)
+// Standing details with proper sort keys (bottom/ground contact point).
+// Skip grassland-themed details (trees/rocks/etc.) in cyber view — those
+// are replaced by cyberpunk details (palms/spires/lamps) drawn earlier.
 const treeLikeTypes=new Set(['deciduous','oak','pine','birch','deadtree','willow','fruittree']);
+if(viewMode!=='cyber')
 for(const d of details){
   if(groundTypes.has(d.t))continue;
   // Sort by ground contact: trees sort by trunk base, others by bottom
   const sortOffset=treeLikeTypes.has(d.t)?TS+4:TS;// trees sort slightly further back
   renderItems.push({type:'detail',d,sortY:d.y+sortOffset});
 }
-// Buildings
+// Buildings — filter by world so only this view's buildings render
 const sortedBuildings=[...S.buildings];
 for(const b of sortedBuildings){
   if(b.x+(b.width||1)<sx||b.x>=ex||b.y+(b.height||1)<sy||b.y>=ey)continue;
+  // World filter: undefined defaults to grassland for backwards compat
+  const bWorld=b.world||'grassland';
+  if(bWorld!==viewMode)continue;
   // Sort by building footprint bottom edge (tile-based), not visual pixel height
   const footprintBottom=(b.y+(b.height||1))*ts;
   renderItems.push({type:'building',b,sortY:footprintBottom});
 }
-// Agents — compute animation state
+// Agents — compute animation state. Filter by currentWorld so each
+// view only shows agents that belong to that biome.
 const agentRenderData=[];
 for(const a of S.agents){
+  const aWorld=a.currentWorld||'grassland';
+  if(aWorld!==viewMode)continue;
   const v=agentVisual.get(a.id);
   const vx=v?v.x*WW:a.x,vy=v?v.y*WH:a.y;
   if(vx<sx-2||vx>=ex+2||vy<sy-2||vy>=ey+2)continue;
@@ -5745,11 +5985,9 @@ for(const item of renderItems){
   // Tree/rock shadows are baked into drawDeciduous etc — no extra pass needed
 }
 
-// In CYBER MODE: clear renderItems so PASS 2 below renders nothing
-// (no agents, no buildings, no details, no animals — empty cyber world)
-if(_hideEntities){renderItems.length=0}
-
 // PASS 2: Draw all items in Y-sorted order
+// (renderItems was already filtered by world above — cyber view only
+// contains cyber buildings/agents, grassland view only contains grassland)
 for(const item of renderItems){
   if(item.type==='detail'){
     drawDetail(ctx,item.d,frame);
@@ -7511,6 +7749,15 @@ function handleChaosEvent(ev){
       // already fires its own animation. paid_action is just the banner
       // crediting the payer, shown with a prominent style.
       showDramaBanner('💰 '+ev.message); break;
+    // ── PORTALS ──
+    case 'portal_active':
+      showDramaBanner('🌌🌌🌌 '+ev.message+' 🌌🌌🌌');
+      if(typeof panToWorld==='function'&&ev.x!=null) panToWorld(ev.x,ev.y,1.8,60);
+      screenShake=Math.max(screenShake,30);
+      break;
+    case 'portal_traversal':
+      showDramaBanner('✨ '+ev.message);
+      break;
     // ── WORLD BOSS: DRAGON ──
     case 'dragon_spawn':
       showDramaBanner('🐉🐉🐉 '+ev.message+' 🐉🐉🐉');
