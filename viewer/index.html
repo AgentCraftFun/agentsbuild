@@ -641,59 +641,167 @@ function renderTBuf(){
 // cyber via viewMode. Agents/buildings still only exist in grassland.
 // ══════════════════════════════════════════════════════════════════
 
-// Cyber biome ID → [base, dark variant] color pairs
-const CYBER_BC = {
-  data_pool:    ['#081228','#06102a'],  // coolant pools (was deep_water)
-  neon_flow:    ['#0e2548','#0b1f3e'],  // energy streams (was shallow_water/river)
-  rust_sand:    ['#2a1828','#251525'],  // wasteland (was sand)
-  neon_grass:   ['#1a2a18','#152216'],  // dark cyberpunk "grass" with magenta flecks
-  neon_district:['#0e0820','#0a0418'],  // dense neon zone (was forest)
-  cyber_core:   ['#140820','#100418'],  // deep cyber district (was dense_forest)
-  cyber_hills:  ['#201830','#1a1428'],  // circuit-etched hills
-  megablock:    ['#2a2038','#241a32'],  // megastructure foundations (was mountain)
-  chrome_snow:  ['#c8d0e8','#c0c8e0'],  // chrome/glass rooftops (was snow)
-  gold_data:    ['#c8a840','#a88830'],  // gold data vault
+// Cyber tile IDs (NOT the same as grassland — this is its own tile system).
+// Each ID maps to a rendering style in renderCyberBuf().
+const CYBER_TILE = {
+  STREET:      0,   // Dark asphalt road
+  SIDEWALK:    1,   // Slightly lighter, with circuit grid
+  AVENUE:      2,   // Wider main street with bright neon center line
+  AVENUE_SW:   3,   // Sidewalk along an avenue (brighter)
+  PLAZA:       4,   // Major intersection plaza — bright neon tiles
+  BLOCK_DARK:  5,   // Megablock interior — very dark, building footprint
+  BLOCK_NEON:  6,   // Block with active neon facade
+  BLOCK_DENSE: 7,   // Skyscraper district interior
+  PARK:        8,   // Cyber park (dark with neon nodes)
+  COOLANT:     9,   // Coolant/pool tile (deep navy + cyan shimmer)
+  COOLANT_EDGE:10,  // Pool edge with chrome rim
+  ROOFTOP:     11,  // Chrome rooftop on tall buildings
+  RUST:        12,  // Rust wasteland (corner of map)
 };
-// Cyber biome name lookup by ID — MUST match grassland BL indices so
-// the Uint8Array can be reused between modes
-const CYBER_BL = ['data_pool','neon_flow','rust_sand','neon_grass','neon_district','cyber_core','cyber_hills','megablock','chrome_snow','gold_data','neon_flow'];
 
 let cyberTiles = null, cyberCanvas = null;
 
-// Generate the cyberpunk tile grid. Uses the SAME noise function + seed as
-// grassland so the overall topology stays consistent — the world layout is
-// the same, just re-skinned. Plus we add a grid of neon streets on top.
+// Generate the cyberpunk city grid from scratch — NOT noise-based.
+// Layout: regular street grid forming megablocks, plazas at major
+// intersections, a few coolant pools as parks, rust strips at edges.
 function genCyberTerrain() {
   cyberTiles = new Uint8Array(WW * WH);
-  // Same fBm as grassland so the landmass/water shapes match
-  for (let y = 0; y < WH; y++) {
-    for (let x = 0; x < WW; x++) {
-      const n = fbm(x * 0.02, y * 0.02, 6, 2, 0.5, WSEED);
-      let bi = 9;
-      for (const t of BT) { if (n < t.m) { bi = BL.indexOf(t.b); break; } }
-      cyberTiles[y * WW + x] = bi;
-    }
-  }
-  // Same rivers become "neon flows" via biome ID 10 which maps to neon_flow
-  for (let y = 0; y < WH; y++) {
-    const rx = Math.floor(WW * 0.45 + Math.sin(y * 0.08) * 6);
-    for (let dx = -1; dx <= 1; dx++) {
-      const xx = rx + dx;
-      if (xx >= 0 && xx < WW) cyberTiles[y * WW + xx] = 10;
-    }
-  }
+  // Default: everything starts as block interior
+  for (let i = 0; i < WW * WH; i++) cyberTiles[i] = CYBER_TILE.BLOCK_DARK;
+
+  // Helper to place a tile safely
+  const set = (x, y, v) => { if (x >= 0 && x < WW && y >= 0 && y < WH) cyberTiles[y * WW + x] = v; };
+  const get = (x, y) => (x >= 0 && x < WW && y >= 0 && y < WH) ? cyberTiles[y * WW + x] : CYBER_TILE.STREET;
+
+  // ── Street grid: minor streets every 8 tiles, avenues every 24 ──
+  const MINOR_SPACING = 8;
+  const AVENUE_SPACING = 24;
+  // Vertical streets
   for (let x = 0; x < WW; x++) {
-    const ry = Math.floor(WH * 0.55 + Math.sin(x * 0.06) * 5);
-    for (let dy = -1; dy <= 1; dy++) {
-      const yy = ry + dy;
-      if (yy >= 0 && yy < WH) cyberTiles[yy * WW + x] = 10;
+    if (x % MINOR_SPACING === 0) {
+      const isAvenue = (x % AVENUE_SPACING === 0);
+      const tile = isAvenue ? CYBER_TILE.AVENUE : CYBER_TILE.STREET;
+      for (let y = 0; y < WH; y++) set(x, y, tile);
+      // Sidewalks adjacent to avenues
+      if (isAvenue) {
+        for (let y = 0; y < WH; y++) {
+          if (get(x - 1, y) === CYBER_TILE.BLOCK_DARK) set(x - 1, y, CYBER_TILE.AVENUE_SW);
+          if (get(x + 1, y) === CYBER_TILE.BLOCK_DARK) set(x + 1, y, CYBER_TILE.AVENUE_SW);
+        }
+      } else {
+        for (let y = 0; y < WH; y++) {
+          if (get(x - 1, y) === CYBER_TILE.BLOCK_DARK) set(x - 1, y, CYBER_TILE.SIDEWALK);
+          if (get(x + 1, y) === CYBER_TILE.BLOCK_DARK) set(x + 1, y, CYBER_TILE.SIDEWALK);
+        }
+      }
     }
+  }
+  // Horizontal streets
+  for (let y = 0; y < WH; y++) {
+    if (y % MINOR_SPACING === 0) {
+      const isAvenue = (y % AVENUE_SPACING === 0);
+      const tile = isAvenue ? CYBER_TILE.AVENUE : CYBER_TILE.STREET;
+      for (let x = 0; x < WW; x++) set(x, y, tile);
+      if (isAvenue) {
+        for (let x = 0; x < WW; x++) {
+          if (get(x, y - 1) === CYBER_TILE.BLOCK_DARK) set(x, y - 1, CYBER_TILE.AVENUE_SW);
+          if (get(x, y + 1) === CYBER_TILE.BLOCK_DARK) set(x, y + 1, CYBER_TILE.AVENUE_SW);
+        }
+      } else {
+        for (let x = 0; x < WW; x++) {
+          if (get(x, y - 1) === CYBER_TILE.BLOCK_DARK) set(x, y - 1, CYBER_TILE.SIDEWALK);
+          if (get(x, y + 1) === CYBER_TILE.BLOCK_DARK) set(x, y + 1, CYBER_TILE.SIDEWALK);
+        }
+      }
+    }
+  }
+
+  // ── Plazas at avenue intersections (3x3 bright neon tiles) ──
+  for (let y = 0; y < WH; y += AVENUE_SPACING) {
+    for (let x = 0; x < WW; x += AVENUE_SPACING) {
+      for (let dy = -1; dy <= 1; dy++) {
+        for (let dx = -1; dx <= 1; dx++) {
+          set(x + dx, y + dy, CYBER_TILE.PLAZA);
+        }
+      }
+    }
+  }
+
+  // ── District zoning: vary the megablock interiors ──
+  // Pick a few district centers with different vibes
+  const districts = [
+    { cx: 30,  cy: 30,  r: 22, type: CYBER_TILE.BLOCK_DENSE },  // skyscraper district NW
+    { cx: 100, cy: 40,  r: 24, type: CYBER_TILE.BLOCK_NEON },   // neon entertainment N
+    { cx: 165, cy: 35,  r: 20, type: CYBER_TILE.BLOCK_DENSE },  // skyscraper NE
+    { cx: 50,  cy: 100, r: 25, type: CYBER_TILE.BLOCK_NEON },   // neon SW
+    { cx: 130, cy: 105, r: 28, type: CYBER_TILE.BLOCK_DENSE },  // skyscraper SE
+    { cx: 175, cy: 110, r: 18, type: CYBER_TILE.BLOCK_NEON },   // neon E
+  ];
+  for (const d of districts) {
+    for (let y = d.cy - d.r; y <= d.cy + d.r; y++) {
+      for (let x = d.cx - d.r; x <= d.cx + d.r; x++) {
+        const dist = Math.sqrt((x - d.cx) ** 2 + (y - d.cy) ** 2);
+        if (dist > d.r) continue;
+        if (get(x, y) === CYBER_TILE.BLOCK_DARK) set(x, y, d.type);
+      }
+    }
+  }
+
+  // ── Coolant pools (cyber parks) ──
+  // 4 medium pools in random non-street tiles
+  const pools = [
+    { cx: 65,  cy: 65,  rx: 6, ry: 4 },
+    { cx: 145, cy: 75,  rx: 7, ry: 5 },
+    { cx: 80,  cy: 120, rx: 5, ry: 4 },
+    { cx: 25,  cy: 70,  rx: 4, ry: 3 },
+  ];
+  for (const p of pools) {
+    for (let y = p.cy - p.ry - 1; y <= p.cy + p.ry + 1; y++) {
+      for (let x = p.cx - p.rx - 1; x <= p.cx + p.rx + 1; x++) {
+        const dx = (x - p.cx) / p.rx;
+        const dy = (y - p.cy) / p.ry;
+        const d = dx * dx + dy * dy;
+        if (d < 1) set(x, y, CYBER_TILE.COOLANT);
+        else if (d < 1.4) {
+          const cur = get(x, y);
+          if (cur !== CYBER_TILE.STREET && cur !== CYBER_TILE.AVENUE) set(x, y, CYBER_TILE.COOLANT_EDGE);
+        }
+      }
+    }
+  }
+
+  // ── Cyber parks (dark green nodes, sparse) ──
+  const parks = [
+    { cx: 110, cy: 70, r: 5 },
+    { cx: 35,  cy: 130, r: 6 },
+    { cx: 160, cy: 130, r: 5 },
+  ];
+  for (const p of parks) {
+    for (let y = p.cy - p.r; y <= p.cy + p.r; y++) {
+      for (let x = p.cx - p.r; x <= p.cx + p.r; x++) {
+        const dist = Math.sqrt((x - p.cx) ** 2 + (y - p.cy) ** 2);
+        if (dist > p.r) continue;
+        const cur = get(x, y);
+        if (cur === CYBER_TILE.BLOCK_DARK || cur === CYBER_TILE.BLOCK_NEON || cur === CYBER_TILE.BLOCK_DENSE) {
+          set(x, y, CYBER_TILE.PARK);
+        }
+      }
+    }
+  }
+
+  // ── Rust strips at extreme corners ──
+  for (let y = 0; y < 6; y++) for (let x = WW - 18; x < WW; x++) {
+    const cur = get(x, y);
+    if (cur === CYBER_TILE.BLOCK_DARK) set(x, y, CYBER_TILE.RUST);
+  }
+  for (let y = WH - 6; y < WH; y++) for (let x = 0; x < 18; x++) {
+    const cur = get(x, y);
+    if (cur === CYBER_TILE.BLOCK_DARK) set(x, y, CYBER_TILE.RUST);
   }
 }
 
-// Render cyberpunk terrain into an offscreen canvas.
-// Mirrors renderTBuf structure but uses CYBER_BC colors and adds
-// neon grid streets + circuit traces.
+// Render cyberpunk city into an offscreen canvas.
+// Each cyber tile type has its own visual treatment.
 function renderCyberBuf() {
   const isMobile = window.innerWidth <= 768;
   const tTS = isMobile ? Math.floor(TS / 2) : TS;
@@ -705,137 +813,217 @@ function renderCyberBuf() {
   if (!c) { console.error('Failed to create cyber canvas context'); return; }
   const ts = tTS;
 
-  // Pass 1: Base biome colors
+  // Tile color palette — base, accent
+  const PAL = {
+    [CYBER_TILE.STREET]:      { base:'#1a1024', acc:'#221430' },
+    [CYBER_TILE.SIDEWALK]:    { base:'#241636', acc:'#2a1a40' },
+    [CYBER_TILE.AVENUE]:      { base:'#150a20', acc:'#1c0e2a' },
+    [CYBER_TILE.AVENUE_SW]:   { base:'#2e1a48', acc:'#34204e' },
+    [CYBER_TILE.PLAZA]:       { base:'#3a1858', acc:'#421e64' },
+    [CYBER_TILE.BLOCK_DARK]:  { base:'#08051a', acc:'#0a0620' },
+    [CYBER_TILE.BLOCK_NEON]:  { base:'#1a0830', acc:'#220c3a' },
+    [CYBER_TILE.BLOCK_DENSE]: { base:'#0c0420', acc:'#100628' },
+    [CYBER_TILE.PARK]:        { base:'#0e1a14', acc:'#10221a' },
+    [CYBER_TILE.COOLANT]:     { base:'#0a1c3e', acc:'#082040' },
+    [CYBER_TILE.COOLANT_EDGE]:{ base:'#1c2a4e', acc:'#202e54' },
+    [CYBER_TILE.ROOFTOP]:     { base:'#3a4858', acc:'#404e60' },
+    [CYBER_TILE.RUST]:        { base:'#28121e', acc:'#2c1422' },
+  };
+
+  // Pass 1: Base tile colors
   for (let y = 0; y < WH; y++) {
     for (let x = 0; x < WW; x++) {
       const idx = y * WW + x;
-      const bi = cyberTiles[idx];
-      const bName = CYBER_BL[bi] || 'neon_grass';
-      const col = CYBER_BC[bName] || CYBER_BC.neon_grass;
-      const variant = ((x + y) % 2 === 0) ? 0 : 1;
-      c.fillStyle = col[variant];
+      const tile = cyberTiles[idx];
+      const p = PAL[tile] || PAL[CYBER_TILE.STREET];
+      const variant = ((x + y) % 2 === 0) ? p.base : p.acc;
+      c.fillStyle = variant;
       c.fillRect(x * ts, y * ts, ts, ts);
     }
   }
 
-  // Pass 2: Per-biome micro-detail
+  // Pass 2: Per-tile micro-detail (noise dots, circuit lines, etc.)
   for (let y = 0; y < WH; y++) {
     for (let x = 0; x < WW; x++) {
-      const idx = y * WW + x;
-      const bi = cyberTiles[idx];
-      const bName = CYBER_BL[bi] || 'neon_grass';
+      const tile = cyberTiles[y * WW + x];
       const px = x * ts, py = y * ts;
       const h = tileHash(x, y);
 
-      if (bName === 'neon_grass') {
-        // Dark grass with scattered magenta + cyan neon flecks
-        c.fillStyle = 'rgba(255,77,210,0.4)';
-        c.fillRect(px + (h % (ts - 2)), py + ((h >> 8) % (ts - 2)), 1, 1);
-        if ((h >> 16) % 5 === 0) {
-          c.fillStyle = 'rgba(77,243,255,0.45)';
-          c.fillRect(px + ((h >> 4) % (ts - 2)), py + ((h >> 12) % (ts - 2)), 1, 1);
+      switch (tile) {
+        case CYBER_TILE.STREET: {
+          // Asphalt grit
+          c.fillStyle = 'rgba(255,255,255,0.04)';
+          c.fillRect(px + (h % (ts - 2)), py + ((h >> 8) % (ts - 2)), 1, 1);
+          // Faded center line
+          if (y % 8 !== 0 && x % 8 !== 0) {
+            c.fillStyle = 'rgba(255,200,80,0.06)';
+            c.fillRect(px + ts / 2 - 1, py + ts / 2, 1, 2);
+          }
+          break;
         }
-        // Occasional dark patch
-        if ((h >> 20) % 9 === 0) {
-          c.fillStyle = 'rgba(0,0,0,0.25)';
-          c.fillRect(px + ((h >> 6) % (ts - 4)), py + ((h >> 14) % (ts - 4)), 3, 2);
+        case CYBER_TILE.AVENUE: {
+          // Bright magenta center stripe
+          c.fillStyle = 'rgba(255,77,210,0.5)';
+          c.fillRect(px + ts / 2 - 1, py, 2, ts);
+          c.fillStyle = 'rgba(255,255,255,0.25)';
+          c.fillRect(px + ts / 2, py, 1, ts);
+          // Cyan edge dots
+          c.fillStyle = 'rgba(77,243,255,0.4)';
+          c.fillRect(px + 2, py + (h % ts), 1, 1);
+          c.fillRect(px + ts - 3, py + ((h >> 6) % ts), 1, 1);
+          break;
         }
-      } else if (bName === 'neon_district' || bName === 'cyber_core') {
-        // Dense neon zone — purple + cyan accent dots
-        c.fillStyle = 'rgba(166,77,255,0.5)';
-        c.fillRect(px + (h % (ts - 2)), py + ((h >> 8) % (ts - 2)), 1, 1);
-        c.fillStyle = 'rgba(77,243,255,0.35)';
-        c.fillRect(px + ((h >> 4) % (ts - 2)), py + ((h >> 12) % (ts - 2)), 1, 1);
-        if ((h >> 16) % 4 === 0) {
-          c.fillStyle = 'rgba(255,77,210,0.4)';
-          c.fillRect(px + ((h >> 10) % (ts - 2)), py + ((h >> 18) % (ts - 2)), 2, 1);
+        case CYBER_TILE.AVENUE_SW: {
+          // Brighter sidewalk with circuit traces
+          c.strokeStyle = 'rgba(77,243,255,0.4)';
+          c.lineWidth = 1;
+          c.strokeRect(px + 2, py + 2, ts - 4, ts - 4);
+          c.fillStyle = 'rgba(255,77,210,0.5)';
+          c.fillRect(px + ts / 2 - 1, py + ts / 2 - 1, 2, 2);
+          break;
         }
-      } else if (bName === 'cyber_hills' || bName === 'megablock') {
-        // Circuit-etched stone — grey with blue circuit traces
-        c.strokeStyle = 'rgba(77,243,255,0.25)';
-        c.lineWidth = 1;
-        if ((h >> 4) % 3 === 0) {
-          c.beginPath();
-          c.moveTo(px + 4, py + (h % (ts - 8)) + 4);
-          c.lineTo(px + ts - 4, py + ((h >> 10) % (ts - 8)) + 4);
-          c.stroke();
+        case CYBER_TILE.SIDEWALK: {
+          // Subtle circuit trace
+          c.strokeStyle = 'rgba(77,243,255,0.18)';
+          c.lineWidth = 1;
+          if ((h >> 2) % 3 === 0) {
+            c.beginPath();
+            c.moveTo(px + 3, py + ts / 2);
+            c.lineTo(px + ts - 3, py + ts / 2);
+            c.stroke();
+          }
+          c.fillStyle = 'rgba(77,243,255,0.3)';
+          c.fillRect(px + ts / 2 - 1, py + ts / 2 - 1, 2, 2);
+          break;
         }
-        c.fillStyle = 'rgba(255,77,210,0.35)';
-        c.fillRect(px + ((h >> 8) % (ts - 2)), py + ((h >> 16) % (ts - 2)), 1, 1);
-      } else if (bName === 'data_pool') {
-        // Coolant — deep navy with cyan shimmer
-        c.fillStyle = 'rgba(77,243,255,0.25)';
-        if (((x + y + Math.floor(Date.now() / 100)) % 3) === 0) {
-          c.fillRect(px + (h % (ts - 4)), py + ((h >> 8) % (ts - 4)), 2, 1);
-        }
-        // Static blue glow spots
-        c.fillStyle = 'rgba(120,200,255,0.35)';
-        c.fillRect(px + ((h >> 4) % (ts - 2)), py + ((h >> 12) % (ts - 2)), 1, 1);
-      } else if (bName === 'neon_flow') {
-        // Flowing energy streams — bright cyan + magenta
-        c.fillStyle = 'rgba(77,243,255,0.6)';
-        c.fillRect(px + (h % (ts - 2)), py + ((h >> 8) % (ts - 2)), 2, 1);
-        c.fillStyle = 'rgba(255,77,210,0.3)';
-        c.fillRect(px + ((h >> 4) % (ts - 2)), py + ((h >> 14) % (ts - 2)), 1, 1);
-      } else if (bName === 'rust_sand') {
-        // Rusty wasteland — dark purple-brown
-        c.fillStyle = 'rgba(90,40,60,0.4)';
-        c.fillRect(px + (h % (ts - 3)), py + ((h >> 8) % (ts - 3)), 2, 1);
-        if ((h >> 12) % 6 === 0) {
+        case CYBER_TILE.PLAZA: {
+          // Bright neon tile with diamond
           c.fillStyle = 'rgba(255,77,210,0.35)';
-          c.fillRect(px + ((h >> 4) % (ts - 2)), py + ((h >> 10) % (ts - 2)), 1, 1);
+          c.fillRect(px + 1, py + 1, ts - 2, ts - 2);
+          c.fillStyle = 'rgba(77,243,255,0.5)';
+          c.beginPath();
+          c.moveTo(px + ts / 2, py + 3);
+          c.lineTo(px + ts - 3, py + ts / 2);
+          c.lineTo(px + ts / 2, py + ts - 3);
+          c.lineTo(px + 3, py + ts / 2);
+          c.closePath();
+          c.fill();
+          c.fillStyle = '#ffffff';
+          c.fillRect(px + ts / 2 - 1, py + ts / 2 - 1, 2, 2);
+          break;
         }
-      } else if (bName === 'chrome_snow') {
-        // Chrome/glass rooftop — reflective white with blue tint
-        c.fillStyle = 'rgba(255,255,255,0.6)';
-        c.fillRect(px + (h % (ts - 2)), py + ((h >> 8) % (ts - 2)), 1, 1);
-        c.fillStyle = 'rgba(77,243,255,0.3)';
-        c.fillRect(px + ((h >> 4) % (ts - 2)), py + ((h >> 12) % (ts - 2)), 1, 1);
-      } else if (bName === 'gold_data') {
-        // Gold data vault — yellow gleam
-        c.fillStyle = 'rgba(255,230,80,0.6)';
-        c.fillRect(px + (h % (ts - 2)), py + ((h >> 8) % (ts - 2)), 1, 1);
-        if ((h >> 12) % 4 === 0) {
-          c.fillStyle = 'rgba(255,255,200,0.8)';
-          c.fillRect(px + ((h >> 4) % (ts - 2)), py + ((h >> 16) % (ts - 2)), 1, 1);
+        case CYBER_TILE.BLOCK_DARK: {
+          // Building footprint — dark with single window dot
+          if ((h >> 4) % 3 === 0) {
+            c.fillStyle = 'rgba(255,200,80,0.5)';
+            c.fillRect(px + 4 + ((h >> 6) % (ts - 8)), py + 4 + ((h >> 10) % (ts - 8)), 2, 2);
+          }
+          if ((h >> 8) % 5 === 0) {
+            c.fillStyle = 'rgba(77,243,255,0.4)';
+            c.fillRect(px + 6 + ((h >> 12) % (ts - 12)), py + 6 + ((h >> 14) % (ts - 12)), 2, 1);
+          }
+          break;
+        }
+        case CYBER_TILE.BLOCK_NEON: {
+          // Block with active neon facade
+          // Window grid
+          c.fillStyle = 'rgba(255,77,210,0.6)';
+          c.fillRect(px + 4, py + 5, 2, 2);
+          c.fillRect(px + 10, py + 5, 2, 2);
+          c.fillRect(px + 16, py + 5, 2, 2);
+          c.fillStyle = 'rgba(77,243,255,0.55)';
+          c.fillRect(px + 4, py + 12, 2, 2);
+          c.fillRect(px + 10, py + 12, 2, 2);
+          c.fillRect(px + 16, py + 12, 2, 2);
+          c.fillStyle = 'rgba(255,200,80,0.5)';
+          c.fillRect(px + 4, py + 19, 2, 2);
+          c.fillRect(px + 10, py + 19, 2, 2);
+          break;
+        }
+        case CYBER_TILE.BLOCK_DENSE: {
+          // Skyscraper interior — denser windows
+          for (let dy = 3; dy < ts - 2; dy += 4) {
+            for (let dx = 3; dx < ts - 2; dx += 4) {
+              const bh = tileHash(x * 16 + dx, y * 16 + dy);
+              if ((bh % 4) === 0) continue;
+              const col = (bh % 3 === 0) ? 'rgba(77,243,255,0.55)'
+                       : (bh % 3 === 1) ? 'rgba(255,200,80,0.5)'
+                                         : 'rgba(255,77,210,0.5)';
+              c.fillStyle = col;
+              c.fillRect(px + dx, py + dy, 1, 1);
+            }
+          }
+          break;
+        }
+        case CYBER_TILE.PARK: {
+          // Cyber park — neon flora dots
+          c.fillStyle = 'rgba(77,255,170,0.5)';
+          c.fillRect(px + (h % (ts - 2)), py + ((h >> 8) % (ts - 2)), 1, 1);
+          c.fillStyle = 'rgba(255,77,210,0.45)';
+          c.fillRect(px + ((h >> 4) % (ts - 2)), py + ((h >> 12) % (ts - 2)), 1, 1);
+          if ((h >> 16) % 4 === 0) {
+            c.fillStyle = 'rgba(170,255,77,0.4)';
+            c.fillRect(px + ((h >> 6) % (ts - 2)), py + ((h >> 14) % (ts - 2)), 2, 1);
+          }
+          break;
+        }
+        case CYBER_TILE.COOLANT: {
+          // Coolant pool — cyan shimmer
+          c.fillStyle = 'rgba(77,243,255,0.25)';
+          c.fillRect(px + (h % (ts - 2)), py + ((h >> 8) % (ts - 2)), 1, 1);
+          c.fillStyle = 'rgba(120,200,255,0.35)';
+          c.fillRect(px + ((h >> 4) % (ts - 2)), py + ((h >> 12) % (ts - 2)), 1, 1);
+          // Glow ripple
+          if ((h >> 16) % 5 === 0) {
+            c.strokeStyle = 'rgba(77,243,255,0.3)';
+            c.lineWidth = 1;
+            c.beginPath();
+            c.arc(px + ts / 2, py + ts / 2, 4, 0, Math.PI * 2);
+            c.stroke();
+          }
+          break;
+        }
+        case CYBER_TILE.COOLANT_EDGE: {
+          // Chrome rim
+          c.fillStyle = 'rgba(180,200,220,0.4)';
+          c.fillRect(px, py, ts, 1);
+          c.fillStyle = 'rgba(77,243,255,0.5)';
+          c.fillRect(px + (h % (ts - 2)), py + ((h >> 8) % 3), 1, 1);
+          break;
+        }
+        case CYBER_TILE.RUST: {
+          // Rust wasteland
+          c.fillStyle = 'rgba(120,40,40,0.45)';
+          c.fillRect(px + (h % (ts - 3)), py + ((h >> 8) % (ts - 3)), 2, 1);
+          if ((h >> 12) % 4 === 0) {
+            c.fillStyle = 'rgba(255,77,210,0.3)';
+            c.fillRect(px + ((h >> 4) % (ts - 2)), py + ((h >> 10) % (ts - 2)), 1, 1);
+          }
+          break;
         }
       }
     }
   }
 
-  // Pass 3: Neon street grid — horizontal + vertical lines every 10 tiles
-  // Only on walkable biomes (not water) so the grid doesn't cross pools
-  c.strokeStyle = 'rgba(77,243,255,0.18)';
-  c.lineWidth = 1;
-  for (let y = 0; y < WH; y += 10) {
+  // Pass 3: Block borders — dark outline around megablocks (where block tiles
+  // touch street/sidewalk/plaza). Gives the city its strong grid feel.
+  for (let y = 0; y < WH; y++) {
     for (let x = 0; x < WW; x++) {
-      const bi = cyberTiles[y * WW + x];
-      const bName = CYBER_BL[bi] || 'neon_grass';
-      if (bName === 'data_pool' || bName === 'neon_flow') continue;
-      c.fillStyle = 'rgba(77,243,255,0.35)';
-      c.fillRect(x * ts, y * ts + Math.floor(ts / 2) - 1, ts, 2);
-    }
-  }
-  for (let x = 0; x < WW; x += 10) {
-    for (let y = 0; y < WH; y++) {
-      const bi = cyberTiles[y * WW + x];
-      const bName = CYBER_BL[bi] || 'neon_grass';
-      if (bName === 'data_pool' || bName === 'neon_flow') continue;
-      c.fillStyle = 'rgba(255,77,210,0.3)';
-      c.fillRect(x * ts + Math.floor(ts / 2) - 1, y * ts, 2, ts);
-    }
-  }
-
-  // Pass 4: Magenta glow nodes at street intersections
-  for (let y = 0; y < WH; y += 10) {
-    for (let x = 0; x < WW; x += 10) {
-      const bi = cyberTiles[y * WW + x];
-      const bName = CYBER_BL[bi] || 'neon_grass';
-      if (bName === 'data_pool' || bName === 'neon_flow') continue;
-      c.fillStyle = 'rgba(255,77,210,0.7)';
-      c.fillRect(x * ts + Math.floor(ts / 2) - 2, y * ts + Math.floor(ts / 2) - 2, 4, 4);
-      c.fillStyle = 'rgba(255,200,255,0.9)';
-      c.fillRect(x * ts + Math.floor(ts / 2) - 1, y * ts + Math.floor(ts / 2) - 1, 2, 2);
+      const cur = cyberTiles[y * WW + x];
+      const isBlock = (cur === CYBER_TILE.BLOCK_DARK || cur === CYBER_TILE.BLOCK_NEON || cur === CYBER_TILE.BLOCK_DENSE);
+      if (!isBlock) continue;
+      const px = x * ts, py = y * ts;
+      // Check 4 neighbors
+      const top = (y > 0) ? cyberTiles[(y - 1) * WW + x] : -1;
+      const bot = (y < WH - 1) ? cyberTiles[(y + 1) * WW + x] : -1;
+      const lft = (x > 0) ? cyberTiles[y * WW + (x - 1)] : -1;
+      const rgt = (x < WW - 1) ? cyberTiles[y * WW + (x + 1)] : -1;
+      const isNonBlock = (t) => t === CYBER_TILE.STREET || t === CYBER_TILE.SIDEWALK || t === CYBER_TILE.AVENUE || t === CYBER_TILE.AVENUE_SW || t === CYBER_TILE.PLAZA;
+      c.fillStyle = 'rgba(255,77,210,0.65)';
+      if (isNonBlock(top)) c.fillRect(px, py, ts, 1);
+      if (isNonBlock(bot)) c.fillRect(px, py + ts - 1, ts, 1);
+      if (isNonBlock(lft)) c.fillRect(px, py, 1, ts);
+      if (isNonBlock(rgt)) c.fillRect(px + ts - 1, py, 1, ts);
     }
   }
 }
@@ -875,53 +1063,51 @@ setupBiomeToggle();
 
 // ── CYBERPUNK DETAILS ─────────────────────────────────────────────
 // Deterministically generated from cyberTiles grid via tileHash.
-// Detail types: neon_palm, data_spire, street_lamp, holo_billboard,
-// vending, antenna, drone_pad, flux_pylon
 function getCyberDetails(sx2, sy2, ex2, ey2) {
   const D = [];
   if (!cyberTiles) return D;
   for (let y = sy2; y < ey2; y++) {
     for (let x = sx2; x < ex2; x++) {
       const idx = y * WW + x;
-      const bi = cyberTiles[idx];
-      const bName = CYBER_BL[bi] || 'neon_grass';
+      const tile = cyberTiles[idx];
       const h = tileHash(x, y);
-      // Skip water-equivalents
-      if (bName === 'data_pool' || bName === 'neon_flow') continue;
-      // ── Neon palms in neon_grass + neon_district ──
-      if (bName === 'neon_grass' && (h % 17) === 0) {
-        D.push({ t: 'neon_palm', x: x * TS + (h % TS), y: y * TS + ((h >> 8) % TS), s: (h & 1) ? 1.0 : 0.85 });
-      }
-      if (bName === 'neon_district' && (h % 9) === 0) {
-        D.push({ t: 'neon_palm', x: x * TS + (h % TS), y: y * TS + ((h >> 8) % TS), s: 1.1 });
-      }
-      // ── Data spires (rocks) in cyber_hills + megablock ──
-      if ((bName === 'cyber_hills' || bName === 'megablock') && (h % 8) === 0) {
-        D.push({ t: 'data_spire', x: x * TS + (h % TS), y: y * TS + ((h >> 8) % TS), s: 0.9 + ((h >> 4) & 3) * 0.15 });
-      }
-      // ── Street lamps along the neon grid (every 10 tiles) ──
-      if ((x % 10 === 5) && (y % 10 === 5) && bName !== 'megablock' && bName !== 'data_pool') {
+      // ── Street lamps along sidewalks (every 4 tiles) ──
+      if ((tile === CYBER_TILE.SIDEWALK || tile === CYBER_TILE.AVENUE_SW) && ((x + y) % 4 === 0)) {
         D.push({ t: 'street_lamp', x: x * TS + TS / 2, y: y * TS + TS / 2 });
       }
-      // ── Holographic billboards in dense neon zones (rare) ──
-      if (bName === 'cyber_core' && (h % 23) === 0) {
-        D.push({ t: 'holo_billboard', x: x * TS + (h % TS), y: y * TS + ((h >> 8) % TS) });
-      }
-      // ── Vending machines on streets ──
-      if (bName === 'neon_district' && (h % 19) === 0) {
-        D.push({ t: 'vending', x: x * TS + (h % TS), y: y * TS + ((h >> 8) % TS) });
-      }
-      // ── Antennas on chrome rooftops ──
-      if (bName === 'chrome_snow' && (h % 6) === 0) {
+      // ── Antennas on tops of dense skyscraper blocks (deterministic spots) ──
+      if (tile === CYBER_TILE.BLOCK_DENSE && (h % 14 === 0)) {
         D.push({ t: 'antenna', x: x * TS + (h % TS), y: y * TS + ((h >> 8) % TS) });
       }
-      // ── Flux pylons on rust_sand ──
-      if (bName === 'rust_sand' && (h % 13) === 0) {
+      // ── Holo billboards on neon block facades ──
+      if (tile === CYBER_TILE.BLOCK_NEON && (h % 18 === 0)) {
+        D.push({ t: 'holo_billboard', x: x * TS + (h % TS), y: y * TS + ((h >> 8) % TS) });
+      }
+      // ── Vending machines on avenue sidewalks ──
+      if (tile === CYBER_TILE.AVENUE_SW && (h % 11 === 0)) {
+        D.push({ t: 'vending', x: x * TS + (h % TS), y: y * TS + ((h >> 8) % TS) });
+      }
+      // ── Neon palms in cyber parks + plaza edges ──
+      if (tile === CYBER_TILE.PARK && (h % 5 === 0)) {
+        D.push({ t: 'neon_palm', x: x * TS + (h % TS), y: y * TS + ((h >> 8) % TS), s: 0.9 + ((h >> 4) & 3) * 0.1 });
+      }
+      if (tile === CYBER_TILE.PLAZA && ((x + y) % 3 === 0) && (h % 4 === 0)) {
+        D.push({ t: 'neon_palm', x: x * TS + (h % TS), y: y * TS + ((h >> 8) % TS), s: 1.1 });
+      }
+      // ── Data spires in rust wasteland ──
+      if (tile === CYBER_TILE.RUST && (h % 5 === 0)) {
+        D.push({ t: 'data_spire', x: x * TS + (h % TS), y: y * TS + ((h >> 8) % TS), s: 0.85 + ((h >> 4) & 3) * 0.15 });
+      }
+      // ── Flux pylons in rust + plaza corners ──
+      if (tile === CYBER_TILE.RUST && (h % 13 === 0)) {
         D.push({ t: 'flux_pylon', x: x * TS + (h % TS), y: y * TS + ((h >> 8) % TS) });
+      }
+      // ── Big building silhouettes on dense blocks (rare anchors) ──
+      if (tile === CYBER_TILE.BLOCK_DENSE && (x % 3 === 0) && (y % 3 === 0) && (h % 9 === 0)) {
+        D.push({ t: 'mega_tower', x: x * TS + TS / 2, y: y * TS + TS, h: 30 + ((h >> 4) & 7) * 4 });
       }
     }
   }
-  // Y-sort for proper layering
   D.sort((a, b) => a.y - b.y);
   return D;
 }
@@ -1026,9 +1212,49 @@ function drawCyberDetail(c, d, fr) {
     const pulse = 0.5 + Math.sin(fr * 0.1 + px) * 0.4;
     c.fillStyle = 'rgba(255,77,210,' + pulse + ')';
     c.fillRect(px - 1, py - 10, 2, 8);
-    // Glow halo
     c.fillStyle = 'rgba(255,77,210,0.25)';
     c.fillRect(px - 3, py - 10, 6, 2);
+  } else if (d.t === 'mega_tower') {
+    // Tall corporate tower silhouette
+    const h2 = d.h || 32;
+    const w = 18;
+    // Shadow
+    c.fillStyle = 'rgba(0,0,0,0.4)';
+    c.fillRect(px - w / 2 + 2, py - 2, w, 4);
+    // Main body — dark with neon facade
+    c.fillStyle = '#0c0420';
+    c.fillRect(px - w / 2, py - h2, w, h2);
+    // Edge highlights
+    c.fillStyle = 'rgba(255,77,210,0.45)';
+    c.fillRect(px - w / 2, py - h2, 1, h2);
+    c.fillRect(px + w / 2 - 1, py - h2, 1, h2);
+    c.fillStyle = 'rgba(77,243,255,0.4)';
+    c.fillRect(px - w / 2, py - h2, w, 1);
+    // Window grid (some flicker)
+    for (let wy = 4; wy < h2 - 2; wy += 4) {
+      for (let wx = -w / 2 + 3; wx < w / 2 - 2; wx += 4) {
+        const wh = tileHash(px + wx, py + wy);
+        if ((wh + Math.floor(fr / 60)) % 5 === 0) continue;
+        c.fillStyle = (wh % 3 === 0) ? 'rgba(255,200,80,0.7)'
+                    : (wh % 3 === 1) ? 'rgba(77,243,255,0.7)'
+                                     : 'rgba(255,77,210,0.7)';
+        c.fillRect(px + wx, py - wy, 2, 2);
+      }
+    }
+    // Antenna on top
+    c.fillStyle = '#0a0418';
+    c.fillRect(px - 1, py - h2 - 6, 2, 6);
+    // Blinking tip
+    if ((fr + px) % 30 < 15) {
+      c.fillStyle = '#ff4dd2';
+      c.fillRect(px - 1, py - h2 - 8, 3, 2);
+    }
+    // Ambient glow halo
+    const gr = c.createRadialGradient(px, py - h2 / 2, 5, px, py - h2 / 2, 30);
+    gr.addColorStop(0, 'rgba(255,77,210,0.18)');
+    gr.addColorStop(1, 'rgba(255,77,210,0)');
+    c.fillStyle = gr;
+    c.fillRect(px - 30, py - h2 / 2 - 30, 60, 60);
   }
 }
 
@@ -4854,7 +5080,8 @@ if(viewMode==='cyber'){
   for(const d of cyberDetails){drawCyberDetail(ctx,d,frame)}
 }
 
-// Clan territory borders + war zones
+// Clan territory borders + war zones (skip in cyber view)
+if(viewMode!=='cyber')
 for(const clan of clans){
   const clanBuildings=G.clientBuildings.filter(b=>b.faction===clan.faction&&b.complete);
   if(clanBuildings.length<2)continue;
@@ -4875,7 +5102,8 @@ for(const clan of clans){
   }
 }
 
-// Settlement dirt paths + palisade walls
+// Settlement dirt paths + palisade walls (skip entirely in cyber view)
+if(viewMode!=='cyber')
 for(const s of settlements){
   if(s.buildings.length<2)continue;
   const scx=s.cx*ts+ts/2,scy=s.cy*ts+ts/2;
@@ -5276,6 +5504,8 @@ if(settlements.length>=2){
 }
 
 // Village/settlement names — positioned ABOVE topmost building, always visible
+// (skip in cyber view — no settlements there yet)
+if(viewMode!=='cyber')
 for(const vl of villages){
   const vpx=vl.cx*ts+ts/2;
   // Find topmost building in this settlement (use server buildings when connected)
@@ -5349,8 +5579,8 @@ for(const b of G.clientBuildings){
   }
 }
 
-// Path trails between buildings
-if(!_lowPerf)drawPaths(ctx,S.buildings,frame);
+// Path trails between buildings (none in cyber view)
+if(!_lowPerf&&viewMode!=='cyber')drawPaths(ctx,S.buildings,frame);
 // Water animation — calm and gentle
 // Gentle wave lines every 3-4 rows
 for(let y=sy;y<ey;y++){
