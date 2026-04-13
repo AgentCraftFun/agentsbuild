@@ -1108,7 +1108,7 @@ function drawDetail(c,d,fr){
 }
 
 // === State ===
-const S={tick:0,agents:[],tiles:[],buildings:[],events:[],leaderboard:[],connected:false,groundItems:[],pickupFlashes:[],dragon:null,dragonHits:[],dragonFireFlashes:[]};
+const S={tick:0,agents:[],tiles:[],buildings:[],events:[],leaderboard:[],connected:false,groundItems:[],pickupFlashes:[],dragon:null,dragonHits:[],dragonFireFlashes:[],portals:[]};
 
 const FC={human:'#4488ff',orc:'#cc4444',dwarf:'#cc8844',elf:'#aa44cc'};
 const FI={human:'\u2694',orc:'\u2620',dwarf:'\u26CF',elf:'\u2727'};
@@ -5539,6 +5539,111 @@ if(S.groundItems&&S.groundItems.length){
     ctx.textAlign='start';ctx.textBaseline='alphabetic';
   }
 }
+// === PORTALS (Week 2 teaser — powering up, not yet active) ===
+// Each portal is a vertical oval rift with swirling energy, ground glow,
+// and a "POWERING UP" loading bar above. They persist forever in their
+// charging state until we flip them when the new biome ships.
+if(S.portals&&S.portals.length){
+  for(const p of S.portals){
+    if(typeof p.x!=='number'||typeof p.y!=='number')continue;
+    // Cull offscreen
+    if(p.x<sx-2||p.x>ex+2||p.y<sy-2||p.y>ey+2)continue;
+    const pxc=p.x*ts+ts/2;
+    const pyc=p.y*ts+ts/2;
+    // Tint palette (core, ring, glow rgba)
+    const tints={
+      cyan:    ['#88eeff','#4dd3ff','rgba(77,211,255,'],
+      purple:  ['#cc88ff','#9944ff','rgba(153,68,255,'],
+      magenta: ['#ff88dd','#ff4dc8','rgba(255,77,200,'],
+      emerald: ['#88ffbb','#33dd88','rgba(51,221,136,'],
+      gold:    ['#ffdd88','#ffaa33','rgba(255,170,51,',]
+    };
+    const tint=tints[p.tint]||tints.cyan;
+    const coreCol=tint[0],ringCol=tint[1],glowRgbaBase=tint[2];
+    // ── Ground glow pool ──
+    const groundR=24+Math.sin(frame*0.06+p.x)*3;
+    const gg=ctx.createRadialGradient(pxc,pyc+10,2,pxc,pyc+10,groundR);
+    gg.addColorStop(0,glowRgbaBase+'0.35)');
+    gg.addColorStop(1,glowRgbaBase+'0)');
+    ctx.fillStyle=gg;
+    ctx.fillRect(pxc-groundR,pyc+10-groundR*0.5,groundR*2,groundR);
+    // ── Stone foot plinth (half ellipse) ──
+    ctx.fillStyle='#1a1020';
+    ctx.beginPath();ctx.ellipse(pxc,pyc+12,12,4,0,0,Math.PI*2);ctx.fill();
+    ctx.fillStyle='#2a1838';
+    ctx.beginPath();ctx.ellipse(pxc,pyc+11,10,3,0,0,Math.PI*2);ctx.fill();
+    // ── Archway frame (stone outline of rift) ──
+    ctx.save();
+    ctx.strokeStyle='#1a0f28';ctx.lineWidth=3;
+    ctx.beginPath();ctx.ellipse(pxc,pyc-2,10,18,0,Math.PI,Math.PI*2);
+    ctx.moveTo(pxc-10,pyc-2);ctx.lineTo(pxc-10,pyc+10);
+    ctx.moveTo(pxc+10,pyc-2);ctx.lineTo(pxc+10,pyc+10);
+    ctx.stroke();
+    ctx.restore();
+    // ── Rift interior (swirling energy, dimmed because it's not active) ──
+    // Dimmed by (0.35 + charge*0.6) — the closer to charged, the brighter
+    const chargeAlpha=0.35+(p.charge||0)*0.6;
+    // Rift dark background
+    ctx.fillStyle='rgba(5,2,15,0.9)';
+    ctx.beginPath();ctx.ellipse(pxc,pyc-1,9,17,0,0,Math.PI*2);ctx.fill();
+    // Energy swirls — multiple rotating ellipses
+    ctx.save();
+    ctx.translate(pxc,pyc-1);
+    for(let si=0;si<5;si++){
+      const rot=frame*0.04+si*1.25+(p.x*0.1);
+      const sw=6+Math.sin(frame*0.08+si)*1.5;
+      const sh=14+Math.cos(frame*0.06+si*0.7)*1.5;
+      const alpha=chargeAlpha*(0.25+0.15*Math.sin(frame*0.1+si));
+      ctx.strokeStyle=glowRgbaBase+alpha+')';
+      ctx.lineWidth=1;
+      ctx.beginPath();ctx.ellipse(0,0,sw,sh,rot,0,Math.PI*2);ctx.stroke();
+    }
+    // Central bright core streak
+    const coreAlpha=chargeAlpha*(0.6+0.3*Math.sin(frame*0.15));
+    ctx.strokeStyle=coreCol;ctx.globalAlpha=coreAlpha;
+    ctx.lineWidth=1.5;
+    ctx.beginPath();ctx.moveTo(0,-14);ctx.lineTo(0,14);ctx.stroke();
+    ctx.globalAlpha=1;ctx.lineWidth=1;
+    ctx.restore();
+    // ── Rising energy sparks (drifting upward) ──
+    if(frame%4===0){
+      const seedN=((p.x*13+p.y*7+frame)>>2)%5;
+      const spkX=pxc+(seedN-2)*2.4;
+      const spkY=pyc-2-((frame*0.5)%28);
+      ctx.fillStyle=coreCol;
+      ctx.fillRect(spkX,spkY,1,1);
+    }
+    // ── Corner torches (unlit stone nubs) ──
+    ctx.fillStyle='#1a0f28';
+    ctx.fillRect(pxc-11,pyc-3,2,4);ctx.fillRect(pxc+9,pyc-3,2,4);
+    // Dim torch flicker (not fully lit)
+    if(frame%8<4){ctx.fillStyle=glowRgbaBase+'0.5)';ctx.fillRect(pxc-11,pyc-5,2,2);ctx.fillRect(pxc+9,pyc-5,2,2)}
+    // ── POWERING UP label + charge bar ──
+    const barW=42,barH=4,barX=pxc-barW/2,barY=pyc-32;
+    // Label
+    ctx.font='bold 7px Courier New';ctx.textAlign='center';
+    ctx.fillStyle='rgba(0,0,0,0.7)';
+    ctx.fillRect(pxc-30,barY-11,60,9);
+    ctx.fillStyle=coreCol;
+    ctx.fillText('POWERING UP',pxc,barY-4);
+    // Bar background
+    ctx.fillStyle='rgba(0,0,0,0.85)';ctx.fillRect(barX-1,barY-1,barW+2,barH+2);
+    ctx.fillStyle='#1a0f28';ctx.fillRect(barX,barY,barW,barH);
+    // Bar fill (charge)
+    const fillW=barW*(p.charge||0);
+    ctx.fillStyle=ringCol;ctx.fillRect(barX,barY,fillW,barH);
+    // Scanning highlight on the fill
+    const scanX=barX+((frame*0.7+p.x*17)%barW);
+    ctx.fillStyle='rgba(255,255,255,0.5)';
+    ctx.fillRect(scanX,barY,2,barH);
+    // Percent
+    ctx.font='6px Courier New';
+    ctx.fillStyle=coreCol;
+    ctx.fillText(Math.floor((p.charge||0)*100)+'%',pxc,barY+barH+6);
+    ctx.textAlign='start';
+  }
+}
+
 // Pickup/drop flashes — expanding rings + rising "+N" text
 if(S.pickupFlashes&&S.pickupFlashes.length){
   for(let pfi=S.pickupFlashes.length-1;pfi>=0;pfi--){
@@ -6699,8 +6804,8 @@ function syncServerSettlements(serverSettlements){
 }
 function handleMsg(msg){
 if(msg.type==='pong')return;
-if(msg.type==='world_state'&&msg.data){S.tick=msg.data.tick||0;S.agents=msg.data.agents||[];rebuildAgentMap();S.tiles=msg.data.tiles||[];S.buildings=msg.data.buildings||[];S.events=msg.data.events||[];S.leaderboard=msg.data.leaderboard||[];if(Array.isArray(msg.data.groundItems))S.groundItems=msg.data.groundItems;if(msg.data.dragon!==undefined)S.dragon=msg.data.dragon;syncServerBuildings(msg.data.buildings||[]);if(msg.data.settlements)syncServerSettlements(msg.data.settlements);updateAll()}
-if(msg.type==='tick'&&msg.data){S.tick=msg.data.tick||S.tick;if(msg.data.agents){S.agents=msg.data.agents;rebuildAgentMap()}if(msg.data.tiles)S.tiles=msg.data.tiles;if(msg.data.buildings){S.buildings=msg.data.buildings;syncServerBuildings(msg.data.buildings)}if(Array.isArray(msg.data.groundItems))S.groundItems=msg.data.groundItems;if(msg.data.dragon!==undefined)S.dragon=msg.data.dragon;if(msg.data.events){for(const ev of msg.data.events){handleChaosEvent(ev)}S.events=S.events.concat(msg.data.events);if(S.events.length>200)S.events=S.events.slice(-100)}if(msg.data.leaderboard)S.leaderboard=msg.data.leaderboard;if(msg.data.settlements)syncServerSettlements(msg.data.settlements);updateAll()}}
+if(msg.type==='world_state'&&msg.data){S.tick=msg.data.tick||0;S.agents=msg.data.agents||[];rebuildAgentMap();S.tiles=msg.data.tiles||[];S.buildings=msg.data.buildings||[];S.events=msg.data.events||[];S.leaderboard=msg.data.leaderboard||[];if(Array.isArray(msg.data.groundItems))S.groundItems=msg.data.groundItems;if(msg.data.dragon!==undefined)S.dragon=msg.data.dragon;if(Array.isArray(msg.data.portals))S.portals=msg.data.portals;syncServerBuildings(msg.data.buildings||[]);if(msg.data.settlements)syncServerSettlements(msg.data.settlements);updateAll()}
+if(msg.type==='tick'&&msg.data){S.tick=msg.data.tick||S.tick;if(msg.data.agents){S.agents=msg.data.agents;rebuildAgentMap()}if(msg.data.tiles)S.tiles=msg.data.tiles;if(msg.data.buildings){S.buildings=msg.data.buildings;syncServerBuildings(msg.data.buildings)}if(Array.isArray(msg.data.groundItems))S.groundItems=msg.data.groundItems;if(msg.data.dragon!==undefined)S.dragon=msg.data.dragon;if(Array.isArray(msg.data.portals))S.portals=msg.data.portals;if(msg.data.events){for(const ev of msg.data.events){handleChaosEvent(ev)}S.events=S.events.concat(msg.data.events);if(S.events.length>200)S.events=S.events.slice(-100)}if(msg.data.leaderboard)S.leaderboard=msg.data.leaderboard;if(msg.data.settlements)syncServerSettlements(msg.data.settlements);updateAll()}}
 // Centralized event handler for chaos + war events
 function handleChaosEvent(ev){
   if(!ev||!ev.type)return;

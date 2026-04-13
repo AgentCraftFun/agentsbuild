@@ -129,6 +129,16 @@ class GameLoop {
       // and agents must fight to kill. One dragon at a time.
       this._processDragon(tick, events);
 
+      // 5e. PORTALS (Week 2 teaser) — slow fake charge, capped below 100%.
+      // Portals never actually finish until we flip them manually.
+      if (Array.isArray(this.world.portals)) {
+        for (const p of this.world.portals) {
+          if (p.charge < 0.95) {
+            p.charge = Math.min(0.95, p.charge + 0.0002);
+          }
+        }
+      }
+
       // 6. Generate event feed entries (already collected above, add tick summary)
       if (tick % 10 === 0) {
         const agentCount = this.world.agents.size;
@@ -2553,6 +2563,7 @@ class GameLoop {
       settlements: this.world.settlements || [],
       groundItems: Array.isArray(this.world.groundItems) ? this.world.groundItems : [],
       dragon: this.world.dragon || null,
+      portals: Array.isArray(this.world.portals) ? this.world.portals : [],
     };
   }
 

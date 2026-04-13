@@ -65,6 +65,8 @@ function saveWorldState(ws) {
       groundItems: Array.isArray(ws.groundItems) ? ws.groundItems : [],
       // World boss: dragon state (null = no dragon, or full dragon object)
       dragon: ws.dragon || null,
+      // Week 2 teaser: powering-up portals
+      portals: Array.isArray(ws.portals) ? ws.portals : [],
     };
     fs.writeFileSync(STATE_FILE, JSON.stringify(state));
     console.log(`[Save] Tick:${ws.tick} Agents:${agents.length} Buildings:${buildings.length}`);
@@ -86,7 +88,9 @@ function loadWorldState() {
       // Loot drops: v1 saves have no groundItems, default to []
       groundItems: Array.isArray(state.groundItems) ? state.groundItems : [],
       // World boss: restore dragon if mid-fight when saved
-      dragon: state.dragon || null };
+      dragon: state.dragon || null,
+      // Week 2 teaser: portals persist across restarts
+      portals: Array.isArray(state.portals) ? state.portals : [] };
 
     const Agent = require('./models/Agent');
     const Building = require('./models/Building');
@@ -161,6 +165,47 @@ if (loadedState) {
     groundItems: [], dragon: null };
   console.log('[Server] Seeding demo agents...');
   seedAgents(worldState);
+}
+
+// ─── PORTALS (Week 2 teaser) ─────────────────────────────────────────
+// 5 portals spawn once per world and persist forever. They're "powering up"
+// forever (slow fake charge) until we manually flip them when the new
+// biome is ready. Agents don't interact with them yet — pure teaser.
+if (!Array.isArray(worldState.portals) || worldState.portals.length === 0) {
+  const NUM_PORTALS = 5;
+  const tints = ['cyan', 'purple', 'magenta', 'emerald', 'gold'];
+  const portals = [];
+  const minDist = 20; // min distance between portals + from map edges
+  let attempts = 0;
+  while (portals.length < NUM_PORTALS && attempts < 500) {
+    attempts++;
+    const px = minDist + Math.floor(Math.random() * (worldState.width - minDist * 2));
+    const py = minDist + Math.floor(Math.random() * (worldState.height - minDist * 2));
+    // Check tile is walkable (not water)
+    const tile = worldState.tiles.get(`${px},${py}`);
+    if (!tile) continue;
+    if (tile.biome === 'water' || tile.biome === 'river' || tile.biome === 'deep_water') continue;
+    // Spacing from other portals
+    let tooClose = false;
+    for (const pp of portals) {
+      if (Math.abs(pp.x - px) + Math.abs(pp.y - py) < minDist) { tooClose = true; break; }
+    }
+    if (tooClose) continue;
+    portals.push({
+      id: `portal_${portals.length + 1}`,
+      x: px,
+      y: py,
+      tint: tints[portals.length % tints.length],
+      // Start charge between 12-38% so each portal looks different
+      charge: 0.12 + Math.random() * 0.26,
+      spawnTick: worldState.tick || 0,
+      label: 'POWERING UP',
+    });
+  }
+  worldState.portals = portals;
+  console.log(`[Portals] Spawned ${portals.length} powering-up portals`);
+} else {
+  console.log(`[Portals] Restored ${worldState.portals.length} portals from save`);
 }
 
 // ─── Spatial Index (performance: O(1) building proximity checks) ───
