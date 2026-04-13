@@ -74,6 +74,8 @@ function saveWorldState(ws) {
       cyberSettlements: Array.isArray(ws.cyberSettlements) ? ws.cyberSettlements : [],
       // One-time cyber wipe migration marker
       _cyberWipedAt: ws._cyberWipedAt || null,
+      // One-time top-left dragon spawn marker
+      _topLeftDragonSpawned: ws._topLeftDragonSpawned || null,
     };
     fs.writeFileSync(STATE_FILE, JSON.stringify(state));
     console.log(`[Save] Tick:${ws.tick} Agents:${agents.length} Buildings:${buildings.length}`);
@@ -101,7 +103,9 @@ function loadWorldState() {
       // Cyber settlements (village clustering)
       cyberSettlements: Array.isArray(state.cyberSettlements) ? state.cyberSettlements : [],
       // One-time cyber wipe migration marker
-      _cyberWipedAt: state._cyberWipedAt || null };
+      _cyberWipedAt: state._cyberWipedAt || null,
+      // One-time top-left dragon spawn marker
+      _topLeftDragonSpawned: state._topLeftDragonSpawned || null };
 
     const Agent = require('./models/Agent');
     const Building = require('./models/Building');
@@ -321,6 +325,56 @@ if (worldState._cyberWipedAt !== CYBER_WIPE_VERSION) {
 }
 worldState._spatialIndex.rebuild(worldState.buildingsList);
 console.log(`[Server] Spatial index built: ${worldState._spatialIndex.size()} buildings`);
+
+// ═══════════════════════════════════════════════════════════════════
+// ONE-TIME TOP-LEFT DRAGON SPAWN
+// Drops a single dragon into the top-left quadrant of the map. Runs
+// once per version flag. Won't re-spawn if one is already alive, and
+// won't disturb any existing state. Agents fight it like a normal
+// dragon event — when killed, the dragon won't respawn from this
+// migration again (but the normal dragon cooldown still ticks).
+// ═══════════════════════════════════════════════════════════════════
+const TL_DRAGON_VERSION = 'v1-topleft-chaos';
+if (worldState._topLeftDragonSpawned !== TL_DRAGON_VERSION) {
+  console.log(`[MIGRATION] Scheduling top-left dragon spawn (${TL_DRAGON_VERSION})`);
+  // Find the densest building cluster inside the top-left quadrant
+  // (approximately x < width/2, y < height/2). Agents will rush toward it.
+  const maxX = Math.floor(worldState.width / 2);
+  const maxY = Math.floor(worldState.height / 2);
+  const topLeftBuildings = worldState.buildingsList.filter(b =>
+    b.isComplete && b.isComplete() && b.world === 'grassland' &&
+    b.workCost > 0 && b.x < maxX && b.y < maxY
+  );
+  let targetX, targetY;
+  if (topLeftBuildings.length > 0) {
+    // Pick the one with the most neighbors in a 10-tile radius
+    let best = topLeftBuildings[0], bestNeighbors = 0;
+    for (const b of topLeftBuildings) {
+      let n = 0;
+      for (const o of topLeftBuildings) {
+        if (o === b) continue;
+        if (Math.abs(o.x - b.x) + Math.abs(o.y - b.y) < 10) n++;
+      }
+      if (n > bestNeighbors) { bestNeighbors = n; best = b; }
+    }
+    targetX = best.x;
+    targetY = best.y;
+    console.log(`[MIGRATION] Top-left dragon target: ${bestNeighbors}+-building cluster at (${targetX},${targetY})`);
+  } else {
+    // Fallback to the center of the top-left quadrant
+    targetX = Math.floor(maxX * 0.5);
+    targetY = Math.floor(maxY * 0.5);
+    console.log(`[MIGRATION] Top-left dragon target (fallback center): (${targetX},${targetY})`);
+  }
+  // Mark the flag BEFORE the actual spawn so a retry after crash can't
+  // double-spawn. The actual spawn happens once the gameLoop exists, below.
+  worldState._topLeftDragonSpawned = TL_DRAGON_VERSION;
+  worldState._topLeftDragonTarget = { x: targetX, y: targetY };
+  // Save so the flag persists even before the spawn call runs
+  try { saveWorldState(worldState); } catch (e) { console.error('[MIGRATION] Save failed:', e.message); }
+} else {
+  console.log(`[MIGRATION] Top-left dragon already spawned (${TL_DRAGON_VERSION}) — skipping`);
+}
 
 // ─── Payment Infrastructure (Phase 1) ───
 const ActionRegistry = require('./services/ActionRegistry');
@@ -1458,6 +1512,28 @@ wss.on('connection', (ws, req) => {
 
 const gameLoop = new GameLoop(worldState, wss);
 gameLoop.start();
+
+// ─── One-time top-left dragon spawn (pending from migration block) ───
+// If the migration set a _topLeftDragonTarget and no dragon is currently
+// alive, spawn one at that location. Runs after gameLoop.start() so the
+// dragon becomes part of the normal tick lifecycle immediately.
+if (worldState._topLeftDragonTarget) {
+  const target = worldState._topLeftDragonTarget;
+  const alreadyAlive = worldState.dragon && worldState.dragon.alive;
+  if (!alreadyAlive) {
+    try {
+      gameLoop._spawnDragon(worldState.tick || 0, [], target);
+      console.log(`[MIGRATION] Top-left dragon spawned at target (${target.x},${target.y})`);
+    } catch (e) {
+      console.error('[MIGRATION] Top-left dragon spawn failed:', e.message);
+    }
+  } else {
+    console.log('[MIGRATION] A dragon is already alive — skipping top-left spawn');
+  }
+  // Clear the target so it never re-triggers
+  delete worldState._topLeftDragonTarget;
+  try { saveWorldState(worldState); } catch (e) { console.error('[MIGRATION] Save failed:', e.message); }
+}
 
 // ─── Startup Validation ───
 

@@ -2225,39 +2225,48 @@ class GameLoop {
   /**
    * Spawn a new dragon at the edge of the map, targeting a dense settlement.
    */
-  _spawnDragon(tick, events) {
+  _spawnDragon(tick, events, forceTarget) {
     // Spawn near (or on) the biggest settlement for immediate action.
-    // No more spawning at the edge of the map — dragons arrive with fury.
+    // `forceTarget` (optional): {x, y} — spawn near this specific location
+    // instead of auto-picking the biggest settlement. Used by the one-time
+    // top-left-village migration.
     let sx, sy, targetX, targetY;
-    const setts = this.world.settlements || [];
-    if (setts.length > 0) {
-      // Pick the biggest settlement by nearby building count
-      let bestSett = setts[0], bestCount = 0;
-      for (const s of setts) {
-        const cnt = this.world.buildingsList.filter(b =>
-          b.isComplete() && Math.abs(b.x - s.cx) + Math.abs(b.y - s.cy) < 20
-        ).length;
-        if (cnt > bestCount) { bestSett = s; bestCount = cnt; }
-      }
-      // Spawn offset from center (5-12 tiles away so it doesn't just sit ON buildings)
+    if (forceTarget && Number.isFinite(forceTarget.x) && Number.isFinite(forceTarget.y)) {
       const angle = Math.random() * Math.PI * 2;
-      const spawnDist = 5 + Math.floor(Math.random() * 8);
-      sx = Math.max(0, Math.min(this.world.width - 1, Math.round(bestSett.cx + Math.cos(angle) * spawnDist)));
-      sy = Math.max(0, Math.min(this.world.height - 1, Math.round(bestSett.cy + Math.sin(angle) * spawnDist)));
-      targetX = bestSett.cx;
-      targetY = bestSett.cy;
+      const spawnDist = 4 + Math.floor(Math.random() * 6);
+      sx = Math.max(0, Math.min(this.world.width - 1, Math.round(forceTarget.x + Math.cos(angle) * spawnDist)));
+      sy = Math.max(0, Math.min(this.world.height - 1, Math.round(forceTarget.y + Math.sin(angle) * spawnDist)));
+      targetX = forceTarget.x;
+      targetY = forceTarget.y;
     } else {
-      // No settlements — pick a random building cluster
-      const completed = this.world.buildingsList.filter(b => b.isComplete());
-      if (completed.length > 0) {
-        const pick = completed[Math.floor(Math.random() * completed.length)];
-        sx = pick.x + (Math.floor(Math.random() * 11) - 5);
-        sy = pick.y + (Math.floor(Math.random() * 11) - 5);
-        targetX = pick.x; targetY = pick.y;
+      const setts = this.world.settlements || [];
+      if (setts.length > 0) {
+        // Pick the biggest settlement by nearby building count
+        let bestSett = setts[0], bestCount = 0;
+        for (const s of setts) {
+          const cnt = this.world.buildingsList.filter(b =>
+            b.isComplete() && Math.abs(b.x - s.cx) + Math.abs(b.y - s.cy) < 20
+          ).length;
+          if (cnt > bestCount) { bestSett = s; bestCount = cnt; }
+        }
+        const angle = Math.random() * Math.PI * 2;
+        const spawnDist = 5 + Math.floor(Math.random() * 8);
+        sx = Math.max(0, Math.min(this.world.width - 1, Math.round(bestSett.cx + Math.cos(angle) * spawnDist)));
+        sy = Math.max(0, Math.min(this.world.height - 1, Math.round(bestSett.cy + Math.sin(angle) * spawnDist)));
+        targetX = bestSett.cx;
+        targetY = bestSett.cy;
       } else {
-        sx = Math.floor(this.world.width / 2);
-        sy = Math.floor(this.world.height / 2);
-        targetX = sx; targetY = sy;
+        const completed = this.world.buildingsList.filter(b => b.isComplete());
+        if (completed.length > 0) {
+          const pick = completed[Math.floor(Math.random() * completed.length)];
+          sx = pick.x + (Math.floor(Math.random() * 11) - 5);
+          sy = pick.y + (Math.floor(Math.random() * 11) - 5);
+          targetX = pick.x; targetY = pick.y;
+        } else {
+          sx = Math.floor(this.world.width / 2);
+          sy = Math.floor(this.world.height / 2);
+          targetX = sx; targetY = sy;
+        }
       }
     }
 
