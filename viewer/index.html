@@ -656,11 +656,12 @@ const CYBER_BT = [
   { m: 0.92, b: 'chrome_peaks' },
   { m: 1.01, b: 'core_vein' },
 ];
-// Two-tone per biome (matches grassland pattern exactly)
+// Two-tone per biome (matches grassland pattern exactly).
+// Water biomes are EMERALD GREEN + glow — signature cyber waterway look.
 const CBC = {
-  data_pool:     ['#050a2a','#04082a'],
-  neon_shallows: ['#0a1e4a','#091c48'],
-  neon_river:    ['#0a2860','#08265a'],
+  data_pool:     ['#042420','#03201a'],
+  neon_shallows: ['#0a3828','#083424'],
+  neon_river:    ['#0c5a3a','#0a543a'],
   chrome_sand:   ['#6a6a82','#64647a'],
   cyber_grass:   ['#180e28','#160c26'],
   neon_forest:   ['#120a22','#100820'],
@@ -779,17 +780,21 @@ function renderCyberBuf() {
           c.fillRect(px + (h % (ts - 2)), py + ((h >> 8) % (ts - 2)), 1, 1);
         }
       } else if (bName === 'data_pool' || bName === 'neon_shallows') {
-        // Single bright cyan ripple
-        c.fillStyle = 'rgba(120,220,255,0.4)';
+        // Emerald green shimmer + glow highlights
+        c.fillStyle = 'rgba(68,255,136,0.55)';
         if ((h >> 4) % 3 === 0) {
           c.fillRect(px + (h % (ts - 3)), py + ((h >> 8) % (ts - 3)), 2, 1);
         }
+        c.fillStyle = 'rgba(136,255,170,0.4)';
+        c.fillRect(px + ((h >> 12) % (ts - 2)), py + ((h >> 14) % (ts - 2)), 1, 1);
       } else if (bName === 'neon_river') {
-        // Bright cyan flowing streak
-        c.fillStyle = 'rgba(120,220,255,0.55)';
+        // Bright emerald flowing streak + glow
+        c.fillStyle = 'rgba(68,255,136,0.8)';
         c.fillRect(px + 2, py + ts / 2 - 1, ts - 4, 2);
+        c.fillStyle = 'rgba(180,255,220,0.6)';
+        c.fillRect(px + 4, py + ts / 2, ts - 8, 1);
         if ((h >> 8) % 5 === 0) {
-          c.fillStyle = 'rgba(255,77,210,0.4)';
+          c.fillStyle = 'rgba(220,255,200,0.7)';
           c.fillRect(px + ((h >> 4) % (ts - 2)), py + ts / 2, 1, 1);
         }
       } else if (bName === 'chrome_sand') {

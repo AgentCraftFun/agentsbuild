@@ -934,6 +934,66 @@ app.post('/api/drop/free', (req, res) => {
   return res.json({ ok: true, item, tick: worldState.tick || 0 });
 });
 
+// ─── Cyber Reset Endpoint (admin) ───
+// Wipes all cyber buildings and returns all cyber agents to grassland.
+// Lets us watch Neo-Kyoto fill up from scratch once portals open.
+// Protected by ADMIN_TOKEN.
+// Usage: POST /api/cyber/reset?token=XXX
+app.post('/api/cyber/reset', (req, res) => {
+  const adminToken = process.env.ADMIN_TOKEN;
+  if (adminToken) {
+    const provided = (req.body && req.body.token) || req.query.token;
+    if (provided !== adminToken) {
+      return res.status(403).json({ ok: false, error: 'Forbidden: invalid admin token' });
+    }
+  }
+  // 1. Remove all cyber buildings from every relevant collection
+  let removedBuildings = 0;
+  const keep = [];
+  for (const b of worldState.buildingsList) {
+    if (b.world === 'cyber') {
+      // Clear tile reference
+      const tile = worldState.tiles.get(`${b.x},${b.y}`);
+      if (tile && tile.building === b) tile.building = null;
+      if (worldState._spatialIndex) worldState._spatialIndex.remove(b);
+      if (!worldState._dirtyTiles) worldState._dirtyTiles = new Set();
+      worldState._dirtyTiles.add(`${b.x},${b.y}`);
+      removedBuildings++;
+    } else {
+      keep.push(b);
+    }
+  }
+  worldState.buildingsList = keep;
+  // Also purge from each agent's buildings array
+  for (const agent of worldState.agents.values()) {
+    if (Array.isArray(agent.buildings)) {
+      agent.buildings = agent.buildings.filter(b => b.world !== 'cyber');
+    }
+  }
+  // 2. Send all cyber agents back to grassland at a random valid spot
+  let returnedAgents = 0;
+  for (const agent of worldState.agents.values()) {
+    if (agent.currentWorld === 'cyber') {
+      agent.currentWorld = 'grassland';
+      // Spawn near center of map
+      agent.x = Math.floor(worldState.width / 2) + Math.floor(Math.random() * 20 - 10);
+      agent.y = Math.floor(worldState.height / 2) + Math.floor(Math.random() * 20 - 10);
+      agent.mood = 'idle';
+      agent._buildingTarget = null;
+      agent.current_action = null;
+      agent.action_queue = [];
+      returnedAgents++;
+    }
+  }
+  console.log(`[CYBER RESET] Removed ${removedBuildings} buildings, returned ${returnedAgents} agents to grassland`);
+  return res.json({
+    ok: true,
+    removedBuildings,
+    returnedAgents,
+    message: `Cyber world wiped. ${removedBuildings} buildings removed, ${returnedAgents} agents returned to grassland.`,
+  });
+});
+
 // ─── Dragon Spawn Endpoint (manual trigger for testing) ───
 // Spawns a dragon immediately. Rate limited: one dragon at a time.
 app.post('/api/dragon/spawn', (req, res) => {
