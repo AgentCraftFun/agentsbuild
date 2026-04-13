@@ -2014,14 +2014,15 @@ class GameLoop {
     const portals = this.world.portals;
     if (!Array.isArray(portals) || portals.length === 0) return 'none';
 
-    // Find the nearest ACTIVE portal
+    // Find the nearest ACTIVE portal (any distance on the map).
+    // Only ~15% of agents are "curious" each tick — we don't want the
+    // whole world to drain through the portal instantly.
     let best = null;
     let bestDist = Infinity;
-    const SCAN_RADIUS = 30;
     for (const p of portals) {
       if (!p.active) continue;
       const dist = Math.abs(agent.x - p.x) + Math.abs(agent.y - p.y);
-      if (dist <= SCAN_RADIUS && dist < bestDist) {
+      if (dist < bestDist) {
         best = p;
         bestDist = dist;
       }
@@ -2034,9 +2035,13 @@ class GameLoop {
       return 'traversed';
     }
 
-    // Not every agent is curious — only ~30% chance per tick to actually move
-    // toward the portal so the world doesn't drain instantly
-    if (Math.random() > 0.3) return 'none';
+    // Curiosity check: how likely is this agent to walk toward the portal
+    // this tick? Nearby agents are more curious than far ones.
+    // - Within 15 tiles: 60% chance → close agents beeline
+    // - Within 40 tiles: 30% chance → medium range wanderers
+    // - Farther: 8% chance → slow trickle from across the map
+    const curiosity = bestDist <= 15 ? 0.60 : bestDist <= 40 ? 0.30 : 0.08;
+    if (Math.random() > curiosity) return 'none';
 
     // Walk one step toward the portal
     const dxStep = Math.sign(best.x - agent.x);

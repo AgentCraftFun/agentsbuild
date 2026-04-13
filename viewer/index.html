@@ -3200,12 +3200,14 @@ function drawCyberBuilding(c, b, bx, by, bw, bh, fr) {
       drawCyberBuildingComplete(c, b, bx, by, bw, bh, fr, type);
       c.restore();
     }
-    // Floating "BUILDING..." holo text + scan line
+    // Floating "BUILDING..." holo text — sits ABOVE the standard green
+    // progress bar (which renders at by-6 to by-3 outside this function).
+    // We position the text above that bar so they don't overlap.
     if (p < 0.85) {
       c.font = 'bold 7px Courier New';
       c.textAlign = 'center';
       c.fillStyle = 'rgba(77,243,255,' + (0.6 + Math.sin(fr * 0.2) * 0.3) + ')';
-      c.fillText('BUILDING ' + Math.floor(p * 100) + '%', bx + bw / 2, by - 4);
+      c.fillText('BUILDING ' + Math.floor(p * 100) + '%', bx + bw / 2, by - 12);
       c.textAlign = 'start';
     }
     return;
@@ -6633,28 +6635,26 @@ if(S.portals&&S.portals.length){
     ctx.fillRect(pxc-11,pyc-3,2,4);ctx.fillRect(pxc+9,pyc-3,2,4);
     // Dim torch flicker (not fully lit)
     if(frame%8<4){ctx.fillStyle=glowRgbaBase+'0.5)';ctx.fillRect(pxc-11,pyc-5,2,2);ctx.fillRect(pxc+9,pyc-5,2,2)}
-    // ── POWERING UP label + charge bar ──
-    const barW=42,barH=4,barX=pxc-barW/2,barY=pyc-32;
-    // Label
-    ctx.font='bold 7px Courier New';ctx.textAlign='center';
-    ctx.fillStyle='rgba(0,0,0,0.7)';
-    ctx.fillRect(pxc-30,barY-11,60,9);
+    // ── PORTAL label (always shown; portals are open now) ──
+    const labelY=pyc-30;
+    ctx.font='bold 9px Courier New';ctx.textAlign='center';
+    // Backdrop pill
+    ctx.fillStyle='rgba(0,0,0,0.75)';
+    ctx.fillRect(pxc-22,labelY-8,44,11);
+    ctx.strokeStyle=ringCol;ctx.lineWidth=1;
+    ctx.strokeRect(pxc-22,labelY-8,44,11);
+    // Pulsing label text
+    const labelPulse=0.75+Math.sin(frame*0.12)*0.25;
     ctx.fillStyle=coreCol;
-    ctx.fillText('POWERING UP',pxc,barY-4);
-    // Bar background
-    ctx.fillStyle='rgba(0,0,0,0.85)';ctx.fillRect(barX-1,barY-1,barW+2,barH+2);
-    ctx.fillStyle='#1a0f28';ctx.fillRect(barX,barY,barW,barH);
-    // Bar fill (charge)
-    const fillW=barW*(p.charge||0);
-    ctx.fillStyle=ringCol;ctx.fillRect(barX,barY,fillW,barH);
-    // Scanning highlight on the fill
-    const scanX=barX+((frame*0.7+p.x*17)%barW);
-    ctx.fillStyle='rgba(255,255,255,0.5)';
-    ctx.fillRect(scanX,barY,2,barH);
-    // Percent
-    ctx.font='6px Courier New';
-    ctx.fillStyle=coreCol;
-    ctx.fillText(Math.floor((p.charge||0)*100)+'%',pxc,barY+barH+6);
+    ctx.globalAlpha=labelPulse;
+    ctx.fillText('PORTAL',pxc,labelY);
+    ctx.globalAlpha=1;
+    // Small double-chevron indicator underneath to signal "enter here"
+    ctx.fillStyle=ringCol;
+    ctx.fillRect(pxc-3,labelY+4,2,1);
+    ctx.fillRect(pxc+1,labelY+4,2,1);
+    ctx.fillRect(pxc-3,labelY+6,2,1);
+    ctx.fillRect(pxc+1,labelY+6,2,1);
     ctx.textAlign='start';
   }
 }
