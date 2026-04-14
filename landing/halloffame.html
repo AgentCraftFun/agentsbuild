@@ -71,6 +71,12 @@
   .row .agent .meta .gear{color:var(--cyan);margin-right:6px}
   .row .agent .meta .perks{color:var(--gold)}
   .row .agent .meta .cyber{color:var(--pink)}
+  .row .badges{display:flex;flex-wrap:wrap;gap:4px;margin-top:6px}
+  .row .badges .badge{display:inline-flex;align-items:center;gap:3px;padding:2px 6px;font-size:9px;font-weight:700;letter-spacing:0.5px;border-radius:10px;background:rgba(42,38,64,0.5);border:1px solid var(--border);white-space:nowrap}
+  .row .badges .badge.tier-common{color:#aabbcc;border-color:rgba(170,187,204,0.35)}
+  .row .badges .badge.tier-rare{color:var(--cyan);border-color:rgba(77,243,255,0.4);background:rgba(77,243,255,0.06)}
+  .row .badges .badge.tier-epic{color:var(--purple);border-color:rgba(166,77,255,0.5);background:rgba(166,77,255,0.08)}
+  .row .badges .badge.tier-legendary{color:var(--gold);border-color:rgba(240,192,64,0.6);background:rgba(240,192,64,0.1);box-shadow:0 0 8px rgba(240,192,64,0.25)}
   .row .stat{font-family:'Press Start 2P',monospace;font-size:14px;color:var(--gold);text-shadow:0 0 8px rgba(240,192,64,0.4);font-variant-numeric:tabular-nums;text-align:right;min-width:90px}
   .row .stat-lbl{font-size:8px;color:var(--muted);letter-spacing:1.5px;text-align:right;display:block;margin-top:3px;text-transform:uppercase}
 
@@ -118,6 +124,7 @@
     <button class="tab" data-cat="gold">⛏ GOLD HOARDERS</button>
     <button class="tab" data-cat="territory">🗺 LAND BARONS</button>
     <button class="tab" data-cat="slayers">🐉 DRAGON SLAYERS</button>
+    <button class="tab" data-cat="dragonHistory">📜 DRAGON HISTORY</button>
   </div>
 
   <div class="board" id="board">
@@ -181,6 +188,41 @@ function renderBoard() {
     board.innerHTML = '<div class="loading">Loading the legends</div>';
     return;
   }
+  // Dragon history renders as a list of past kills, NOT agent leaderboard rows
+  if (activeCat === 'dragonHistory') {
+    const list = lastData.dragonHistory || [];
+    if (list.length === 0) {
+      board.innerHTML = '<div class="empty">📜 No dragons have been slain yet. The first kill will be immortalized here.</div>';
+      return;
+    }
+    board.innerHTML = list.map((k, i) => {
+      const ageS = lastData.tick ? Math.max(0, (lastData.tick - k.killTick) * 3) : 0;
+      const ageStr = ageS < 60 ? (ageS + 's ago')
+                  : ageS < 3600 ? (Math.floor(ageS/60) + 'm ago')
+                  : ageS < 86400 ? (Math.floor(ageS/3600) + 'h ago')
+                  : (Math.floor(ageS/86400) + 'd ago');
+      const durS = (k.durationTicks || 0) * 3;
+      const durStr = durS < 60 ? (durS + 's') : (Math.floor(durS/60) + 'm ' + (durS%60) + 's');
+      const weaponEmoji = { sword:'⚔️', bow:'🏹', spear:'🔱', fists:'👊' }[k.mvpWeapon] || '👊';
+      const rankCls = i === 0 ? ' r1' : '';
+      return `<div class="row${rankCls}">
+        <div class="rank">${i + 1}</div>
+        <div class="agent">
+          <div class="name">${escapeHtml(k.mvpName || 'Unknown')} ${weaponEmoji}</div>
+          <div class="meta">
+            <span class="faction">${(k.mvpFaction || '').toUpperCase()}</span>
+            <span class="gear">🎯 ${fmt(k.mvpDmg)}/${fmt(k.maxHp)} dmg</span>
+            <span class="perks">⚔️ ${fmt(k.totalFighters)} fighters · 🔥 ${fmt(k.buildingsDestroyed)} burned · ⏱ ${durStr}</span>
+          </div>
+        </div>
+        <div>
+          <div class="stat">${ageStr.toUpperCase()}</div>
+          <div class="stat-lbl">@ (${k.x},${k.y})</div>
+        </div>
+      </div>`;
+    }).join('');
+    return;
+  }
   const list = lastData[activeCat] || [];
   const cfg = CAT_CONFIG[activeCat];
   if (list.length === 0) {
@@ -204,6 +246,13 @@ function renderBoard() {
     if (a.perks && a.perks.dragon_slayer) perkBits.push('🐉 dragon slayer');
     const perkStr = perkBits.length ? perkBits.join(' · ') : '';
     const cyberStr = a.currentWorld === 'cyber' ? '🌆 NEO-KYOTO' : '';
+    const badges = Array.isArray(a.badges) ? a.badges : [];
+    const badgesHtml = badges.length
+      ? '<div class="badges">' + badges.map(b =>
+          '<span class="badge tier-' + escapeHtml(b.tier || 'common') + '" title="' + escapeHtml(b.name) + '">' +
+          b.emoji + ' ' + escapeHtml(b.name) + '</span>'
+        ).join('') + '</div>'
+      : '';
     return `<div class="row${rankCls}">
       <div class="rank">${rank}</div>
       <div class="agent">
@@ -211,9 +260,9 @@ function renderBoard() {
         <div class="meta">
           <span class="faction">${factionLbl}</span>
           ${gearStr ? '<span class="gear">' + escapeHtml(gearStr) + '</span>' : ''}
-          ${perkStr ? '<span class="perks">' + escapeHtml(perkStr) + '</span>' : ''}
           ${cyberStr ? '<span class="cyber">' + cyberStr + '</span>' : ''}
         </div>
+        ${badgesHtml}
       </div>
       <div>
         <div class="stat">${fmt(a[cfg.stat])}</div>

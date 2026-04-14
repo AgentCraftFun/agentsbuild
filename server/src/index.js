@@ -78,6 +78,8 @@ function saveWorldState(ws) {
       _topLeftDragonSpawned: ws._topLeftDragonSpawned || null,
       // One-time cyber return portals marker
       _cyberPortalsSpawned: ws._cyberPortalsSpawned || null,
+      // Dragon kill history — last 50 kills for the Hall of Fame
+      dragonKills: Array.isArray(ws.dragonKills) ? ws.dragonKills : [],
     };
     fs.writeFileSync(STATE_FILE, JSON.stringify(state));
     console.log(`[Save] Tick:${ws.tick} Agents:${agents.length} Buildings:${buildings.length}`);
@@ -109,7 +111,9 @@ function loadWorldState() {
       // One-time top-left dragon spawn marker
       _topLeftDragonSpawned: state._topLeftDragonSpawned || null,
       // One-time cyber return portals marker
-      _cyberPortalsSpawned: state._cyberPortalsSpawned || null };
+      _cyberPortalsSpawned: state._cyberPortalsSpawned || null,
+      // Dragon kill history
+      dragonKills: Array.isArray(state.dragonKills) ? state.dragonKills : [] };
 
     const Agent = require('./models/Agent');
     const Building = require('./models/Building');
@@ -526,6 +530,44 @@ app.get('/api/stats', (req, res) => {
 app.get('/api/leaderboard', (req, res) => {
   res.set('Cache-Control', 'no-store');
   const all = [...worldState.agents.values()];
+  // Compute auto-awarded achievement badges from existing agent data.
+  // Each badge is {id, emoji, name, tier} — tiers: common, rare, epic, legendary
+  const computeBadges = (a) => {
+    const badges = [];
+    const builds = (a.buildings || []).filter(b => b.isComplete && b.isComplete()).length;
+    const work = Math.round(a.work_balance || 0);
+    const gold = Math.round((a.resources && a.resources.gold) || 0);
+    const tiles = (a.owned_tiles || []).length;
+    const perks = a.perks || {};
+    const eq = a.equipment || {};
+
+    // Dragon Slayer — highest honor
+    if (perks.dragon_slayer) badges.push({ id: 'dragon_slayer', emoji: '🐉', name: 'Dragon Slayer', tier: 'legendary' });
+    // Crown (future)
+    if (perks.crown) badges.push({ id: 'crowned', emoji: '👑', name: 'Crowned King', tier: 'legendary' });
+    // Builder tiers
+    if (builds >= 25) badges.push({ id: 'grand_architect', emoji: '🏰', name: 'Grand Architect', tier: 'epic' });
+    else if (builds >= 10) badges.push({ id: 'master_builder', emoji: '🏛', name: 'Master Builder', tier: 'rare' });
+    else if (builds >= 3) badges.push({ id: 'builder', emoji: '🏗', name: 'Builder', tier: 'common' });
+    // Wealth tiers
+    if (work >= 50000) badges.push({ id: 'mega_tycoon', emoji: '💎', name: 'Mega Tycoon', tier: 'epic' });
+    else if (work >= 10000) badges.push({ id: 'tycoon', emoji: '💰', name: 'Tycoon', tier: 'rare' });
+    // Gold hoarder
+    if (gold >= 10000) badges.push({ id: 'gold_hoarder', emoji: '⛏', name: 'Gold Hoarder', tier: 'rare' });
+    // Territory
+    if (tiles >= 50) badges.push({ id: 'land_baron', emoji: '🗺', name: 'Land Baron', tier: 'rare' });
+    else if (tiles >= 15) badges.push({ id: 'settler', emoji: '📍', name: 'Settler', tier: 'common' });
+    // Golden tools
+    if (perks.golden_axe) badges.push({ id: 'golden_axe', emoji: '🪓', name: 'Golden Axe', tier: 'epic' });
+    if (perks.golden_pickaxe) badges.push({ id: 'golden_pickaxe', emoji: '⛏️', name: 'Golden Pickaxe', tier: 'epic' });
+    // Equipment
+    if (eq.weapon && eq.armor) badges.push({ id: 'fully_equipped', emoji: '⚔️', name: 'Fully Equipped', tier: 'rare' });
+    else if (eq.weapon) badges.push({ id: 'armed', emoji: '🗡', name: 'Armed', tier: 'common' });
+    else if (eq.armor) badges.push({ id: 'armored', emoji: '🛡', name: 'Armored', tier: 'common' });
+    // Cyber Pioneer — made it to Neo-Kyoto
+    if (a.currentWorld === 'cyber') badges.push({ id: 'cyber_pioneer', emoji: '🌆', name: 'Cyber Pioneer', tier: 'epic' });
+    return badges;
+  };
   const summarize = (a) => ({
     id: a.id,
     name: a.name,
@@ -539,6 +581,7 @@ app.get('/api/leaderboard', (req, res) => {
     work: Math.round(a.work_balance || 0),
     gold: Math.round((a.resources && a.resources.gold) || 0),
     tiles: (a.owned_tiles || []).length,
+    badges: computeBadges(a),
   });
 
   const builders = all
@@ -566,6 +609,21 @@ app.get('/api/leaderboard', (req, res) => {
     .filter(a => a.perks && a.perks.dragon_slayer)
     .map(summarize);
 
+  // Dragon history — most recent 20 kills, newest first
+  const dragonHistory = (worldState.dragonKills || []).slice(-20).reverse().map(k => ({
+    killTick: k.killTick,
+    spawnTick: k.spawnTick,
+    durationTicks: k.durationTicks,
+    x: k.x, y: k.y,
+    maxHp: k.maxHp,
+    mvpName: k.mvpName,
+    mvpWeapon: k.mvpWeapon,
+    mvpFaction: k.mvpFaction,
+    mvpDmg: k.mvpDmg,
+    totalFighters: k.totalFighters,
+    buildingsDestroyed: k.buildingsDestroyed,
+  }));
+
   res.json({
     tick: worldState.tick || 0,
     totalAgents: worldState.agents.size,
@@ -575,6 +633,7 @@ app.get('/api/leaderboard', (req, res) => {
     gold,
     territory,
     slayers,
+    dragonHistory,
     generatedAt: Date.now(),
   });
 });

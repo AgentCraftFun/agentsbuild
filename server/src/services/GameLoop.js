@@ -2498,6 +2498,30 @@ class GameLoop {
       }
 
       const fighterCount = Object.keys(d.damageLog).length;
+      // Persist this kill in the world's dragonKills history so it
+      // survives restarts and can be displayed on the Hall of Fame
+      if (!Array.isArray(this.world.dragonKills)) this.world.dragonKills = [];
+      const mvpWeapon = (mvpAgent && mvpAgent.equipment && mvpAgent.equipment.weapon) || 'fists';
+      const durationTicks = tick - (d.spawnTick || tick);
+      this.world.dragonKills.push({
+        killTick: tick,
+        spawnTick: d.spawnTick || tick,
+        durationTicks,
+        x: d.x,
+        y: d.y,
+        maxHp: d.maxHp,
+        mvpId,
+        mvpName,
+        mvpDmg: Math.round(mvpDmg),
+        mvpWeapon,
+        mvpFaction: mvpAgent ? mvpAgent.faction : null,
+        totalFighters: fighterCount,
+        buildingsDestroyed: d.kills,
+      });
+      // Cap history to most recent 50 so the save doesn't balloon
+      if (this.world.dragonKills.length > 50) {
+        this.world.dragonKills = this.world.dragonKills.slice(-50);
+      }
       events.push({
         tick,
         type: 'dragon_death',
