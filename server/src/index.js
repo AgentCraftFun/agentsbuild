@@ -445,6 +445,22 @@ app.get('/api/stats', (req, res) => {
   // people watching via embed/preview, etc.
   const rawViewers = wss ? wss.clients.size : 0;
   const viewers = rawViewers * 2;
+  // Chaos meter: count chaos events in the rolling event buffer.
+  // worldState.events is capped at ~200 so this is a "recent activity"
+  // indicator, not an all-time count. Includes natural disasters,
+  // raids, dragon events, and burning buildings.
+  const chaosTypes = new Set([
+    'lightning_strike','lightning_storm',
+    'wildfire_started','wildfire_storm',
+    'earthquake','mega_earthquake',
+    'tornado','tornado_swarm',
+    'meteor_strike','meteor_shower',
+    'plague','plague_wave',
+    'volcano','volcanic_eruption',
+    'dragon_spawn','dragon_fire','dragon_death','dragon_hit',
+    'building_burning','building_destroyed','raid_success','raid_blocked','raid_reflected',
+  ]);
+  const chaosRecent = (worldState.events || []).filter(e => e && chaosTypes.has(e.type)).length;
   res.json({
     tick,
     day,
@@ -452,6 +468,7 @@ app.get('/api/stats', (req, res) => {
     buildings: buildingsCount,
     tilesClaimed,
     viewers,
+    chaosRecent,
     serverUptime: Math.round(process.uptime()),
   });
 });
