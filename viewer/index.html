@@ -22,6 +22,8 @@ html,body{height:100%;overflow:hidden;background:var(--bg);color:var(--text);fon
 #header-stats{display:flex;gap:20px;font-size:12px;align-items:center}
 #header-stats span{color:#555588}
 #header-stats .val{color:#aaffaa;font-weight:bold;min-width:24px;display:inline-block}
+#header-stats .header-link{padding:5px 10px;background:rgba(240,192,64,0.08);border:1px solid rgba(240,192,64,0.4);border-radius:3px;color:#f0c040;font-size:10px;font-weight:bold;letter-spacing:1px;text-decoration:none;transition:all 0.15s;text-shadow:0 0 6px rgba(240,192,64,0.4)}
+#header-stats .header-link:hover{background:rgba(240,192,64,0.2);border-color:#f0c040;box-shadow:0 0 10px rgba(240,192,64,0.4)}
 #live-dot{display:inline-block;width:8px;height:8px;border-radius:50%;margin-right:4px;background:#ff4444}
 #live-dot.on{background:#ff4444;box-shadow:0 0 6px #ff4444}
 #canvas-wrap{position:relative;overflow:hidden;background:#000}
@@ -172,6 +174,7 @@ setTimeout(function(){var io=document.getElementById('intro-overlay');if(io)io.r
       <span>🗓<span class="val" id="h-playtime">Day 1, 06:00</span></span>
       <span>🪙<span class="val" id="h-points">0</span></span>
       <span><span id="live-dot"></span><span id="h-status">OFFLINE</span></span>
+      <a href="/halloffame.html" class="header-link" title="Hall of Fame — see the legends">🏆 HALL OF FAME</a>
     </div>
   </div>
   <div id="canvas-wrap">
