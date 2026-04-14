@@ -197,6 +197,13 @@ setTimeout(function(){var io=document.getElementById('intro-overlay');if(io)io.r
     <div id="tooltip"></div>
     <div id="drama-banner" onclick="this.style.bottom='-50px';this.style.opacity='0'" style="position:absolute;bottom:-50px;left:20%;width:60%;padding:10px 16px;background:rgba(10,10,30,0.92);border:2px solid #f0c040;border-radius:8px;text-align:center;color:#f0c040;font:bold 13px 'Courier New',monospace;z-index:300;transition:bottom 0.3s ease,opacity 0.4s;letter-spacing:1px;text-shadow:0 0 8px rgba(240,192,64,0.3);cursor:pointer;opacity:0"></div>
     <div id="tracking-indicator" style="position:absolute;top:8px;left:8px;background:rgba(10,10,30,0.7);padding:3px 8px;border-radius:3px;color:#f0c040;font:bold 10px 'Courier New',monospace;display:none;z-index:200"></div>
+    <!-- SETTLEMENT PROFILE PANEL — slides in from the right when a village name is clicked -->
+    <div id="sett-panel" style="position:absolute;top:8px;right:-360px;width:340px;max-height:calc(100% - 16px);background:rgba(10,8,24,0.96);border:1px solid #3a3354;border-left:3px solid #f0c040;border-radius:6px;padding:18px;color:#e8e8f0;font-family:'Courier New',monospace;font-size:11px;z-index:250;box-shadow:0 8px 32px rgba(0,0,0,0.6),0 0 30px rgba(240,192,64,0.15);transition:right 0.3s ease;overflow-y:auto;backdrop-filter:blur(4px)">
+      <button id="sett-panel-close" style="position:absolute;top:10px;right:10px;width:24px;height:24px;background:rgba(255,255,255,0.08);border:1px solid #3a3354;border-radius:3px;color:#e8e8f0;cursor:pointer;font-size:14px;line-height:1">×</button>
+      <div style="font-size:9px;color:#7a7a92;letter-spacing:2px;margin-bottom:4px">⚑ SETTLEMENT</div>
+      <div id="sett-panel-name" style="font-size:18px;font-weight:bold;color:#f0c040;text-shadow:0 0 10px rgba(240,192,64,0.4);margin-bottom:14px;letter-spacing:1px">—</div>
+      <div id="sett-panel-body"></div>
+    </div>
     <!-- BIOME TOGGLE — cycles between grassland and Neo-Kyoto cyberpunk view -->
     <div id="biome-toggle" style="position:absolute;top:8px;left:8px;display:flex;gap:4px;background:rgba(10,10,30,0.82);padding:4px;border:1px solid #3a3a5e;border-radius:4px;z-index:210;font-family:'Courier New',monospace;backdrop-filter:blur(4px)">
       <button data-mode="grassland" class="biome-btn biome-btn--active" style="padding:5px 10px;background:#2a3a1a;border:1px solid #5a8a3a;color:#9acc66;font:bold 10px 'Courier New',monospace;border-radius:3px;cursor:pointer;letter-spacing:0.5px;transition:all 0.15s">🌲 GRASSLAND</button>
@@ -2027,10 +2034,120 @@ const canvasEl=document.getElementById('world'),ctx=canvasEl.getContext('2d'),wr
 let vpX=0,vpY=0,zoom=1,dragging=false,dsx=0,dsy=0,dvx=0,dvy=0,mx=-1,my=-1,selAgent=null;
 function resize(){canvasEl.width=wrap.clientWidth;canvasEl.height=wrap.clientHeight}
 // Mobile: start more zoomed in (targetZoom set after its declaration below)
+// Track mousedown vs mouseup to distinguish a true click from a drag
+let _clickStartX=0,_clickStartY=0;
 wrap.addEventListener('mousedown',e=>{lastInputFrame=frame;if(tvMode)tvMode=false;
+  _clickStartX=e.clientX;_clickStartY=e.clientY;
   if(followAgent&&!tvMode){followAgent=null;const ti3=document.getElementById('tracking-indicator');if(ti3)ti3.style.display='none'}// release tracking on click
   if(followDrop)followDrop=null;// release drop-follow on click
   if(e.button===0){dragging=true;dsx=e.clientX;dsy=e.clientY;dvx=vpX;dvy=vpY;if(cursorGrab)setCursor('grab')}});
+
+// ── Settlement profile panel ──
+function openSettlementPanel(hb){
+  const panel=document.getElementById('sett-panel');
+  const nameEl=document.getElementById('sett-panel-name');
+  const bodyEl=document.getElementById('sett-panel-body');
+  if(!panel||!nameEl||!bodyEl)return;
+  nameEl.textContent=hb.name;
+  // Filter buildings + agents within ~15 tiles of settlement center
+  const RADIUS=15;
+  const bldsAll=(S.buildings||[]).filter(b=>{
+    if(b.settlement===hb.name)return true;
+    return Math.abs(b.x-hb.cx)+Math.abs(b.y-hb.cy)<RADIUS;
+  });
+  const agentsAll=(S.agents||[]).filter(a=>{
+    if(a.currentWorld&&a.currentWorld!=='grassland')return false;
+    return Math.abs(a.x-hb.cx)+Math.abs(a.y-hb.cy)<RADIUS;
+  });
+  const completed=bldsAll.filter(b=>b.complete||(b.progress!=null&&b.progress>=1));
+  const inProgress=bldsAll.filter(b=>!b.complete&&(b.progress==null||b.progress<1));
+  const burning=bldsAll.filter(b=>b.burning).length;
+  // Building type breakdown
+  const typeCounts={};
+  for(const b of completed){typeCounts[b.type]=(typeCounts[b.type]||0)+1}
+  const sortedTypes=Object.entries(typeCounts).sort((a,b)=>b[1]-a[1]).slice(0,6);
+  // Faction mix
+  const factionCounts={};
+  for(const a of agentsAll){factionCounts[a.faction]=(factionCounts[a.faction]||0)+1}
+  // Total work + gold across agents
+  let totalWork=0,totalGold=0;
+  for(const a of agentsAll){totalWork+=Math.round(a.work_balance||0);totalGold+=Math.round((a.resources&&a.resources.gold)||0)}
+  // Find champion (most buildings)
+  let champion=null,championBlds=0;
+  for(const a of agentsAll){
+    const n=(a.buildings_count!=null)?a.buildings_count:0;
+    if(n>championBlds){championBlds=n;champion=a}
+  }
+  const fmtN=n=>(n||0).toLocaleString('en-US');
+  // Build the HTML body
+  bodyEl.innerHTML=`
+    <div style="font-size:9px;color:#7a7a92;letter-spacing:1px;margin-bottom:10px">📍 (${hb.cx}, ${hb.cy}) · 🏷 ${(hb.faction||'mixed').toUpperCase()}</div>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:14px">
+      <div style="background:rgba(5,4,10,0.5);border:1px solid #2a2640;border-radius:3px;padding:8px">
+        <div style="font-size:8px;color:#7a7a92;letter-spacing:1.5px">🏘 BUILDINGS</div>
+        <div style="font-size:18px;color:#aaffaa;font-weight:bold;font-variant-numeric:tabular-nums">${fmtN(completed.length)}</div>
+        ${inProgress.length?`<div style="font-size:8px;color:#7a7a92">${inProgress.length} in progress</div>`:''}
+        ${burning?`<div style="font-size:8px;color:#ff4466">🔥 ${burning} burning</div>`:''}
+      </div>
+      <div style="background:rgba(5,4,10,0.5);border:1px solid #2a2640;border-radius:3px;padding:8px">
+        <div style="font-size:8px;color:#7a7a92;letter-spacing:1.5px">🤖 AGENTS</div>
+        <div style="font-size:18px;color:#aaccff;font-weight:bold;font-variant-numeric:tabular-nums">${fmtN(agentsAll.length)}</div>
+        <div style="font-size:8px;color:#7a7a92">${Object.keys(factionCounts).length} factions</div>
+      </div>
+      <div style="background:rgba(5,4,10,0.5);border:1px solid #2a2640;border-radius:3px;padding:8px">
+        <div style="font-size:8px;color:#7a7a92;letter-spacing:1.5px">⚙ WORK</div>
+        <div style="font-size:14px;color:#f0c040;font-weight:bold;font-variant-numeric:tabular-nums">${fmtN(totalWork)}</div>
+      </div>
+      <div style="background:rgba(5,4,10,0.5);border:1px solid #2a2640;border-radius:3px;padding:8px">
+        <div style="font-size:8px;color:#7a7a92;letter-spacing:1.5px">💰 GOLD</div>
+        <div style="font-size:14px;color:#ffcc44;font-weight:bold;font-variant-numeric:tabular-nums">${fmtN(totalGold)}</div>
+      </div>
+    </div>
+    ${sortedTypes.length?`<div style="margin-bottom:14px">
+      <div style="font-size:9px;color:#7a7a92;letter-spacing:1.5px;margin-bottom:6px">🏗 BUILDING MIX</div>
+      ${sortedTypes.map(([t,n])=>`<div style="display:flex;justify-content:space-between;padding:4px 0;border-bottom:1px solid rgba(42,38,64,0.4);font-size:11px"><span>${t}</span><span style="color:#aaffaa;font-weight:bold">${n}</span></div>`).join('')}
+    </div>`:''}
+    ${champion?`<div style="background:rgba(240,192,64,0.08);border:1px solid rgba(240,192,64,0.35);border-radius:3px;padding:10px;margin-bottom:10px">
+      <div style="font-size:8px;color:#7a7a92;letter-spacing:1.5px;margin-bottom:4px">👑 CHAMPION BUILDER</div>
+      <div style="color:#f0c040;font-weight:bold;font-size:13px">${escapeHtml2(champion.name||'Unknown')}</div>
+      <div style="font-size:9px;color:#7a7a92">${championBlds} builds · ${(champion.faction||'').toUpperCase()}</div>
+    </div>`:''}
+    <div style="margin-top:14px;padding-top:10px;border-top:1px solid #2a2640;font-size:9px;color:#7a7a92;letter-spacing:1px">CLICK NAME ON MAP TO SWITCH SETTLEMENTS</div>
+  `;
+  panel.style.right='8px';
+}
+function closeSettlementPanel(){
+  const panel=document.getElementById('sett-panel');
+  if(panel)panel.style.right='-360px';
+}
+function escapeHtml2(s){return String(s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]))}
+// Wire close button + escape key
+document.addEventListener('DOMContentLoaded',()=>{
+  const cb=document.getElementById('sett-panel-close');
+  if(cb)cb.addEventListener('click',closeSettlementPanel);
+});
+// Also try immediately in case DOM is already ready
+(function(){const cb=document.getElementById('sett-panel-close');if(cb)cb.addEventListener('click',closeSettlementPanel)})();
+window.addEventListener('keydown',e=>{if(e.key==='Escape')closeSettlementPanel()});
+
+// Click handler — fires only if the user didn't drag more than ~5px.
+// Checks village hitboxes first to open the settlement profile panel.
+wrap.addEventListener('click',e=>{
+  const dx=Math.abs(e.clientX-_clickStartX),dy=Math.abs(e.clientY-_clickStartY);
+  if(dx>5||dy>5)return;// it was a drag, ignore
+  const r=canvasEl.getBoundingClientRect();
+  // Convert screen coord to world pixel coord (matches canvas transform)
+  const wx=(e.clientX-r.left)/zoom-vpX;
+  const wy=(e.clientY-r.top)/zoom-vpY;
+  const hits=window._villageHitboxes||[];
+  for(const hb of hits){
+    if(wx>=hb.x1&&wx<=hb.x2&&wy>=hb.y1&&wy<=hb.y2){
+      openSettlementPanel(hb);
+      e.preventDefault();
+      return;
+    }
+  }
+});
 let _prevDragVpX=0,_prevDragVpY=0;
 window.addEventListener('mousemove',e=>{
   if(dragging){
@@ -5946,6 +6063,9 @@ if(settlements.length>=2){
 
 // Village/settlement names — positioned ABOVE topmost building, always visible
 // (skip in cyber view — no settlements there yet)
+// Also: record click hitboxes per village for the settlement profile popup.
+if(typeof window._villageHitboxes==='undefined')window._villageHitboxes=[];
+window._villageHitboxes.length=0;
 if(viewMode!=='cyber')
 for(const vl of villages){
   const vpx=vl.cx*ts+ts/2;
@@ -5971,6 +6091,12 @@ for(const vl of villages){
   if(ctx.roundRect)ctx.roundRect(vpx-vtw/2-8,nameY-10,vtw+16,22,4);
   else ctx.rect(vpx-vtw/2-8,nameY-10,vtw+16,22);
   ctx.fill();
+  // Record click hitbox in WORLD pixel coords (used by canvas click handler)
+  window._villageHitboxes.push({
+    name: vl.name, cx: vl.cx, cy: vl.cy, faction: vl.faction,
+    x1: vpx - vtw/2 - 8, y1: nameY - 10,
+    x2: vpx + vtw/2 + 8, y2: nameY + 12,
+  });
   // Text with shadow
   ctx.textAlign='center';ctx.textBaseline='middle';
   ctx.fillStyle='rgba(0,0,0,0.6)';ctx.fillText(vl.name,vpx+1,nameY+1);
