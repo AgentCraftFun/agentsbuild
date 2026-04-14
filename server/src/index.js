@@ -456,6 +456,70 @@ app.get('/api/stats', (req, res) => {
   });
 });
 
+// ─── Hall of Fame leaderboards ─────────────────────────────────────
+// Returns top 10 agents in 5 categories:
+//   builders   — most completed buildings
+//   tycoons    — highest WORK balance
+//   gold       — most gold in resources
+//   territory  — most owned tiles
+//   slayers    — agents with the dragon_slayer perk
+// Pulls from in-memory worldState — fast, no extra storage.
+app.get('/api/leaderboard', (req, res) => {
+  res.set('Cache-Control', 'no-store');
+  const all = [...worldState.agents.values()];
+  const summarize = (a) => ({
+    id: a.id,
+    name: a.name,
+    faction: a.faction,
+    personality: a.personality,
+    weapon: (a.equipment && a.equipment.weapon) || null,
+    armor: (a.equipment && a.equipment.armor) || null,
+    perks: a.perks || {},
+    currentWorld: a.currentWorld || 'grassland',
+    builds: (a.buildings || []).filter(b => b.isComplete && b.isComplete()).length,
+    work: Math.round(a.work_balance || 0),
+    gold: Math.round((a.resources && a.resources.gold) || 0),
+    tiles: (a.owned_tiles || []).length,
+  });
+
+  const builders = all
+    .map(summarize)
+    .filter(a => a.builds > 0)
+    .sort((a, b) => b.builds - a.builds)
+    .slice(0, 10);
+
+  const tycoons = all
+    .map(summarize)
+    .sort((a, b) => b.work - a.work)
+    .slice(0, 10);
+
+  const gold = all
+    .map(summarize)
+    .sort((a, b) => b.gold - a.gold)
+    .slice(0, 10);
+
+  const territory = all
+    .map(summarize)
+    .sort((a, b) => b.tiles - a.tiles)
+    .slice(0, 10);
+
+  const slayers = all
+    .filter(a => a.perks && a.perks.dragon_slayer)
+    .map(summarize);
+
+  res.json({
+    tick: worldState.tick || 0,
+    totalAgents: worldState.agents.size,
+    totalBuildings: worldState.buildingsList.length,
+    builders,
+    tycoons,
+    gold,
+    territory,
+    slayers,
+    generatedAt: Date.now(),
+  });
+});
+
 // ─── LLM Brain (autonomous AI for ALL agents) ───
 const llmBrain = new LLMBrain(worldState);
 worldState.llmBrain = llmBrain; // expose to GameLoop
