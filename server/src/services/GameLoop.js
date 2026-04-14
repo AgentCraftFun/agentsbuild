@@ -236,11 +236,12 @@ class GameLoop {
       }
     }
 
-    // PORTAL TRAVERSAL: if there's an active portal nearby and the agent
-    // is in grassland, they're drawn to it (curiosity). If they reach it,
-    // they get teleported to Neo-Kyoto. Agents in cyber world don't get
-    // pulled back automatically — they have to explore.
-    if (agent.currentWorld === 'grassland' && !lockedMoodsDragon.has(agent.mood)) {
+    // PORTAL TRAVERSAL: works in BOTH directions now.
+    // - Grassland agents notice grassland portals → travel to Neo-Kyoto
+    // - Cyber agents notice cyber portals → return to grassland
+    // Each portal type only attracts agents from its own world (filtered
+    // inside _tryPortalBehavior by p.world matching agent.currentWorld).
+    if (!lockedMoodsDragon.has(agent.mood)) {
       const portalResult = this._tryPortalBehavior(agent, tick, events);
       if (portalResult === 'traversed' || portalResult === 'approaching') {
         agent.last_action_tick = tick;
@@ -2014,13 +2015,18 @@ class GameLoop {
     const portals = this.world.portals;
     if (!Array.isArray(portals) || portals.length === 0) return 'none';
 
-    // Find the nearest ACTIVE portal (any distance on the map).
-    // Only ~15% of agents are "curious" each tick — we don't want the
-    // whole world to drain through the portal instantly.
+    // Find the nearest ACTIVE portal in the SAME world as the agent.
+    // - Grassland agents see portals where world === 'grassland' (or undefined)
+    //   → traverse to cyber
+    // - Cyber agents see portals where world === 'cyber'
+    //   → traverse back to grassland
+    const myWorld = agent.currentWorld || 'grassland';
     let best = null;
     let bestDist = Infinity;
     for (const p of portals) {
       if (!p.active) continue;
+      const pWorld = p.world || 'grassland';
+      if (pWorld !== myWorld) continue;
       const dist = Math.abs(agent.x - p.x) + Math.abs(agent.y - p.y);
       if (dist < bestDist) {
         best = p;
@@ -2029,9 +2035,13 @@ class GameLoop {
     }
     if (!best) return 'none';
 
-    // Adjacent → step into the portal
+    // Adjacent → step into the portal (direction depends on agent's world)
     if (Math.abs(agent.x - best.x) <= 1 && Math.abs(agent.y - best.y) <= 1) {
-      this._traverseToCyber(agent, best, tick, events);
+      if (myWorld === 'cyber') {
+        this._traverseToGrassland(agent, best, tick, events);
+      } else {
+        this._traverseToCyber(agent, best, tick, events);
+      }
       return 'traversed';
     }
 
@@ -2134,6 +2144,54 @@ class GameLoop {
       message: `🌌 ${agent.name} stepped through the portal into NEO-KYOTO!`,
     });
     console.log(`[PORTAL] ${agent.name} traversed to cyber at (${agent.x},${agent.y})`);
+  }
+
+  /**
+   * Teleport an agent FROM Neo-Kyoto BACK to grassland.
+   * Lands them near their original grassland settlement if possible,
+   * otherwise at a random spot near the map center. Clears their
+   * cyber settlement assignment so they can re-enter freshly later.
+   */
+  _traverseToGrassland(agent, portal, tick, events) {
+    // Try to land near the agent's original grassland settlement
+    const setts = this.world.settlements || [];
+    const sid = agent._settlementId || 0;
+    const home = setts[sid];
+    if (home && Number.isFinite(home.cx) && Number.isFinite(home.cy)) {
+      const angle = Math.random() * Math.PI * 2;
+      const r = 4 + Math.random() * 6;
+      agent.x = Math.round(home.cx + Math.cos(angle) * r);
+      agent.y = Math.round(home.cy + Math.sin(angle) * r);
+    } else {
+      // Fallback: random position near map center
+      agent.x = Math.floor(this.world.width / 2) + Math.floor((Math.random() - 0.5) * 60);
+      agent.y = Math.floor(this.world.height / 2) + Math.floor((Math.random() - 0.5) * 50);
+    }
+    agent.x = Math.max(2, Math.min(this.world.width - 3, agent.x));
+    agent.y = Math.max(2, Math.min(this.world.height - 3, agent.y));
+    agent.currentWorld = 'grassland';
+    agent.mood = 'idle';
+    agent.current_action = null;
+    agent.idle_ticks = 0;
+    agent.message = 'Returned from Neo-Kyoto.';
+    // Clear cyber-specific state — they can re-enter fresh later
+    agent.action_queue = [];
+    agent._buildingTarget = null;
+    agent._cyberSettlementId = null;
+    events.push({
+      tick,
+      type: 'portal_traversal',
+      agentId: agent.id,
+      agent: agent.name,
+      portalId: portal.id,
+      direction: 'return',
+      fromX: portal.x,
+      fromY: portal.y,
+      toX: agent.x,
+      toY: agent.y,
+      message: `🌲 ${agent.name} returned from Neo-Kyoto!`,
+    });
+    console.log(`[PORTAL] ${agent.name} returned to grassland at (${agent.x},${agent.y})`);
   }
 
   // ── Agent dragon combat behavior ─────────────────────────────────

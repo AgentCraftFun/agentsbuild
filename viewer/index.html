@@ -6894,13 +6894,20 @@ if(S.groundItems&&S.groundItems.length){
     ctx.textAlign='start';ctx.textBaseline='alphabetic';
   }
 }
-// === PORTALS (Week 2 teaser — powering up, not yet active) ===
-// Each portal is a vertical oval rift with swirling energy, ground glow,
-// and a "POWERING UP" loading bar above. They persist forever in their
-// charging state until we flip them when the new biome ships.
+} // close _hideEntities — portals render in BOTH modes (filtered by world inside the loop)
+
+// === PORTALS (rendered in both grassland and cyber views) ===
+// Each portal has a `world` field — the loop below skips ones that
+// don't match the current viewMode, so grassland portals only show
+// in grassland and cyber portals only show in cyber.
 if(S.portals&&S.portals.length){
   for(const p of S.portals){
     if(typeof p.x!=='number'||typeof p.y!=='number')continue;
+    // Filter by world: only render portals whose world matches viewMode.
+    // Grassland portals have world='grassland' or undefined; cyber portals
+    // have world='cyber'.
+    const pWorld=p.world||'grassland';
+    if(pWorld!==viewMode)continue;
     // Cull offscreen
     if(p.x<sx-2||p.x>ex+2||p.y<sy-2||p.y>ey+2)continue;
     const pxc=p.x*ts+ts/2;
@@ -6997,6 +7004,7 @@ if(S.portals&&S.portals.length){
   }
 }
 
+if(!_hideEntities){
 // Pickup/drop flashes — expanding rings + rising "+N" text
 if(S.pickupFlashes&&S.pickupFlashes.length){
   for(let pfi=S.pickupFlashes.length-1;pfi>=0;pfi--){

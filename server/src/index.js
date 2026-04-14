@@ -76,6 +76,8 @@ function saveWorldState(ws) {
       _cyberWipedAt: ws._cyberWipedAt || null,
       // One-time top-left dragon spawn marker
       _topLeftDragonSpawned: ws._topLeftDragonSpawned || null,
+      // One-time cyber return portals marker
+      _cyberPortalsSpawned: ws._cyberPortalsSpawned || null,
     };
     fs.writeFileSync(STATE_FILE, JSON.stringify(state));
     console.log(`[Save] Tick:${ws.tick} Agents:${agents.length} Buildings:${buildings.length}`);
@@ -105,7 +107,9 @@ function loadWorldState() {
       // One-time cyber wipe migration marker
       _cyberWipedAt: state._cyberWipedAt || null,
       // One-time top-left dragon spawn marker
-      _topLeftDragonSpawned: state._topLeftDragonSpawned || null };
+      _topLeftDragonSpawned: state._topLeftDragonSpawned || null,
+      // One-time cyber return portals marker
+      _cyberPortalsSpawned: state._cyberPortalsSpawned || null };
 
     const Agent = require('./models/Agent');
     const Building = require('./models/Building');
@@ -374,6 +378,44 @@ if (worldState._topLeftDragonSpawned !== TL_DRAGON_VERSION) {
   try { saveWorldState(worldState); } catch (e) { console.error('[MIGRATION] Save failed:', e.message); }
 } else {
   console.log(`[MIGRATION] Top-left dragon already spawned (${TL_DRAGON_VERSION}) — skipping`);
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// ONE-TIME CYBER RETURN PORTALS
+// Spawns 3 portals tagged world='cyber' inside Neo-Kyoto. These are
+// active immediately. Cyber agents that wander adjacent will walk
+// through and return to grassland.
+// ═══════════════════════════════════════════════════════════════════
+const CYBER_PORTALS_VERSION = 'v1-return-portals';
+if (worldState._cyberPortalsSpawned !== CYBER_PORTALS_VERSION) {
+  console.log(`[MIGRATION] Spawning cyber return portals (${CYBER_PORTALS_VERSION})`);
+  if (!Array.isArray(worldState.portals)) worldState.portals = [];
+  // Pick 3 spread-out spots in the cyber world (same coordinate space as grassland)
+  const tints = ['emerald', 'gold', 'magenta'];
+  const positions = [
+    { x: Math.floor(worldState.width * 0.25), y: Math.floor(worldState.height * 0.30) },
+    { x: Math.floor(worldState.width * 0.75), y: Math.floor(worldState.height * 0.45) },
+    { x: Math.floor(worldState.width * 0.50), y: Math.floor(worldState.height * 0.75) },
+  ];
+  for (let i = 0; i < positions.length; i++) {
+    const pos = positions[i];
+    worldState.portals.push({
+      id: `cyber_portal_${i + 1}`,
+      x: pos.x,
+      y: pos.y,
+      tint: tints[i % tints.length],
+      charge: 1.0,
+      active: true,
+      label: 'OPEN',
+      world: 'cyber',
+      spawnTick: worldState.tick || 0,
+    });
+  }
+  worldState._cyberPortalsSpawned = CYBER_PORTALS_VERSION;
+  try { saveWorldState(worldState); } catch (e) { console.error('[MIGRATION] Save failed:', e.message); }
+  console.log(`[MIGRATION] Spawned ${positions.length} cyber return portals`);
+} else {
+  console.log(`[MIGRATION] Cyber return portals already exist (${CYBER_PORTALS_VERSION}) — skipping`);
 }
 
 // ─── Payment Infrastructure (Phase 1) ───
