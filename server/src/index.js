@@ -507,6 +507,12 @@ app.get('/api/stats', (req, res) => {
     'building_burning','building_destroyed','raid_success','raid_blocked','raid_reflected',
   ]);
   const chaosRecent = (worldState.events || []).filter(e => e && chaosTypes.has(e.type)).length;
+  // Neo-Kyoto live population + buildings
+  let cyberAgents = 0;
+  for (const agent of worldState.agents.values()) {
+    if (agent.currentWorld === 'cyber') cyberAgents++;
+  }
+  const cyberBuildings = worldState.buildingsList.filter(b => b.world === 'cyber').length;
   res.json({
     tick,
     day,
@@ -515,6 +521,8 @@ app.get('/api/stats', (req, res) => {
     tilesClaimed,
     viewers,
     chaosRecent,
+    cyberAgents,
+    cyberBuildings,
     serverUptime: Math.round(process.uptime()),
   });
 });

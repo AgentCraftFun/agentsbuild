@@ -90,7 +90,7 @@ h1,h2,h3,.pixel{font-family:'Press Start 2P',monospace}
 #stats .live-badge{display:flex;align-items:center;justify-content:center;gap:8px;margin-bottom:32px;font-family:'Courier New',monospace;font-size:11px;color:#888;letter-spacing:1px;position:relative}
 #stats .live-dot{width:8px;height:8px;border-radius:50%;background:#44cc66;box-shadow:0 0 10px #44cc66;animation:live-pulse 1.8s ease-in-out infinite}
 @keyframes live-pulse{0%,100%{opacity:1;transform:scale(1)}50%{opacity:0.5;transform:scale(0.85)}}
-.stat-grid{display:grid;grid-template-columns:repeat(6,1fr);gap:14px;max-width:1180px;margin:0 auto;position:relative}
+.stat-grid{display:grid;grid-template-columns:repeat(7,1fr);gap:12px;max-width:1280px;margin:0 auto;position:relative}
 .stat-card{background:var(--card);border:1px solid var(--border);padding:26px 16px 22px;border-radius:6px;text-align:center;transition:all 0.3s;position:relative;overflow:hidden}
 .stat-card::before{content:'';position:absolute;top:0;left:0;right:0;height:2px;background:linear-gradient(90deg,transparent,var(--gold),transparent);opacity:0.4}
 .stat-card:hover{border-color:var(--gold);transform:translateY(-4px);box-shadow:0 8px 24px rgba(240,192,64,0.15)}
@@ -104,10 +104,14 @@ h1,h2,h3,.pixel{font-family:'Press Start 2P',monospace}
 .stat-card[data-stat="chaos"] .stat-value{color:#ff5544;text-shadow:0 0 14px rgba(255,85,68,0.6)}
 .stat-card[data-stat="chaos"]::before{background:linear-gradient(90deg,transparent,#ff5544,transparent)}
 .stat-card[data-stat="chaos"]:hover{border-color:#ff5544;box-shadow:0 8px 24px rgba(255,85,68,0.18)}
+.stat-card[data-stat="cyber"] .stat-value{color:#ff4dd2;text-shadow:0 0 14px rgba(255,77,210,0.6)}
+.stat-card[data-stat="cyber"]::before{background:linear-gradient(90deg,transparent,#ff4dd2,transparent)}
+.stat-card[data-stat="cyber"]:hover{border-color:#ff4dd2;box-shadow:0 8px 24px rgba(255,77,210,0.2)}
 @keyframes stat-flash{0%{color:#ffffff;text-shadow:0 0 20px rgba(255,255,255,0.9)}100%{color:var(--gold);text-shadow:0 0 12px rgba(240,192,64,0.4)}}
-@media(max-width:1100px){.stat-grid{grid-template-columns:repeat(3,1fr);max-width:720px}}
-@media(max-width:760px){.stat-grid{grid-template-columns:repeat(2,1fr);max-width:500px}}
-@media(max-width:420px){.stat-grid{grid-template-columns:1fr}}
+@media(max-width:1200px){.stat-grid{grid-template-columns:repeat(4,1fr);max-width:860px}}
+@media(max-width:900px){.stat-grid{grid-template-columns:repeat(3,1fr);max-width:640px}}
+@media(max-width:640px){.stat-grid{grid-template-columns:repeat(2,1fr);max-width:420px}}
+@media(max-width:380px){.stat-grid{grid-template-columns:1fr}}
 
 /* === NEXT === */
 #next{text-align:center}
@@ -272,6 +276,12 @@ footer .links a:hover{color:var(--gold)}
       <div class="stat-label">CHAOS METER</div>
       <div class="stat-sub">recent disasters</div>
     </div>
+    <div class="stat-card" data-stat="cyber">
+      <div class="stat-icon">&#127966;&#65039;</div>
+      <div class="stat-value" id="stat-cyber">&mdash;</div>
+      <div class="stat-label">NEO-KYOTO</div>
+      <div class="stat-sub">agents in the grid</div>
+    </div>
   </div>
 </section>
 
@@ -303,6 +313,7 @@ footer .links a:hover{color:var(--gold)}
   <div class="cta-row">
     <a href="/viewer/" class="primary">Enter the World &rarr;</a>
     <a href="/halloffame.html">🏆 Hall of Fame</a>
+    <a href="/secretpredict/">🎰 Markets Preview</a>
     <a href="/roadmap.html">View Roadmap</a>
     <a href="https://t.me/AgentCraftFun" target="_blank">Join Telegram</a>
   </div>
@@ -312,6 +323,7 @@ footer .links a:hover{color:var(--gold)}
 <footer>
   <div class="links">
     <a href="/halloffame.html">Hall of Fame</a>
+    <a href="/secretpredict/">Markets</a>
     <a href="/roadmap.html">Roadmap</a>
     <a href="https://t.me/AgentCraftFun" target="_blank">Telegram</a>
     <a href="https://x.com/AgentCraftBase" target="_blank">X / Twitter</a>
@@ -357,9 +369,10 @@ document.querySelector('.scroll-hint').addEventListener('click',()=>{document.ge
     tiles:     document.getElementById('stat-tiles'),
     viewers:   document.getElementById('stat-viewers'),
     chaos:     document.getElementById('stat-chaos'),
+    cyber:     document.getElementById('stat-cyber'),
   };
-  const current = { day:0, agents:0, buildings:0, tiles:0, viewers:0, chaos:0 };
-  const anim    = { day:null, agents:null, buildings:null, tiles:null, viewers:null, chaos:null };
+  const current = { day:0, agents:0, buildings:0, tiles:0, viewers:0, chaos:0, cyber:0 };
+  const anim    = { day:null, agents:null, buildings:null, tiles:null, viewers:null, chaos:null, cyber:null };
 
   function animateTo(key, target) {
     if (!statEls[key]) return;
@@ -404,6 +417,7 @@ document.querySelector('.scroll-hint').addEventListener('click',()=>{document.ge
       animateTo('tiles',     Number(data.tilesClaimed) || 0);
       animateTo('viewers',   Number(data.viewers)   || 0);
       animateTo('chaos',     Number(data.chaosRecent) || 0);
+      animateTo('cyber',     Number(data.cyberAgents) || 0);
     } catch (e) {
       // Silent fail — stats will keep their last value
     }
