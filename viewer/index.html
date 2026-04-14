@@ -25,13 +25,16 @@ html,body{height:100%;overflow:hidden;background:var(--bg);color:var(--text);fon
 #header-stats .header-link{padding:5px 10px;background:rgba(240,192,64,0.08);border:1px solid rgba(240,192,64,0.4);border-radius:3px;color:#f0c040;font-size:10px;font-weight:bold;letter-spacing:1px;text-decoration:none;transition:all 0.15s;text-shadow:0 0 6px rgba(240,192,64,0.4)}
 #header-stats .header-link:hover{background:rgba(240,192,64,0.2);border-color:#f0c040;box-shadow:0 0 10px rgba(240,192,64,0.4)}
 /* $AGENTCRAFT live ticker */
-#header-stats .ticker{display:inline-flex;align-items:center;gap:6px;padding:5px 10px}
-#header-stats .ticker .t-sym{color:#f0c040;font-weight:bold}
+#header-stats .ticker{display:inline-flex;align-items:center;gap:7px;padding:5px 10px}
+#header-stats .ticker .t-sym{color:#f0c040;font-weight:bold;font-size:10px;letter-spacing:0.5px}
 #header-stats .ticker .t-px{color:#aaffaa;font-weight:bold;font-variant-numeric:tabular-nums}
+#header-stats .ticker .t-px sub{font-size:7px;vertical-align:baseline;position:relative;bottom:-1px}
 #header-stats .ticker .t-ch{font-size:9px;font-weight:bold;font-variant-numeric:tabular-nums;letter-spacing:0;padding:1px 4px;border-radius:2px}
 #header-stats .ticker .t-ch.up{color:#aaffaa;background:rgba(68,255,136,0.15);border:1px solid rgba(68,255,136,0.4)}
 #header-stats .ticker .t-ch.dn{color:#ffaaaa;background:rgba(255,68,102,0.15);border:1px solid rgba(255,68,102,0.4)}
 #header-stats .ticker .t-ch.flat{color:#aaaaaa;background:rgba(150,150,180,0.15);border:1px solid rgba(150,150,180,0.4)}
+#header-stats .ticker .t-mc{color:#aaccff;font-size:9px;font-weight:bold;font-variant-numeric:tabular-nums;border-left:1px solid rgba(150,150,180,0.3);padding-left:7px}
+#header-stats .ticker .t-mc::before{content:'MC ';color:#7a7a92;font-weight:normal}
 @keyframes ticker-flash{0%{filter:brightness(1)}50%{filter:brightness(1.6) drop-shadow(0 0 10px currentColor)}100%{filter:brightness(1)}}
 #header-stats .ticker.flash{animation:ticker-flash 0.6s ease-out}
 #live-dot{display:inline-block;width:8px;height:8px;border-radius:50%;margin-right:4px;background:#ff4444}
@@ -184,11 +187,13 @@ setTimeout(function(){var io=document.getElementById('intro-overlay');if(io)io.r
       <span>🗓<span class="val" id="h-playtime">Day 1, 06:00</span></span>
       <span>🪙<span class="val" id="h-points">0</span></span>
       <span><span id="live-dot"></span><span id="h-status">OFFLINE</span></span>
-      <a href="https://dexscreener.com/base/0x506059317F8dB90880a60a6968153AD2424ac38F" target="_blank" rel="noopener" id="ac-ticker" class="header-link ticker" title="Live $AGENTCRAFT price (DexScreener) — click to trade">
-        <span class="t-sym">$AC</span>
+      <a href="https://dexscreener.com/base/0x506059317F8dB90880a60a6968153AD2424ac38F" target="_blank" rel="noopener" id="ac-ticker" class="header-link ticker" title="Live $AGENTCRAFT price &amp; market cap (DexScreener) — click to trade">
+        <span class="t-sym">$AGENTCRAFT</span>
         <span class="t-px" id="ac-ticker-px">—</span>
-        <span class="t-ch" id="ac-ticker-ch">&middot;&middot;&middot;</span>
+        <span class="t-ch" id="ac-ticker-ch">···</span>
+        <span class="t-mc" id="ac-ticker-mc"></span>
       </a>
+      <button id="screenshot-btn" class="header-link" title="Capture this moment as a PNG">📸 CAPTURE</button>
       <a href="/halloffame.html" class="header-link" title="Hall of Fame — see the legends">🏆 HALL OF FAME</a>
     </div>
   </div>
@@ -1001,23 +1006,48 @@ setupBiomeToggle();
   const url = 'https://api.dexscreener.com/latest/dex/tokens/' + TOKEN;
   const elPx = document.getElementById('ac-ticker-px');
   const elCh = document.getElementById('ac-ticker-ch');
+  const elMc = document.getElementById('ac-ticker-mc');
   const elTk = document.getElementById('ac-ticker');
   if (!elPx || !elCh || !elTk) return;
   let lastPriceUsd = null;
 
-  function fmtPrice(p) {
+  // Format sub-cent prices in Nansen-style subscript notation:
+  //   0.00000172 → "$0.0₅172"  (₅ = 5 zeros after the decimal)
+  // Larger prices get standard formatting.
+  function fmtPriceHTML(p) {
     if (!p) return '—';
     const n = Number(p);
     if (n >= 1) return '$' + n.toFixed(3);
     if (n >= 0.01) return '$' + n.toFixed(4);
-    if (n >= 0.0001) return '$' + n.toFixed(6);
-    // Tiny number — show with significant digits
-    return '$' + n.toExponential(2);
+    if (n >= 0.001) return '$' + n.toFixed(5);
+    // Sub-cent — use subscript notation
+    // Convert to fixed decimal with enough precision
+    const s = n.toFixed(20);
+    // s looks like "0.00000172000000000000"
+    const m = s.match(/^0\.(0+)(\d+?)(0*)$/);
+    if (!m) return '$' + n.toFixed(8);
+    const zeros = m[1].length;
+    let sigDigits = m[2];
+    // Trim to 4 significant digits for readability
+    if (sigDigits.length > 4) sigDigits = sigDigits.slice(0, 4);
+    if (zeros >= 4) {
+      // Use subscript: 0.0₅172
+      return '$0.0<sub>' + zeros + '</sub>' + sigDigits;
+    }
+    // Few enough zeros to write out normally
+    return '$0.' + m[1] + sigDigits;
   }
   function fmtChange(ch) {
     if (ch == null || isNaN(ch)) return '···';
     const sign = ch >= 0 ? '+' : '';
     return sign + Number(ch).toFixed(1) + '%';
+  }
+  function fmtMcap(n) {
+    if (!n || isNaN(n)) return '';
+    if (n >= 1e9) return '$' + (n / 1e9).toFixed(2) + 'B';
+    if (n >= 1e6) return '$' + (n / 1e6).toFixed(2) + 'M';
+    if (n >= 1e3) return '$' + (n / 1e3).toFixed(1) + 'K';
+    return '$' + Math.round(n);
   }
 
   async function fetchPrice() {
@@ -1038,6 +1068,7 @@ setupBiomeToggle();
       const best = pairs[0];
       const px = parseFloat(best.priceUsd);
       const ch24 = best.priceChange?.h24;
+      const mc = best.marketCap || best.fdv;
       // Flash if price changed
       if (lastPriceUsd != null && Math.abs(px - lastPriceUsd) / lastPriceUsd > 0.001) {
         elTk.classList.remove('flash');
@@ -1045,9 +1076,10 @@ setupBiomeToggle();
         elTk.classList.add('flash');
       }
       lastPriceUsd = px;
-      elPx.textContent = fmtPrice(px);
+      elPx.innerHTML = fmtPriceHTML(px);
       elCh.textContent = fmtChange(ch24);
       elCh.className = 't-ch ' + (ch24 > 0.05 ? 'up' : ch24 < -0.05 ? 'dn' : 'flat');
+      if (elMc) elMc.textContent = fmtMcap(mc);
     } catch (e) {
       // Silent fail — leave previous value
       console.warn('[ticker] fetch failed', e);
@@ -2041,6 +2073,104 @@ wrap.addEventListener('mousedown',e=>{lastInputFrame=frame;if(tvMode)tvMode=fals
   if(followAgent&&!tvMode){followAgent=null;const ti3=document.getElementById('tracking-indicator');if(ti3)ti3.style.display='none'}// release tracking on click
   if(followDrop)followDrop=null;// release drop-follow on click
   if(e.button===0){dragging=true;dsx=e.clientX;dsy=e.clientY;dvx=vpX;dvy=vpY;if(cursorGrab)setCursor('grab')}});
+
+// ── SCREENSHOT CAPTURE ──
+// Grabs the current canvas, draws a branded watermark, downloads as PNG.
+function captureScreenshot(){
+  const src=canvasEl;
+  if(!src)return;
+  const w=src.width,h=src.height;
+  // Make an offscreen canvas the same size
+  const out=document.createElement('canvas');
+  out.width=w;out.height=h;
+  const oc=out.getContext('2d');
+  // Copy the live canvas
+  try{oc.drawImage(src,0,0)}catch(e){console.warn('screenshot draw failed',e);return}
+  // ── WATERMARK ──
+  // Bottom-left: AGENTCRAFT logo + tag
+  const padding=20;
+  const wmH=72;
+  // Backdrop pill
+  oc.fillStyle='rgba(10,8,24,0.85)';
+  oc.fillRect(padding-2,h-padding-wmH,300,wmH);
+  oc.strokeStyle='#f0c040';
+  oc.lineWidth=2;
+  oc.strokeRect(padding-2,h-padding-wmH,300,wmH);
+  // Top accent line
+  oc.fillStyle='#f0c040';
+  oc.fillRect(padding-2,h-padding-wmH,300,2);
+  // Logo text
+  oc.font='bold 22px "Press Start 2P","Courier New",monospace';
+  oc.fillStyle='#f0c040';
+  oc.shadowColor='rgba(240,192,64,0.8)';
+  oc.shadowBlur=10;
+  oc.fillText('AGENTCRAFT',padding+10,h-padding-wmH+30);
+  oc.shadowBlur=0;
+  // Tagline
+  oc.font='bold 11px "Courier New",monospace';
+  oc.fillStyle='#aaffaa';
+  // Use header data if available
+  const day=document.getElementById('h-playtime')?.textContent||'';
+  const pop=document.getElementById('h-agents')?.textContent||'';
+  const blds=document.getElementById('h-bldcount')?.textContent||'';
+  oc.fillText(`${day}  ·  POP ${pop}  ·  B ${blds}`,padding+10,h-padding-wmH+50);
+  oc.font='10px "Courier New",monospace';
+  oc.fillStyle='#888';
+  oc.fillText('agentcraft.fun',padding+10,h-padding-wmH+64);
+
+  // ── Top-right: $AGENTCRAFT ticker if available ──
+  const px=document.getElementById('ac-ticker-px')?.textContent||'';
+  const ch=document.getElementById('ac-ticker-ch')?.textContent||'';
+  if(px&&px!=='—'){
+    const tw=240;
+    oc.fillStyle='rgba(10,8,24,0.85)';
+    oc.fillRect(w-padding-tw,padding,tw,40);
+    oc.strokeStyle='#f0c040';oc.lineWidth=1;
+    oc.strokeRect(w-padding-tw,padding,tw,40);
+    oc.font='bold 12px "Courier New",monospace';
+    oc.fillStyle='#f0c040';
+    oc.fillText('$AGENTCRAFT',w-padding-tw+10,padding+18);
+    oc.fillStyle='#aaffaa';
+    oc.font='bold 14px "Courier New",monospace';
+    oc.fillText(px,w-padding-tw+110,padding+18);
+    oc.fillStyle=ch.startsWith('-')?'#ffaaaa':'#aaffaa';
+    oc.font='bold 11px "Courier New",monospace';
+    oc.fillText(ch,w-padding-tw+10,padding+34);
+  }
+
+  // Trigger download
+  try{
+    const dataUrl=out.toDataURL('image/png');
+    const a=document.createElement('a');
+    const ts=Date.now();
+    a.download=`agentcraft-${ts}.png`;
+    a.href=dataUrl;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    // Quick flash feedback on the button
+    const btn=document.getElementById('screenshot-btn');
+    if(btn){
+      const orig=btn.textContent;
+      btn.textContent='✓ SAVED';
+      btn.style.color='#aaffaa';
+      btn.style.borderColor='#aaffaa';
+      setTimeout(()=>{btn.textContent=orig;btn.style.color='';btn.style.borderColor=''},1400);
+    }
+  }catch(e){
+    console.warn('screenshot save failed',e);
+    alert('Screenshot failed: '+e.message);
+  }
+}
+// Wire button (now + on DOM ready)
+(function(){
+  const btn=document.getElementById('screenshot-btn');
+  if(btn)btn.addEventListener('click',captureScreenshot);
+})();
+document.addEventListener('DOMContentLoaded',()=>{
+  const btn=document.getElementById('screenshot-btn');
+  if(btn&&!btn._wired){btn._wired=true;btn.addEventListener('click',captureScreenshot)}
+});
 
 // ── Settlement profile panel ──
 function openSettlementPanel(hb){
