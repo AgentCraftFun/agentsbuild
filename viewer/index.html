@@ -24,6 +24,16 @@ html,body{height:100%;overflow:hidden;background:var(--bg);color:var(--text);fon
 #header-stats .val{color:#aaffaa;font-weight:bold;min-width:24px;display:inline-block}
 #header-stats .header-link{padding:5px 10px;background:rgba(240,192,64,0.08);border:1px solid rgba(240,192,64,0.4);border-radius:3px;color:#f0c040;font-size:10px;font-weight:bold;letter-spacing:1px;text-decoration:none;transition:all 0.15s;text-shadow:0 0 6px rgba(240,192,64,0.4)}
 #header-stats .header-link:hover{background:rgba(240,192,64,0.2);border-color:#f0c040;box-shadow:0 0 10px rgba(240,192,64,0.4)}
+/* $AGENTCRAFT live ticker */
+#header-stats .ticker{display:inline-flex;align-items:center;gap:6px;padding:5px 10px}
+#header-stats .ticker .t-sym{color:#f0c040;font-weight:bold}
+#header-stats .ticker .t-px{color:#aaffaa;font-weight:bold;font-variant-numeric:tabular-nums}
+#header-stats .ticker .t-ch{font-size:9px;font-weight:bold;font-variant-numeric:tabular-nums;letter-spacing:0;padding:1px 4px;border-radius:2px}
+#header-stats .ticker .t-ch.up{color:#aaffaa;background:rgba(68,255,136,0.15);border:1px solid rgba(68,255,136,0.4)}
+#header-stats .ticker .t-ch.dn{color:#ffaaaa;background:rgba(255,68,102,0.15);border:1px solid rgba(255,68,102,0.4)}
+#header-stats .ticker .t-ch.flat{color:#aaaaaa;background:rgba(150,150,180,0.15);border:1px solid rgba(150,150,180,0.4)}
+@keyframes ticker-flash{0%{filter:brightness(1)}50%{filter:brightness(1.6) drop-shadow(0 0 10px currentColor)}100%{filter:brightness(1)}}
+#header-stats .ticker.flash{animation:ticker-flash 0.6s ease-out}
 #live-dot{display:inline-block;width:8px;height:8px;border-radius:50%;margin-right:4px;background:#ff4444}
 #live-dot.on{background:#ff4444;box-shadow:0 0 6px #ff4444}
 #canvas-wrap{position:relative;overflow:hidden;background:#000}
@@ -174,6 +184,11 @@ setTimeout(function(){var io=document.getElementById('intro-overlay');if(io)io.r
       <span>🗓<span class="val" id="h-playtime">Day 1, 06:00</span></span>
       <span>🪙<span class="val" id="h-points">0</span></span>
       <span><span id="live-dot"></span><span id="h-status">OFFLINE</span></span>
+      <a href="https://dexscreener.com/base/0x506059317F8dB90880a60a6968153AD2424ac38F" target="_blank" rel="noopener" id="ac-ticker" class="header-link ticker" title="Live $AGENTCRAFT price (DexScreener) — click to trade">
+        <span class="t-sym">$AC</span>
+        <span class="t-px" id="ac-ticker-px">—</span>
+        <span class="t-ch" id="ac-ticker-ch">&middot;&middot;&middot;</span>
+      </a>
       <a href="/halloffame.html" class="header-link" title="Hall of Fame — see the legends">🏆 HALL OF FAME</a>
     </div>
   </div>
@@ -970,6 +985,70 @@ function setupBiomeToggle() {
 }
 // Defer until DOM is ready (the script block runs mid-body but the element above us exists)
 setupBiomeToggle();
+
+// ─── $AGENTCRAFT LIVE TICKER ──────────────────────────────────────
+// Polls DexScreener every 30s and updates the header pill with
+// price + 24h change. Uses native fetch — no library.
+(function(){
+  const TOKEN = '0x506059317F8dB90880a60a6968153AD2424ac38F';
+  const url = 'https://api.dexscreener.com/latest/dex/tokens/' + TOKEN;
+  const elPx = document.getElementById('ac-ticker-px');
+  const elCh = document.getElementById('ac-ticker-ch');
+  const elTk = document.getElementById('ac-ticker');
+  if (!elPx || !elCh || !elTk) return;
+  let lastPriceUsd = null;
+
+  function fmtPrice(p) {
+    if (!p) return '—';
+    const n = Number(p);
+    if (n >= 1) return '$' + n.toFixed(3);
+    if (n >= 0.01) return '$' + n.toFixed(4);
+    if (n >= 0.0001) return '$' + n.toFixed(6);
+    // Tiny number — show with significant digits
+    return '$' + n.toExponential(2);
+  }
+  function fmtChange(ch) {
+    if (ch == null || isNaN(ch)) return '···';
+    const sign = ch >= 0 ? '+' : '';
+    return sign + Number(ch).toFixed(1) + '%';
+  }
+
+  async function fetchPrice() {
+    try {
+      const r = await fetch(url, { cache: 'no-store' });
+      if (!r.ok) throw new Error('HTTP ' + r.status);
+      const data = await r.json();
+      // DexScreener returns {pairs: [{priceUsd, priceChange:{h24}, ...}]}
+      // Pick the pair with the highest liquidity
+      const pairs = (data && data.pairs) || [];
+      if (pairs.length === 0) {
+        elPx.textContent = '—';
+        elCh.textContent = 'NO POOL';
+        elCh.className = 't-ch flat';
+        return;
+      }
+      pairs.sort((a, b) => (b.liquidity?.usd || 0) - (a.liquidity?.usd || 0));
+      const best = pairs[0];
+      const px = parseFloat(best.priceUsd);
+      const ch24 = best.priceChange?.h24;
+      // Flash if price changed
+      if (lastPriceUsd != null && Math.abs(px - lastPriceUsd) / lastPriceUsd > 0.001) {
+        elTk.classList.remove('flash');
+        void elTk.offsetWidth;
+        elTk.classList.add('flash');
+      }
+      lastPriceUsd = px;
+      elPx.textContent = fmtPrice(px);
+      elCh.textContent = fmtChange(ch24);
+      elCh.className = 't-ch ' + (ch24 > 0.05 ? 'up' : ch24 < -0.05 ? 'dn' : 'flat');
+    } catch (e) {
+      // Silent fail — leave previous value
+      console.warn('[ticker] fetch failed', e);
+    }
+  }
+  fetchPrice();
+  setInterval(fetchPrice, 30000);
+})();
 
 // ── CYBER AMBIENT CREATURES ───────────────────────────────────────
 // Cyber chickens (neon robot chickens) + hover drones roam Neo-Kyoto
